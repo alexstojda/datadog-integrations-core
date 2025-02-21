@@ -4,8 +4,6 @@
 from copy import deepcopy
 from typing import Any, Dict, List, Tuple  # noqa: F401
 
-from six import raise_from
-
 from datadog_checks.base.utils.db.types import Transformer, TransformerFactory  # noqa: F401
 from datadog_checks.base.utils.time import get_timestamp
 
@@ -45,6 +43,8 @@ class Query(object):
                         If the collection interval is greater than check collection interval,
                         the query will NOT BE RUN exactly at the collection interval.
                         The query will be run at the next check run after the collection interval has passed.
+                - (Optional) metric_prefix (str): The prefix to add to the metric name.
+                    Note: If the metric prefix is None, the default metric prefix `<INTEGRATION>.` will be used.
         '''
         # Contains the data to fill the rest of the attributes
         self.query_data = deepcopy(query_data or {})  # type: Dict[str, Any]
@@ -62,6 +62,8 @@ class Query(object):
         # The last time the query was executed. If None, the query has never been executed.
         # This is only used when the collection_interval is not None.
         self.__last_execution_time = None  # type: float
+        # whether to ignore any defined namespace prefix. True when `metric_prefix` is defined.
+        self.metric_name_raw = False  # type: bool
 
     def compile(
         self,
@@ -83,6 +85,13 @@ class Query(object):
             raise ValueError('query field `name` is required')
         elif not isinstance(query_name, str):
             raise ValueError('query field `name` must be a string')
+
+        metric_prefix = self.query_data.get('metric_prefix')
+        if metric_prefix is not None:
+            if not isinstance(metric_prefix, str):
+                raise ValueError('field `metric_prefix` for {} must be a string'.format(query_name))
+            elif not metric_prefix:
+                raise ValueError('field `metric_prefix` for {} must not be empty'.format(query_name))
 
         query = self.query_data.get('query')
         if not query:
@@ -137,9 +146,13 @@ class Query(object):
             elif column_type not in column_transformers:
                 raise ValueError('unknown type `{}` for column {} of {}'.format(column_type, column_name, query_name))
 
+            __column_type_is_tag = column_type in ('tag', 'tag_list', 'tag_not_null')
             modifiers = {key: value for key, value in column.items() if key not in ('name', 'type')}
 
             try:
+                if not __column_type_is_tag and metric_prefix:
+                    # if metric_prefix is defined, we prepend it to the column name
+                    column_name = "{}.{}".format(metric_prefix, column_name)
                 transformer = column_transformers[column_type](column_transformers, column_name, **modifiers)
             except Exception as e:
                 error = 'error compiling type `{}` for column {} of {}: {}'.format(
@@ -150,9 +163,9 @@ class Query(object):
                 #
                 # When an exception is raised in the context of another one, both will be printed. To avoid
                 # this we set the context to None. https://www.python.org/dev/peps/pep-0409/
-                raise_from(type(e)(error), None)
+                raise type(e)(error) from None
             else:
-                if column_type in ('tag', 'tag_list', 'tag_not_null'):
+                if __column_type_is_tag:
                     column_data.append((column_name, (column_type, transformer)))
                 else:
                     # All these would actually submit data. As that is the default case, we represent it as
@@ -173,8 +186,12 @@ class Query(object):
             if not isinstance(extra, dict):
                 raise ValueError('extra #{} of {} is not a mapping'.format(i, query_name))
 
+            extra_type = extra.get('type')  # type: str
             extra_name = extra.get('name')  # type: str
-            if not extra_name:
+            if extra_type == 'log':
+                # The name is unused
+                extra_name = 'log'
+            elif not extra_name:
                 raise ValueError('field `name` for extra #{} of {} is required'.format(i, query_name))
             elif not isinstance(extra_name, str):
                 raise ValueError('field `name` for extra #{} of {} must be a string'.format(i, query_name))
@@ -187,7 +204,6 @@ class Query(object):
 
             sources[extra_name] = {'type': 'extra', 'index': i}
 
-            extra_type = extra.get('type')  # type: str  # Is the key in a transformers dict
             if not extra_type:
                 if 'expression' in extra:
                     extra_type = 'expression'
@@ -217,7 +233,7 @@ class Query(object):
             except Exception as e:
                 error = 'error compiling type `{}` for extra {} of {}: {}'.format(extra_type, extra_name, query_name, e)
 
-                raise_from(type(e)(error), None)
+                raise type(e)(error) from None
             else:
                 if extra_type in submission_transformers:
                     transformer = create_extra_transformer(transformer, extra_source)
@@ -240,6 +256,7 @@ class Query(object):
         self.extra_transformers = tuple(extra_data)
         self.base_tags = tags
         self.collection_interval = collection_interval
+        self.metric_name_raw = metric_prefix is not None
         del self.query_data
 
     def should_execute(self):

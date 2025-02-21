@@ -163,6 +163,17 @@ class TestStandard:
             ),
         ]
 
+    def test_changed_no_modifications(self, ddev, helpers, mocker):
+        mocker.patch('subprocess.run')
+        result = ddev('test')
+
+        assert result.exit_code == 0, result.output
+        assert result.output == helpers.dedent(
+            """
+            No changed testable targets found
+            """
+        )
+
     def test_all_targets(self, ddev, helpers, mocker, repository):
         repo = Repository("core", str(repository.path))
         run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
@@ -731,44 +742,6 @@ class TestDDTrace:
         assert env_vars['DD_PROFILING_ENABLED'] == 'true'
         assert env_vars['DD_SERVICE'] == 'ddev-integrations'
         assert env_vars['DD_ENV'] == 'ddev-integrations'
-
-    @pytest.mark.requires_windows
-    def test_windows_possible_python2(self, ddev, helpers, mocker):
-        env_vars = {}
-        run = mocker.patch(
-            'subprocess.run',
-            side_effect=lambda *args, **kwargs: env_vars.update(os.environ) or mocker.MagicMock(returncode=0),
-        )
-
-        result = ddev('test', 'postgres', '--ddtrace')
-
-        assert result.exit_code == 0, result.output
-        assert result.output == helpers.dedent(
-            """
-            ─────────────────────────────────── Postgres ───────────────────────────────────
-            Tracing is only supported on Python 3 on Windows
-            """
-        )
-
-        assert run.call_args_list == [
-            mocker.call(
-                [
-                    sys.executable,
-                    '-m',
-                    'hatch',
-                    'env',
-                    'run',
-                    '--ignore-compat',
-                    '--',
-                    'test',
-                    '--tb',
-                    'short',
-                ],
-                shell=False,
-            )
-        ]
-        assert 'DD_SERVICE' not in env_vars
-        assert 'DD_ENV' not in env_vars
 
 
 class TestMemray:

@@ -1,6 +1,8 @@
 # (C) Datadog, Inc. 2023-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
+import time
+
 import psycopg2
 import pytest
 
@@ -15,11 +17,18 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures('dd_environment')
 @requires_over_10
 def test_physical_replication_slots(aggregator, integration_check, pg_instance):
     check = integration_check(pg_instance)
+    # It seemingly can take a small amount of time for the pg_replication_slots to be saturated
+    # TODO: Poll for its existence as a ready check
+    time.sleep(5)
     redo_lsn_age = 0
+    xmin_age_higher_bound = 1
     with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
         with conn.cursor() as cur:
             cur.execute("select pg_wal_lsn_diff(pg_current_wal_lsn(), redo_lsn) from pg_control_checkpoint();")
             redo_lsn_age = int(cur.fetchall()[0][0])
+            cur.execute('select age(xmin) FROM pg_replication_slots;')
+            bound = cur.fetchall()[0][0]
+            xmin_age_higher_bound += int(bound) if bound is not None else 0
 
             cur.execute("select * from pg_create_physical_replication_slot('phys_1');")
             cur.execute("select * from pg_create_physical_replication_slot('phys_2', true);")
@@ -72,7 +81,7 @@ def test_physical_replication_slots(aggregator, integration_check, pg_instance):
     assert_metric_at_least(
         aggregator,
         'postgresql.replication_slot.xmin_age',
-        higher_bound=1,
+        higher_bound=xmin_age_higher_bound,
         tags=expected_repslot_tags,
         count=1,
     )

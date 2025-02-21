@@ -2,7 +2,6 @@
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
 
-
 from datadog_checks.openstack_controller.api.api import Api
 from datadog_checks.openstack_controller.api.catalog import Catalog
 from datadog_checks.openstack_controller.components.component import Component
@@ -31,12 +30,17 @@ class ApiRest(Api):
     def component_in_catalog(self, component_types):
         return self._catalog.has_component(component_types)
 
-    def get_response_time(self, endpoint_types):
+    def get_response_time(self, endpoint_types, remove_project_id=True, is_heat=False):
         endpoint = (
-            self._catalog.get_endpoint_by_type(endpoint_types).replace(self._current_project_id, "")
-            if self._current_project_id
-            else self._catalog.get_endpoint_by_type(endpoint_types)
+            self._catalog.get_endpoint_by_type(endpoint_types).replace(f"/v1/{self._current_project_id}", "")
+            if is_heat
+            else (
+                self._catalog.get_endpoint_by_type(endpoint_types).replace(self._current_project_id, "")
+                if self._current_project_id and remove_project_id
+                else self._catalog.get_endpoint_by_type(endpoint_types)
+            )
         )
+        self.log.debug("getting response time for `%s`", endpoint)
         response = self.http.get(endpoint)
         response.raise_for_status()
         return response.elapsed.total_seconds() * 1000
@@ -131,6 +135,10 @@ class ApiRest(Api):
             self.log.debug("adding X-OpenStack-Ironic-API-Version header to `%s`", self.config.ironic_microversion)
             self.http.options['headers']['X-OpenStack-Ironic-API-Version'] = self.config.ironic_microversion
 
+        if self.config.cinder_microversion:
+            self.log.debug("adding OpenStack-API-Version header to `%s`", self.config.cinder_microversion)
+            self.http.options['headers']['OpenStack-API-Version'] = self.config.cinder_microversion
+
     def get_identity_regions(self):
         response = self.http.get(
             '{}/v3/regions'.format(self._catalog.get_endpoint_by_type(Component.Types.IDENTITY.value))
@@ -194,6 +202,47 @@ class ApiRest(Api):
         response.raise_for_status()
         return response.json().get('limits', [])
 
+    def get_block_storage_volumes(self, project_id):
+        return self.make_paginated_request(
+            '{}/volumes/detail'.format(self._catalog.get_endpoint_by_type(Component.Types.BLOCK_STORAGE.value)),
+            'volumes',
+            'id',
+            next_signifier='volumes_links',
+        )
+
+    def get_block_storage_transfers(self, project_id):
+        response = self.http.get(
+            '{}/os-volume-transfer/detail'.format(
+                self._catalog.get_endpoint_by_type(Component.Types.BLOCK_STORAGE.value)
+            )
+        )
+        response.raise_for_status()
+        return response.json().get('transfers', {})
+
+    def get_block_storage_snapshots(self, project_id):
+        return self.make_paginated_request(
+            '{}/snapshots/detail'.format(self._catalog.get_endpoint_by_type(Component.Types.BLOCK_STORAGE.value)),
+            'snapshots',
+            'id',
+            next_signifier='snapshots_links',
+        )
+
+    def get_block_storage_pools(self, project_id):
+        response = self.http.get(
+            '{}/scheduler-stats/get_pools'.format(
+                self._catalog.get_endpoint_by_type(Component.Types.BLOCK_STORAGE.value)
+            )
+        )
+        response.raise_for_status()
+        return response.json().get('pools', {})
+
+    def get_block_storage_clusters(self, project_id):
+        response = self.http.get(
+            '{}/clusters/detail'.format(self._catalog.get_endpoint_by_type(Component.Types.BLOCK_STORAGE.value))
+        )
+        response.raise_for_status()
+        return response.json().get('clusters', {})
+
     def get_compute_limits(self, project_id):
         params = {'tenant_id': project_id}
         response = self.http.get(
@@ -215,6 +264,16 @@ class ApiRest(Api):
         )
         response.raise_for_status()
         return response.json().get('quota_set', {})
+
+    def get_compute_all_servers(self):
+        params = {'all_tenants': True}
+        return self.make_paginated_request(
+            '{}/servers/detail'.format(self._catalog.get_endpoint_by_type(Component.Types.COMPUTE.value)),
+            'servers',
+            'id',
+            next_signifier='servers_links',
+            params=params,
+        )
 
     def get_compute_servers(self, project_id):
         params = {'project_id': project_id}
@@ -281,11 +340,13 @@ class ApiRest(Api):
 
     def get_network_networks(self, project_id):
         params = {'project_id': project_id}
-        response = self.http.get(
-            '{}/v2.0/networks'.format(self._catalog.get_endpoint_by_type(Component.Types.NETWORK.value)), params=params
+        return self.make_paginated_request(
+            '{}/v2.0/networks'.format(self._catalog.get_endpoint_by_type(Component.Types.NETWORK.value)),
+            'networks',
+            'id',
+            next_signifier='networks_links',
+            params=params,
         )
-        response.raise_for_status()
-        return response.json().get('networks', [])
 
     def get_network_quota(self, project_id):
         response = self.http.get(
@@ -307,27 +368,25 @@ class ApiRest(Api):
 
         if self.config.paginated_limit is None:
             response_json = make_request(url, params)
-            objects = response_json.get(resource_name, [])
-            return objects
+            return response_json if resource_name is None else response_json.get(resource_name, [])
 
+        params['limit'] = self.config.paginated_limit
         while True:
             self.log.debug(
                 "making paginated request [limit=%s, marker=%s]",
                 self.config.paginated_limit,
                 marker,
             )
-
-            params['limit'] = self.config.paginated_limit
             if marker is not None:
                 params['marker'] = marker
 
             response_json = make_request(url, params)
-            resources = response_json.get(resource_name, [])
+            resources = response_json if resource_name is None else response_json.get(resource_name, [])
             if len(resources) > 0:
                 last_item = resources[-1]
                 item_list.extend(resources)
 
-                if next_signifier == '{}_links'.format(resource_name):
+                if next_signifier == f'{resource_name}_links':
                     has_next_link = False
                     links = response_json.get(next_signifier, [])
                     for link in links:
@@ -338,7 +397,11 @@ class ApiRest(Api):
                     if not has_next_link:
                         break
                 else:
-                    next_item = response_json.get(next_signifier)
+                    next_item = (
+                        response_json[-1].get(next_signifier)
+                        if resource_name is None
+                        else response_json.get(next_signifier)
+                    )
                     if next_item is None:
                         break
 
@@ -378,21 +441,67 @@ class ApiRest(Api):
 
         return self.make_paginated_request(url, 'nodes', 'uuid', params=params)
 
+    def get_baremetal_portgroups(self, node_id):
+        return self.make_paginated_request(
+            '{}/v1/nodes/{}/portgroups/detail'.format(
+                self._catalog.get_endpoint_by_type(Component.Types.BAREMETAL.value), node_id
+            ),
+            'portgroups',
+            'uuid',
+        )
+
+    def get_baremetal_ports(self):
+        return self.make_paginated_request(
+            '{}/v1/ports/detail'.format(self._catalog.get_endpoint_by_type(Component.Types.BAREMETAL.value)),
+            'ports',
+            'uuid',
+        )
+
     def get_baremetal_conductors(self):
+
+        ironic_endpoint = self._catalog.get_endpoint_by_type(Component.Types.BAREMETAL.value)
+
+        url = '{}/v1/conductors'.format(ironic_endpoint)
+
+        return self.make_paginated_request(url, 'conductors', 'hostname', params={})
+
+    def get_baremetal_volume_connectors(self):
+        return self.make_paginated_request(
+            '{}/v1/volume/connectors'.format(self._catalog.get_endpoint_by_type(Component.Types.BAREMETAL.value)),
+            'connectors',
+            'uuid',
+        )
+
+    def get_baremetal_volume_targets(self):
+        return self.make_paginated_request(
+            '{}/v1/volume/targets'.format(self._catalog.get_endpoint_by_type(Component.Types.BAREMETAL.value)),
+            'targets',
+            'uuid',
+        )
+
+    def get_baremetal_drivers(self):
         response = self.http.get(
-            '{}/v1/conductors'.format(self._catalog.get_endpoint_by_type(Component.Types.BAREMETAL.value))
+            '{}/v1/drivers'.format(self._catalog.get_endpoint_by_type(Component.Types.BAREMETAL.value))
         )
         response.raise_for_status()
-        return response.json().get('conductors', [])
+        return response.json().get('drivers', [])
+
+    def get_baremetal_allocations(self):
+        return self.make_paginated_request(
+            '{}/v1/allocations'.format(self._catalog.get_endpoint_by_type(Component.Types.BAREMETAL.value)),
+            'allocations',
+            'uuid',
+        )
 
     def get_load_balancer_loadbalancers(self, project_id):
         params = {'project_id': project_id}
-        response = self.http.get(
+        return self.make_paginated_request(
             '{}/v2/lbaas/loadbalancers'.format(self._catalog.get_endpoint_by_type(Component.Types.LOAD_BALANCER.value)),
+            'loadbalancers',
+            'id',
+            next_signifier='loadbalancers_links',
             params=params,
         )
-        response.raise_for_status()
-        return response.json().get('loadbalancers', [])
 
     def get_load_balancer_loadbalancer_stats(self, loadbalancer_id):
         response = self.http.get(
@@ -405,12 +514,13 @@ class ApiRest(Api):
 
     def get_load_balancer_listeners(self, project_id):
         params = {'project_id': project_id}
-        response = self.http.get(
+        return self.make_paginated_request(
             '{}/v2/lbaas/listeners'.format(self._catalog.get_endpoint_by_type(Component.Types.LOAD_BALANCER.value)),
+            'listeners',
+            'id',
+            next_signifier='listeners_links',
             params=params,
         )
-        response.raise_for_status()
-        return response.json().get('listeners', [])
 
     def get_load_balancer_listener_stats(self, listener_id):
         response = self.http.get(
@@ -423,12 +533,13 @@ class ApiRest(Api):
 
     def get_load_balancer_pools(self, project_id):
         params = {'project_id': project_id}
-        response = self.http.get(
+        return self.make_paginated_request(
             '{}/v2/lbaas/pools'.format(self._catalog.get_endpoint_by_type(Component.Types.LOAD_BALANCER.value)),
+            'pools',
+            'id',
+            next_signifier='pools_links',
             params=params,
         )
-        response.raise_for_status()
-        return response.json().get('pools', [])
 
     def get_load_balancer_pool_members(self, pool_id, project_id):
         params = {'project_id': project_id}
@@ -463,12 +574,13 @@ class ApiRest(Api):
 
     def get_load_balancer_amphorae(self, project_id):
         params = {'project_id': project_id}
-        response = self.http.get(
+        return self.make_paginated_request(
             '{}/v2/octavia/amphorae'.format(self._catalog.get_endpoint_by_type(Component.Types.LOAD_BALANCER.value)),
+            'amphorae',
+            'id',
+            next_signifier='amphorae_links',
             params=params,
         )
-        response.raise_for_status()
-        return response.json().get('amphorae', [])
 
     def get_load_balancer_amphora_stats(self, amphora_id):
         response = self.http.get(
@@ -480,6 +592,34 @@ class ApiRest(Api):
         return response.json().get('amphora_stats', [])
 
     def get_glance_images(self):
-        response = self.http.get('{}/v2/images'.format(self._catalog.get_endpoint_by_type(Component.Types.IMAGE.value)))
+        return self.make_paginated_request(
+            '{}/v2/images'.format(self._catalog.get_endpoint_by_type(Component.Types.IMAGE.value)),
+            'images',
+            'id',
+            next_signifier='next',
+        )
+
+    def get_glance_members(self, image_id):
+        response = self.http.get(
+            '{}/v2/images/{}/members'.format(self._catalog.get_endpoint_by_type(Component.Types.IMAGE.value), image_id)
+        )
         response.raise_for_status()
-        return response.json().get('images', [])
+        return response.json().get('members', [])
+
+    def get_heat_stacks(self, project_id):
+        return self.make_paginated_request(
+            '{}/stacks'.format(self._catalog.get_endpoint_by_type(Component.Types.HEAT.value)),
+            'stacks',
+            'id',
+            next_signifier='links',
+        )
+
+    def get_swift_containers(self, account_id):
+        params = {'format': 'json'}
+        return self.make_paginated_request(
+            '{}'.format(self._catalog.get_endpoint_by_type(Component.Types.SWIFT.value)),
+            None,
+            'name',
+            next_signifier='name',
+            params=params,
+        )

@@ -5,6 +5,9 @@
 # Some metrics mapping are too long. This turns off the 120 line limit for this file:
 # ruff: noqa: E501
 
+# Karpenter metrics documentation
+# https://karpenter.sh/docs/reference/metrics/
+
 METRIC_MAP = {
     'certwatcher_read_certificate': 'certwatcher.read.certificate',
     'certwatcher_read_certificate_errors': 'certwatcher.read.certificate.errors',
@@ -39,12 +42,15 @@ METRIC_MAP = {
     'go_memstats_stack_sys_bytes': 'go.memstats.stack.sys_bytes',
     'go_memstats_sys_bytes': 'go.memstats.sys_bytes',
     'go_threads': 'go_threads',
+    'karpenter_build_info': 'build_info',
     'karpenter_cloudprovider_batcher_batch_size': 'cloudprovider.batcher.batch_size',
     'karpenter_cloudprovider_batcher_batch_time_seconds': 'cloudprovider.batcher.batch.time_seconds',
     'karpenter_cloudprovider_duration_seconds': 'cloudprovider.duration_seconds',
     'karpenter_cloudprovider_errors': 'cloudprovider.errors',
     'karpenter_cloudprovider_instance_type_cpu_cores': 'cloudprovider.instance.type.cpu_cores',
     'karpenter_cloudprovider_instance_type_memory_bytes': 'cloudprovider.instance.type.memory_bytes',
+    'karpenter_cloudprovider_instance_type_offering_available': 'cloudprovider.instance.type.offering_available',
+    'karpenter_cloudprovider_instance_type_offering_price_estimate': 'cloudprovider.instance.type.offering_price_estimate',
     'karpenter_cloudprovider_instance_type_price_estimate': 'cloudprovider.instance.type.price_estimate',
     'karpenter_consistency_errors': 'consistency.errors',
     'karpenter_deprovisioning_actions_performed': 'deprovisioning.actions_performed',
@@ -54,11 +60,15 @@ METRIC_MAP = {
     'karpenter_deprovisioning_replacement_machine_initialized_seconds': 'deprovisioning.replacement.machine.initialized_seconds',
     'karpenter_deprovisioning_replacement_machine_launch_failure_counter': 'deprovisioning.replacement.machine.launch.failure_counter',
     'karpenter_disruption_actions_performed': 'disruption.actions_performed',
+    'karpenter_disruption_budgets_allowed_disruptions': 'disruption.budgets.allowed_disruptions',
     'karpenter_disruption_consolidation_timeouts': 'disruption.consolidation_timeouts',
     'karpenter_disruption_eligible_nodes': 'disruption.eligible_nodes',
     'karpenter_disruption_evaluation_duration_seconds': 'disruption.evaluation.duration_seconds',
     'karpenter_disruption_replacement_nodeclaim_failures': 'disruption.replacement.nodeclaim.failures',
     'karpenter_disruption_replacement_nodeclaim_initialized_seconds': 'disruption.replacement.nodeclaim.initialized_seconds',
+    'karpenter_disruption_queue_depth': 'disruption.queue_depth',
+    'karpenter_disruption_pods_disrupted': 'disruption.pods.disrupted',
+    'karpenter_disruption_nodes_disrupted': 'disruption.nodes.disrupted',
     'karpenter_interruption_actions_performed': 'interruption.actions_performed',
     'karpenter_interruption_deleted_messages': 'interruption.deleted_messages',
     'karpenter_interruption_message_latency_time_seconds': 'interruption.message.latency.time_seconds',
@@ -89,13 +99,18 @@ METRIC_MAP = {
     'karpenter_nodes_total_daemon_requests': 'nodes.total.daemon_requests',
     'karpenter_nodes_total_pod_limits': 'nodes.total.pod_limits',
     'karpenter_nodes_total_pod_requests': 'nodes.total.pod_requests',
+    'karpenter_nodes_eviction_queue_depth': 'nodes.eviction.queue_depth',
     'karpenter_pods_startup_time_seconds': 'pods.startup.time_seconds',
     'karpenter_pods_state': 'pods.state',
     'karpenter_provisioner_limit': 'provisioner.limit',
     'karpenter_provisioner_scheduling_duration_seconds': 'provisioner.scheduling.duration_seconds',
     'karpenter_provisioner_scheduling_simulation_duration_seconds': 'provisioner.scheduling.simulation.duration_seconds',
+    'karpenter_provisioner_scheduling_queue_depth': 'provisioner.scheduling.queue_depth',
     'karpenter_provisioner_usage': 'provisioner.usage',
     'karpenter_provisioner_usage_pct': 'provisioner.usage.pct',
+    'karpenter_cluster_state_synced': 'cluster_state.synced',
+    'karpenter_cluster_state_node_count': 'cluster_state.node_count',
+    'leader_election_master_status': 'leader_election.master_status',
     'process_cpu_seconds': 'process.cpu_seconds',
     'process_max_fds': 'process.max_fds',
     'process_open_fds': 'process.open_fds',
@@ -111,6 +126,20 @@ METRIC_MAP = {
     'workqueue_retries': 'workqueue_retries',
     'workqueue_unfinished_work_seconds': 'workqueue.unfinished.work_seconds',
     'workqueue_work_duration_seconds': 'workqueue.work.duration_seconds',
+    # new Karpenter V1 metric names
+    'karpenter_nodes_termination_duration_seconds': 'nodes.termination.time_seconds',
+    'karpenter_pods_startup_duration_seconds': 'pods.startup.time_seconds',
+    'karpenter_voluntary_disruption_queue_failures': 'disruption.replacement.nodeclaim.failures',
+    'karpenter_voluntary_disruption_decision_evaluation_duration_seconds': 'disruption.evaluation.duration_seconds',
+    'karpenter_voluntary_disruption_eligible_nodes': 'disruption.eligible_nodes',
+    'karpenter_voluntary_disruption_consolidation_timeouts': 'disruption.consolidation_timeouts',
+    'karpenter_nodepools_allowed_disruptions': 'disruption.budgets.allowed_disruptions',
+    'karpenter_voluntary_disruption_decisions': 'disruption.actions_performed',
+    'karpenter_scheduler_scheduling_duration_seconds': 'provisioner.scheduling.simulation.duration_seconds',
+    'karpenter_scheduler_queue_depth': 'provisioner.scheduling.queue_depth',
+    'karpenter_interruption_message_queue_duration_seconds': 'interruption.message.latency.time_seconds',
+    'karpenter_nodepools_usage': 'nodepool_usage',
+    'karpenter_nodepools_limit': 'nodepool_limit',
 }
 
 RENAME_LABELS_MAP = {

@@ -16,6 +16,15 @@ if TYPE_CHECKING:
     from ddev.integration.manifest import Manifest
     from ddev.repo.config import RepositoryConfig
 
+# The manifest.json file can contain the source_type_name field that the validation uses to validate different parts
+# of the integration. Zabbix was renamed to Zabbix (Community Version) in the manifest.json file, so we need to map
+# it back to Zabbix for validations to pass
+EXCEPTION_MAPPER = {
+    'Zabbix (Community Version)': 'Zabbix',
+    'Scalr (Community Version)': 'Scalr',
+    'Zscaler (Community Version)': 'Zscaler',
+}
+
 
 class Integration:
     def __init__(self, path: Path, repo_path: Path, repo_config: RepositoryConfig):
@@ -95,6 +104,7 @@ class Integration:
     @cached_property
     def normalized_display_name(self) -> str:
         display_name = self.manifest.get('/assets/integration/source_type_name', self.name)
+        display_name = EXCEPTION_MAPPER.get(display_name, display_name)
         normalized_integration = re.sub("[^0-9A-Za-z-]", "_", display_name)
         normalized_integration = re.sub("_+", "_", normalized_integration)
         normalized_integration = normalized_integration.strip("_")
@@ -191,8 +201,7 @@ class Integration:
 
     @cached_property
     def is_testable(self) -> bool:
-        # TODO: remove tox when the Hatch migration is complete
-        return (self.path / 'hatch.toml').is_file() or (self.path / 'tox.ini').is_file()
+        return (self.path / 'hatch.toml').is_file()
 
     @cached_property
     def is_shippable(self) -> bool:

@@ -2,6 +2,125 @@
 
 <!-- towncrier release notes start -->
 
+## 34.1.0 / 2024-11-13
+
+***Added***:
+
+* Add MIT-0 license ([#18936](https://github.com/DataDog/integrations-core/pull/18936))
+
+***Fixed***:
+
+* fix author name not being normalized ([#18718](https://github.com/DataDog/integrations-core/pull/18718))
+
+## 34.0.0 / 2024-10-25
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18207](https://github.com/DataDog/integrations-core/pull/18207))
+* add check_only template for publishing platform integrations ([#18596](https://github.com/DataDog/integrations-core/pull/18596))
+* Add ``capture`` parameter to ``docker_run`` to capture ``docker compose`` output. ([#18878](https://github.com/DataDog/integrations-core/pull/18878))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+* Fix ddev create bug where README file gets overwritten ([#18879](https://github.com/DataDog/integrations-core/pull/18879))
+* Fix jmx based integrations test failing due to a missing jvm metric ([#18914](https://github.com/DataDog/integrations-core/pull/18914))
+
+## 33.1.0 / 2024-08-15
+
+***Added***:
+
+* Refactored integration name exclusion mapper and add new entries to exclusion mapper ([#18213](https://github.com/DataDog/integrations-core/pull/18213))
+
+## 33.0.0 / 2024-08-05
+
+***Removed***:
+
+* Remove `ddev release trello ...` commands. We no longer interact with Trello during agent release QA. ([#17615](https://github.com/DataDog/integrations-core/pull/17615))
+
+***Added***:
+
+* Show descriptions of templates in ddev create help. ([#18039](https://github.com/DataDog/integrations-core/pull/18039))
+* Add an exception for Zabbix (Community Edition) to pass validations ([#18197](https://github.com/DataDog/integrations-core/pull/18197))
+
+***Fixed***:
+
+* Improve messages around dependency spec management ([#17969](https://github.com/DataDog/integrations-core/pull/17969))
+* [NDM] Pin pysmi version for breaking generate traps DB tests ([#18066](https://github.com/DataDog/integrations-core/pull/18066))
+* Pin towncrier to 23.11, subsequent release broke us. ([#18168](https://github.com/DataDog/integrations-core/pull/18168))
+
+## 32.2.1 / 2024-06-28
+
+***Fixed***:
+
+* Update new integration template ([#17474](https://github.com/DataDog/integrations-core/pull/17474))
+
+## 32.2.0 / 2024-06-25
+
+***Security***:
+
+* Update pydantic to 2.7.3 to address CVE-2024-3772 ([#17802](https://github.com/DataDog/integrations-core/pull/17802))
+
+***Added***:
+
+* Add license override for requests-unixsocket2 ([#17702](https://github.com/DataDog/integrations-core/pull/17702))
+
+***Fixed***:
+
+* CheckEndpoints lets its clients pass alternative to `urllib.requests.urlopen` which:
+  1. exposes the external dependency more clearly
+  2. supports deterministic testing ([#17614](https://github.com/DataDog/integrations-core/pull/17614))
+* Replace DD_LOGS_CONFIG_DD_URL with DD_LOGS_CONFIG_LOGS_DD_URL ([#17890](https://github.com/DataDog/integrations-core/pull/17890))
+
+## 32.1.1 / 2024-05-09
+
+***Fixed***:
+
+* Fix trailing `,` in manifest.json generation template ([#17538](https://github.com/DataDog/integrations-core/pull/17538))
+
+## 32.1.0 / 2024-05-03
+
+***Added***:
+
+* Update the default dashboard template file to include directions for contributors. ([#17286](https://github.com/DataDog/integrations-core/pull/17286))
+* Add a new column to metadata.csv templates called `sample_tags` ([#17491](https://github.com/DataDog/integrations-core/pull/17491))
+
+***Fixed***:
+
+* Update the description for the `tls_ca_cert` config option to use `openssl rehash` instead of `c_rehash` ([#16981](https://github.com/DataDog/integrations-core/pull/16981))
+* Bump pytest and require flaky minimum version ([#17269](https://github.com/DataDog/integrations-core/pull/17269))
+* Remove trailing new line in template file ([#17513](https://github.com/DataDog/integrations-core/pull/17513))
+
+## 32.0.0 / 2024-03-21
+
+***Removed***:
+
+* Remove commands that are migrated to the new `ddev` CLI. ([#17008](https://github.com/DataDog/integrations-core/pull/17008)), ([#16995](https://github.com/DataDog/integrations-core/pull/16995))
+
+***Added***:
+
+* Update the configuration file to include the new oauth options parameter. ([#16835](https://github.com/DataDog/integrations-core/pull/16835))
+* Add a method to get the service check defined in the `service_checks.json` file for an integration. ([#16916](https://github.com/DataDog/integrations-core/pull/16916))
+* update custom_queries configuration to support optional collection_interval. ([#16957](https://github.com/DataDog/integrations-core/pull/16957))
+* Add utility function to assert service checks. ([#17071](https://github.com/DataDog/integrations-core/pull/17071))
+* Added a check to the `ddev validate codeowners` to make sure that logs assets are owned by `@DatadDog/logs-backend`. ([#17185](https://github.com/DataDog/integrations-core/pull/17185))
+* Allow the codeowners validation in integrations-core. ([#17199](https://github.com/DataDog/integrations-core/pull/17199))
+
+***Fixed***:
+
+* [ecos 1214] Remove old unused oauth manifest field. ([#16873](https://github.com/DataDog/integrations-core/pull/16873))
+* Starting version in templates aligns with changelog type. ([#16917](https://github.com/DataDog/integrations-core/pull/16917))
+* Bump the required python version in the integration templates. ([#16972](https://github.com/DataDog/integrations-core/pull/16972))
+* Explicitly list `localhost` as the address when port-forwarding with kind to avoid opening a pop-up. ([#17016](https://github.com/DataDog/integrations-core/pull/17016))
+* Pin pytest to fix `flaky` issues. ([#17042](https://github.com/DataDog/integrations-core/pull/17042))
+* Update the configuration to include the `metric_prefix` option. ([#17065](https://github.com/DataDog/integrations-core/pull/17065))
+* Print the info logs in the correct order in the `validate models -s` command. ([#17066](https://github.com/DataDog/integrations-core/pull/17066))
+* Don't crash when integration configuration spec is missing default templates. ([#17214](https://github.com/DataDog/integrations-core/pull/17214))
+
 ## 31.0.0 / 2024-02-06
 
 ***Changed***:

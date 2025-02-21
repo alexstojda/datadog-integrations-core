@@ -1,6 +1,7 @@
 # (C) Datadog, Inc. 2023-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
+import copy
 import logging
 import os
 
@@ -442,7 +443,7 @@ def test_disable_octavia_amphora_stats_metrics(aggregator, dd_run_check, instanc
 
 
 @pytest.mark.parametrize(
-    ('mock_http_post', 'session_auth', 'instance', 'api_type'),
+    ('mock_http_post', 'openstack_v3_password', 'instance', 'api_type'),
     [
         pytest.param(
             {'replace': {'/identity/v3/auth/tokens': lambda d: remove_service_from_catalog(d, ['load-balancer'])}},
@@ -459,10 +460,10 @@ def test_disable_octavia_amphora_stats_metrics(aggregator, dd_run_check, instanc
             id='api sdk',
         ),
     ],
-    indirect=['mock_http_post', 'session_auth'],
+    indirect=['mock_http_post', 'openstack_v3_password'],
 )
-@pytest.mark.usefixtures('mock_http_get', 'mock_http_post', 'openstack_connection')
-def test_not_in_catalog(aggregator, check, dd_run_check, caplog, mock_http_post, session_auth, api_type):
+@pytest.mark.usefixtures('mock_http_get', 'mock_http_post')
+def test_not_in_catalog(aggregator, check, dd_run_check, caplog, mock_http_post, openstack_connection, api_type):
     with caplog.at_level(logging.DEBUG):
         dd_run_check(check)
 
@@ -487,7 +488,7 @@ def test_not_in_catalog(aggregator, check, dd_run_check, caplog, mock_http_post,
             args_list += list(args)
         assert args_list.count('http://127.0.0.1:8080/identity/v3/auth/tokens') == 4
     if api_type == ApiType.SDK:
-        assert session_auth.get_access.call_count == 4
+        assert openstack_connection.call_count == 4
     assert '`load-balancer` component not found in catalog' in caplog.text
 
 
@@ -527,24 +528,37 @@ def test_response_time_exception(aggregator, check, dd_run_check, mock_http_get)
 
 
 @pytest.mark.parametrize(
-    ('instance'),
+    ('mock_http_get', 'instance'),
     [
         pytest.param(
+            {'elapsed_total_seconds': {'/load-balancer': 0.30706}},
             configs.REST,
             id='api rest',
         ),
         pytest.param(
+            {'elapsed_total_seconds': {'/load-balancer': 0.30706}},
             configs.SDK,
             id='api sdk',
         ),
     ],
+    indirect=['mock_http_get'],
 )
 @pytest.mark.usefixtures('mock_http_get', 'mock_http_post', 'openstack_connection')
 def test_response_time(aggregator, check, dd_run_check, mock_http_get):
     dd_run_check(check)
+    aggregator.assert_service_check(
+        'openstack.octavia.api.up',
+        status=AgentCheck.UNKNOWN,
+        count=0,
+    )
+    aggregator.assert_service_check(
+        'openstack.octavia.api.up',
+        status=AgentCheck.CRITICAL,
+        count=0,
+    )
     aggregator.assert_metric(
         'openstack.octavia.response_time',
-        count=1,
+        value=307.06,
         tags=['keystone_server:http://127.0.0.1:8080/identity'],
     )
     aggregator.assert_service_check(
@@ -760,6 +774,83 @@ def test_loadbalancers_metrics(aggregator, check, dd_run_check):
             'listener_id:de81cbdc-8207-4253-8f21-3eea9870e7a9',
         ],
     )
+
+
+@pytest.mark.parametrize(
+    ('instance', 'paginated_limit', 'api_type', 'expected_api_calls'),
+    [
+        pytest.param(
+            configs.REST,
+            1,
+            ApiType.REST,
+            3,
+            id='api rest small limit',
+        ),
+        pytest.param(
+            configs.REST,
+            1000,
+            ApiType.REST,
+            2,
+            id='api rest high limit',
+        ),
+        pytest.param(
+            configs.SDK,
+            1,
+            ApiType.SDK,
+            1,
+            id='api sdk small limit',
+        ),
+        pytest.param(
+            configs.SDK,
+            1000,
+            ApiType.SDK,
+            1,
+            id='api sdk high limit',
+        ),
+    ],
+)
+@pytest.mark.usefixtures('mock_http_get', 'mock_http_post', 'openstack_connection')
+def test_loadbalancers_pagination(
+    aggregator,
+    instance,
+    openstack_controller_check,
+    paginated_limit,
+    expected_api_calls,
+    api_type,
+    dd_run_check,
+    mock_http_get,
+    connection_load_balancer,
+):
+    paginated_instance = copy.deepcopy(instance)
+    paginated_instance['paginated_limit'] = paginated_limit
+    dd_run_check(openstack_controller_check(paginated_instance))
+    if api_type == ApiType.REST:
+        args_list = []
+        for call in mock_http_get.call_args_list:
+            args, kwargs = call
+            args_list += list(args)
+            params = kwargs.get('params', {})
+            limit = params.get('limit')
+            args_list += [(args[0], limit)]
+        assert (
+            args_list.count(('http://127.0.0.1:9876/load-balancer/v2/lbaas/loadbalancers', paginated_limit))
+            == expected_api_calls
+        )
+    else:
+        assert connection_load_balancer.load_balancers.call_count == 2
+        assert (
+            connection_load_balancer.load_balancers.call_args_list.count(
+                mock.call(project_id='1e6e233e637d4d55a50a62b63398ad15', limit=paginated_limit)
+            )
+            == 1
+        )
+        assert (
+            connection_load_balancer.load_balancers.call_args_list.count(
+                mock.call(project_id='6e39099cccde4f809b003d9e0dd09304', limit=paginated_limit)
+            )
+            == 1
+        )
+    test_loadbalancers_metrics(aggregator, openstack_controller_check(paginated_instance), dd_run_check)
 
 
 @pytest.mark.parametrize(
@@ -1349,6 +1440,84 @@ def test_listeners_metrics(aggregator, check, dd_run_check):
 
 
 @pytest.mark.parametrize(
+    ('instance', 'paginated_limit', 'api_type', 'expected_api_calls'),
+    [
+        pytest.param(
+            configs.REST,
+            1,
+            ApiType.REST,
+            4,
+            id='api rest small limit',
+        ),
+        pytest.param(
+            configs.REST,
+            1000,
+            ApiType.REST,
+            2,
+            id='api rest high limit',
+        ),
+        pytest.param(
+            configs.SDK,
+            1,
+            ApiType.SDK,
+            1,
+            id='api sdk small limit',
+        ),
+        pytest.param(
+            configs.SDK,
+            1000,
+            ApiType.SDK,
+            1,
+            id='api sdk high limit',
+        ),
+    ],
+)
+@pytest.mark.usefixtures('mock_http_get', 'mock_http_post', 'openstack_connection')
+def test_listeners_pagination(
+    aggregator,
+    instance,
+    openstack_controller_check,
+    paginated_limit,
+    expected_api_calls,
+    api_type,
+    dd_run_check,
+    mock_http_get,
+    connection_load_balancer,
+):
+    paginated_instance = copy.deepcopy(instance)
+    paginated_instance['paginated_limit'] = paginated_limit
+    dd_run_check(openstack_controller_check(paginated_instance))
+    if api_type == ApiType.REST:
+        args_list = []
+        for call in mock_http_get.call_args_list:
+            args, kwargs = call
+            args_list += list(args)
+            params = kwargs.get('params', {})
+            limit = params.get('limit')
+            args_list += [(args[0], limit)]
+        assert (
+            args_list.count(('http://127.0.0.1:9876/load-balancer/v2/lbaas/listeners', paginated_limit))
+            == expected_api_calls
+        )
+    else:
+        assert connection_load_balancer.listeners.call_count == 2
+        assert (
+            connection_load_balancer.listeners.call_args_list.count(
+                mock.call(project_id='1e6e233e637d4d55a50a62b63398ad15', limit=paginated_limit)
+            )
+            == 1
+        )
+        assert (
+            connection_load_balancer.listeners.call_args_list.count(
+                mock.call(project_id='6e39099cccde4f809b003d9e0dd09304', limit=paginated_limit)
+            )
+            == 1
+        )
+
+    test_listeners_metrics(aggregator, openstack_controller_check(paginated_instance), dd_run_check)
+
+
+@pytest.mark.parametrize(
     ('mock_http_get', 'connection_load_balancer', 'instance', 'api_type'),
     [
         pytest.param(
@@ -1453,6 +1622,83 @@ def test_pools_metrics(aggregator, check, dd_run_check):
             'provisioning_status:ACTIVE',
         ],
     )
+
+
+@pytest.mark.parametrize(
+    ('instance', 'paginated_limit', 'api_type', 'expected_api_calls'),
+    [
+        pytest.param(
+            configs.REST,
+            1,
+            ApiType.REST,
+            3,
+            id='api rest small limit',
+        ),
+        pytest.param(
+            configs.REST,
+            1000,
+            ApiType.REST,
+            2,
+            id='api rest high limit',
+        ),
+        pytest.param(
+            configs.SDK,
+            1,
+            ApiType.SDK,
+            1,
+            id='api sdk small limit',
+        ),
+        pytest.param(
+            configs.SDK,
+            1000,
+            ApiType.SDK,
+            1,
+            id='api sdk high limit',
+        ),
+    ],
+)
+@pytest.mark.usefixtures('mock_http_get', 'mock_http_post', 'openstack_connection')
+def test_pools_pagination(
+    aggregator,
+    instance,
+    openstack_controller_check,
+    paginated_limit,
+    expected_api_calls,
+    api_type,
+    dd_run_check,
+    mock_http_get,
+    connection_load_balancer,
+):
+    paginated_instance = copy.deepcopy(instance)
+    paginated_instance['paginated_limit'] = paginated_limit
+    dd_run_check(openstack_controller_check(paginated_instance))
+    if api_type == ApiType.REST:
+        args_list = []
+        for call in mock_http_get.call_args_list:
+            args, kwargs = call
+            args_list += list(args)
+            params = kwargs.get('params', {})
+            limit = params.get('limit')
+            args_list += [(args[0], limit)]
+        assert (
+            args_list.count(('http://127.0.0.1:9876/load-balancer/v2/lbaas/pools', paginated_limit))
+            == expected_api_calls
+        )
+    else:
+        assert connection_load_balancer.pools.call_count == 2
+        assert (
+            connection_load_balancer.pools.call_args_list.count(
+                mock.call(project_id='1e6e233e637d4d55a50a62b63398ad15', limit=paginated_limit)
+            )
+            == 1
+        )
+        assert (
+            connection_load_balancer.pools.call_args_list.count(
+                mock.call(project_id='6e39099cccde4f809b003d9e0dd09304', limit=paginated_limit)
+            )
+            == 1
+        )
+    test_pools_metrics(aggregator, openstack_controller_check(paginated_instance), dd_run_check)
 
 
 @pytest.mark.parametrize(
@@ -2417,3 +2663,80 @@ def test_amphorae_metrics(aggregator, check, dd_run_check):
             'status:ALLOCATED',
         ],
     )
+
+
+@pytest.mark.parametrize(
+    ('instance', 'paginated_limit', 'api_type', 'expected_api_calls'),
+    [
+        pytest.param(
+            configs.REST,
+            1,
+            ApiType.REST,
+            3,
+            id='api rest small limit',
+        ),
+        pytest.param(
+            configs.REST,
+            1000,
+            ApiType.REST,
+            2,
+            id='api rest high limit',
+        ),
+        pytest.param(
+            configs.SDK,
+            1,
+            ApiType.SDK,
+            1,
+            id='api sdk small limit',
+        ),
+        pytest.param(
+            configs.SDK,
+            1000,
+            ApiType.SDK,
+            1,
+            id='api sdk high limit',
+        ),
+    ],
+)
+@pytest.mark.usefixtures('mock_http_get', 'mock_http_post', 'openstack_connection')
+def test_amphorae_pagination(
+    aggregator,
+    instance,
+    openstack_controller_check,
+    paginated_limit,
+    expected_api_calls,
+    api_type,
+    dd_run_check,
+    mock_http_get,
+    connection_load_balancer,
+):
+    paginated_instance = copy.deepcopy(instance)
+    paginated_instance['paginated_limit'] = paginated_limit
+    dd_run_check(openstack_controller_check(paginated_instance))
+    if api_type == ApiType.REST:
+        args_list = []
+        for call in mock_http_get.call_args_list:
+            args, kwargs = call
+            args_list += list(args)
+            params = kwargs.get('params', {})
+            limit = params.get('limit')
+            args_list += [(args[0], limit)]
+        assert (
+            args_list.count(('http://127.0.0.1:9876/load-balancer/v2/octavia/amphorae', paginated_limit))
+            == expected_api_calls
+        )
+    else:
+        assert connection_load_balancer.amphorae.call_count == 2
+        assert (
+            connection_load_balancer.amphorae.call_args_list.count(
+                mock.call(project_id='1e6e233e637d4d55a50a62b63398ad15', limit=paginated_limit)
+            )
+            == 1
+        )
+        assert (
+            connection_load_balancer.amphorae.call_args_list.count(
+                mock.call(project_id='6e39099cccde4f809b003d9e0dd09304', limit=paginated_limit)
+            )
+            == 1
+        )
+    test_amphorae_metrics(aggregator, openstack_controller_check(paginated_instance), dd_run_check)

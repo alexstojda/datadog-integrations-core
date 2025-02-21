@@ -13,10 +13,10 @@ from .util import (
     ACTIVITY_METRICS_LT_8_3,
     ACTIVITY_QUERY_10,
     ACTIVITY_QUERY_LT_10,
+    CHECKSUM_METRICS,
     COMMON_ARCHIVER_METRICS,
     COMMON_BGW_METRICS,
     COMMON_METRICS,
-    COUNT_METRICS,
     DATABASE_SIZE_METRICS,
     DBM_MIGRATED_METRICS,
     NEWER_14_METRICS,
@@ -28,7 +28,7 @@ from .util import (
     REPLICATION_METRICS_10,
     REPLICATION_STATS_METRICS,
 )
-from .version_utils import V8_3, V9, V9_1, V9_2, V9_4, V9_6, V10, V14
+from .version_utils import V8_3, V9, V9_1, V9_2, V9_4, V9_6, V10, V12, V14
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,9 @@ class PostgresMetricsCache:
             if self.config.collect_database_size_metrics:
                 self.instance_metrics.update(DATABASE_SIZE_METRICS)
 
+            if self.config.collect_checksum_metrics and version >= V12:
+                self.instance_metrics = dict(self.instance_metrics, **CHECKSUM_METRICS)
+
             metrics = self.instance_metrics
 
         res = {
@@ -94,17 +97,18 @@ class PostgresMetricsCache:
             'metrics': metrics,
             'query': "SELECT psd.datname, {metrics_columns} "
             "FROM pg_stat_database psd "
-            "JOIN pg_database pd ON psd.datname = pd.datname",
+            "JOIN pg_database pd ON psd.datname = pd.datname "
+            "WHERE 1=1",
             'relation': False,
             'name': 'instance_metrics',
         }
 
-        res["query"] += " WHERE " + " AND ".join(
-            "psd.datname not ilike '{}'".format(db) for db in self.config.ignore_databases
-        )
-
         if self.config.dbstrict:
             res["query"] += " AND psd.datname in('{}')".format(self.config.dbname)
+        elif len(self.config.ignore_databases) > 0:
+            res["query"] += " AND " + " AND ".join(
+                "psd.datname not ilike '{}'".format(db) for db in self.config.ignore_databases
+            )
 
         return res
 
@@ -132,16 +136,6 @@ class PostgresMetricsCache:
             'relation': False,
             'name': 'bgw_metrics',
         }
-
-    def get_count_metrics(self):
-        if self._count_metrics is not None:
-            return self._count_metrics
-        metrics = dict(COUNT_METRICS)
-        metrics['query'] = COUNT_METRICS['query'].format(
-            metrics_columns="{metrics_columns}", table_count_limit=self.config.table_count_limit
-        )
-        self._count_metrics = metrics
-        return metrics
 
     def get_archiver_metrics(self, version):
         """Use COMMON_ARCHIVER_METRICS to read from pg_stat_archiver as

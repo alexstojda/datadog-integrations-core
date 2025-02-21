@@ -1,18 +1,18 @@
 # (C) Datadog, Inc. 2010-present
 # All rights reserved
 # Licensed under Simplified BSD License (see LICENSE)
+import contextlib
 import socket
 import time
 
 import mock
 import psycopg2
 import pytest
-from flaky import flaky
 
 from datadog_checks.base.errors import ConfigurationError
 from datadog_checks.postgres import PostgreSql
 from datadog_checks.postgres.__about__ import __version__
-from datadog_checks.postgres.util import PartialFormatter, fmt
+from datadog_checks.postgres.util import BUFFERCACHE_METRICS, DatabaseHealthCheckError, PartialFormatter, fmt
 
 from .common import (
     COMMON_METRICS,
@@ -23,6 +23,7 @@ from .common import (
     POSTGRES_VERSION,
     USER_ADMIN,
     _get_expected_tags,
+    _iterate_metric_name,
     assert_metric_at_least,
     check_activity_metrics,
     check_bgw_metrics,
@@ -37,6 +38,7 @@ from .common import (
     check_physical_replication_slots,
     check_slru_metrics,
     check_snapshot_txid_metrics,
+    check_stat_io_metrics,
     check_stat_replication,
     check_stat_wal_metrics,
     check_uptime_metrics,
@@ -50,6 +52,7 @@ from .utils import (
     kill_vacuum,
     requires_over_10,
     requires_over_14,
+    requires_over_16,
     run_one_check,
     run_vacuum_thread,
 )
@@ -66,7 +69,9 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures('dd_environment')
 def test_common_metrics(aggregator, integration_check, pg_instance, is_aurora):
     check = integration_check(pg_instance)
     check.is_aurora = is_aurora
-    check.check(pg_instance)
+
+    # Use check.run() to go through initilization queries
+    check.run()
 
     expected_tags = _get_expected_tags(check, pg_instance)
     check_common_metrics(aggregator, expected_tags=expected_tags)
@@ -101,6 +106,14 @@ def _increase_txid(cur):
     cur.execute(query)
 
 
+def test_initialization_tags(integration_check, pg_instance):
+    check = integration_check(pg_instance)
+    check.run()
+    # After run, initialization queries should have set system identifier and cluster_name tags
+    assert check.cluster_name == 'primary'
+    assert check.system_identifier is not None
+
+
 def test_snapshot_xmin(aggregator, integration_check, pg_instance):
     with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
         conn.set_session(autocommit=True)
@@ -112,7 +125,7 @@ def test_snapshot_xmin(aggregator, integration_check, pg_instance):
             cur.execute(query)
             xmin = float(cur.fetchall()[0][0])
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
 
     expected_tags = _get_expected_tags(check, pg_instance)
     aggregator.assert_metric('postgresql.snapshot.xmin', count=1, tags=expected_tags)
@@ -128,7 +141,7 @@ def test_snapshot_xmin(aggregator, integration_check, pg_instance):
 
     aggregator.reset()
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
     aggregator.assert_metric('postgresql.snapshot.xmin', count=1, tags=expected_tags)
     assert aggregator.metrics('postgresql.snapshot.xmin')[0].value > xmin
     aggregator.assert_metric('postgresql.snapshot.xmax', count=1, tags=expected_tags)
@@ -152,7 +165,7 @@ def test_snapshot_xip(aggregator, integration_check, pg_instance):
             _increase_txid(cur2)
 
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
 
     # Cleanup
     cur.close()
@@ -165,7 +178,7 @@ def test_snapshot_xip(aggregator, integration_check, pg_instance):
 def test_common_metrics_without_size(aggregator, integration_check, pg_instance):
     pg_instance['collect_database_size_metrics'] = False
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
     assert 'postgresql.database_size' not in aggregator.metric_names
 
 
@@ -175,7 +188,7 @@ def test_uptime(aggregator, integration_check, pg_instance):
             cur.execute("SELECT FLOOR(EXTRACT(EPOCH FROM current_timestamp - pg_postmaster_start_time()))")
             uptime = cur.fetchall()[0][0]
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
     expected_tags = _get_expected_tags(check, pg_instance)
     assert_metric_at_least(
         aggregator, 'postgresql.uptime', count=1, lower_bound=uptime, higher_bound=uptime + 1, tags=expected_tags
@@ -185,7 +198,7 @@ def test_uptime(aggregator, integration_check, pg_instance):
 @requires_over_14
 def test_session_number(aggregator, integration_check, pg_instance):
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
     expected_tags = _get_expected_tags(check, pg_instance, db='postgres')
     with _get_conn(pg_instance) as conn:
         with conn.cursor() as cur:
@@ -201,7 +214,7 @@ def test_session_number(aggregator, integration_check, pg_instance):
     time.sleep(0.5)
 
     aggregator.reset()
-    check.check(pg_instance)
+    check.run()
 
     aggregator.assert_metric('postgresql.sessions.count', value=session_number + 1, count=1, tags=expected_tags)
 
@@ -217,7 +230,7 @@ def test_session_idle_and_killed(aggregator, integration_check, pg_instance):
     time.sleep(0.5)
 
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
     expected_tags = _get_expected_tags(check, pg_instance, db=DB_NAME)
 
     aggregator.assert_metric('postgresql.sessions.idle_in_transaction_time', value=0, count=1, tags=expected_tags)
@@ -245,7 +258,7 @@ def test_session_idle_and_killed(aggregator, integration_check, pg_instance):
     sock.shutdown(socket.SHUT_RDWR)
 
     aggregator.reset()
-    check.check(pg_instance)
+    check.run()
 
     assert_metric_at_least(
         aggregator, 'postgresql.sessions.idle_in_transaction_time', count=1, lower_bound=0.5, tags=expected_tags
@@ -270,7 +283,7 @@ def test_unsupported_replication(aggregator, integration_check, pg_instance):
     # This simulate an error in the fmt function, as it's a bit hard to mock psycopg
     with mock.patch.object(fmt, 'format', passthrough=True) as mock_fmt:
         mock_fmt.side_effect = format_with_error
-        check.check(pg_instance)
+        check.run()
 
     # Verify our mocking was called
     assert called == [True]
@@ -285,7 +298,7 @@ def test_can_connect_service_check(aggregator, integration_check, pg_instance):
     # First: check run with a valid postgres instance
     check = integration_check(pg_instance)
 
-    check.check(pg_instance)
+    check.run()
     expected_tags = _get_expected_tags(check, pg_instance, with_db=True)
     aggregator.assert_service_check('postgres.can_connect', count=1, status=PostgreSql.OK, tags=expected_tags)
     aggregator.reset()
@@ -298,7 +311,9 @@ def test_can_connect_service_check(aggregator, integration_check, pg_instance):
         check.db = mock.MagicMock(side_effect=AttributeError('foo'))
         check.check(pg_instance)
     # Since we can't connect to the host, we can't gather the replication role
-    tags_without_role = _get_expected_tags(check, pg_instance, with_db=True, with_version=False, role=None)
+    tags_without_role = _get_expected_tags(
+        check, pg_instance, with_db=True, with_version=False, with_sys_id=False, with_cluster_name=False, role=None
+    )
     aggregator.assert_service_check('postgres.can_connect', count=1, status=PostgreSql.CRITICAL, tags=tags_without_role)
     aggregator.reset()
 
@@ -307,26 +322,60 @@ def test_can_connect_service_check(aggregator, integration_check, pg_instance):
     check.check(pg_instance)
     aggregator.assert_service_check('postgres.can_connect', count=1, status=PostgreSql.OK, tags=expected_tags)
 
+    # Forth: connection health check failed
+    with pytest.raises(DatabaseHealthCheckError):
+        db = mock.MagicMock()
+        db.cursor().__enter__().execute.side_effect = psycopg2.OperationalError('foo')
 
-def test_schema_metrics(aggregator, integration_check, pg_instance):
-    pg_instance['table_count_limit'] = 1
-    check = integration_check(pg_instance)
-    check.check(pg_instance)
+        @contextlib.contextmanager
+        def mock_db():
+            yield db
 
-    expected_tags = _get_expected_tags(check, pg_instance, db=DB_NAME, schema='public')
-    aggregator.assert_metric('postgresql.table.count', value=1, count=1, tags=expected_tags)
-    aggregator.assert_metric('postgresql.db.count', value=106, count=1)
+        check.db = mock_db
+        check.check(pg_instance)
+    aggregator.assert_service_check('postgres.can_connect', count=1, status=PostgreSql.CRITICAL, tags=tags_without_role)
+    aggregator.reset()
 
 
 def test_connections_metrics(aggregator, integration_check, pg_instance):
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
 
     expected_tags = _get_expected_tags(check, pg_instance)
     for name in CONNECTION_METRICS:
         aggregator.assert_metric(name, count=1, tags=expected_tags)
     expected_tags += ['db:datadog_test']
     aggregator.assert_metric('postgresql.connections', count=1, tags=expected_tags)
+
+
+@requires_over_10
+def test_buffercache_metrics(aggregator, integration_check, pg_instance):
+    pg_instance['collect_buffercache_metrics'] = True
+    check = integration_check(pg_instance)
+
+    with _get_superconn(pg_instance) as conn:
+        with conn.cursor() as cur:
+            # Flush possible dirty buffers
+            cur.execute('CHECKPOINT;')
+            # Generate some usage on persons relation
+            cur.execute('select * FROM persons;')
+
+    check.run()
+    base_tags = _get_expected_tags(check, pg_instance)
+
+    # Check specific persons relation
+    persons_tags = base_tags + ['relation:persons', 'db:datadog_test', 'schema:public']
+    metrics_not_emitted_if_zero = ['postgresql.buffercache.pinning_backends', 'postgresql.buffercache.dirty_buffers']
+    for metric in _iterate_metric_name(BUFFERCACHE_METRICS):
+        if metric in metrics_not_emitted_if_zero:
+            aggregator.assert_metric(metric, count=0, tags=persons_tags)
+        else:
+            aggregator.assert_metric(metric, count=1, tags=persons_tags)
+
+    # Check metric reported for unused buffers
+    unused_buffers_tags = base_tags + ['db:shared']
+    unused_metric = 'postgresql.buffercache.unused_buffers'
+    aggregator.assert_metric(unused_metric, count=1, tags=unused_buffers_tags)
 
 
 def test_locks_metrics_no_relations(aggregator, integration_check, pg_instance):
@@ -337,7 +386,7 @@ def test_locks_metrics_no_relations(aggregator, integration_check, pg_instance):
     with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
         with conn.cursor() as cur:
             cur.execute('LOCK persons')
-            check.check(pg_instance)
+            check.run()
 
     aggregator.assert_metric('postgresql.locks', count=0)
 
@@ -345,7 +394,7 @@ def test_locks_metrics_no_relations(aggregator, integration_check, pg_instance):
 def test_activity_metrics(aggregator, integration_check, pg_instance):
     pg_instance['collect_activity_metrics'] = True
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
 
     expected_tags = _get_expected_tags(check, pg_instance, db=DB_NAME, app='datadog-agent', user='datadog')
     check_activity_metrics(aggregator, expected_tags)
@@ -355,7 +404,7 @@ def test_activity_metrics_no_application_aggregation(aggregator, integration_che
     pg_instance['collect_activity_metrics'] = True
     pg_instance['activity_metrics_excluded_aggregations'] = ['application_name']
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
 
     expected_tags = _get_expected_tags(check, pg_instance, db=DB_NAME, user='datadog')
     check_activity_metrics(aggregator, expected_tags)
@@ -367,7 +416,7 @@ def test_activity_metrics_no_aggregations(aggregator, integration_check, pg_inst
     # Setting it should issue a warning, be ignored and still produce an aggregation by db
     pg_instance['activity_metrics_excluded_aggregations'] = ['datname', 'application_name', 'usename']
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
 
     expected_tags = _get_expected_tags(check, pg_instance, db=DB_NAME)
     check_activity_metrics(aggregator, expected_tags)
@@ -398,7 +447,7 @@ def test_activity_vacuum_excluded(aggregator, integration_check, pg_instance):
     _increase_txid(cur)
 
     # Gather metrics
-    check.check(pg_instance)
+    check.run()
 
     expected_tags = _get_expected_tags(check, pg_instance, db=DB_NAME, app='test', user=USER_ADMIN)
     aggregator.assert_metric('postgresql.waiting_queries', value=1, count=1, tags=expected_tags)
@@ -414,12 +463,12 @@ def test_activity_vacuum_excluded(aggregator, integration_check, pg_instance):
     thread.join()
 
 
-@flaky(max_runs=5)
+@pytest.mark.flaky(max_runs=10)
 def test_backend_transaction_age(aggregator, integration_check, pg_instance):
     pg_instance['collect_activity_metrics'] = True
     check = integration_check(pg_instance)
 
-    check.check(pg_instance)
+    check.run()
 
     dd_agent_tags = _get_expected_tags(check, pg_instance, db=DB_NAME, app='datadog-agent', user='datadog')
     test_tags = _get_expected_tags(check, pg_instance, db=DB_NAME, app='test', user='datadog')
@@ -442,7 +491,7 @@ def test_backend_transaction_age(aggregator, integration_check, pg_instance):
     start_transaction_time = time.time()
 
     aggregator.reset()
-    check.check(pg_instance)
+    check.run()
 
     if float(POSTGRES_VERSION) >= 9.6:
         aggregator.assert_metric('postgresql.activity.backend_xid_age', value=1, count=1, tags=test_tags)
@@ -466,7 +515,7 @@ def test_backend_transaction_age(aggregator, integration_check, pg_instance):
 
     aggregator.reset()
     transaction_age_lower_bound = time.time() - start_transaction_time
-    check.check(pg_instance)
+    check.run()
 
     if float(POSTGRES_VERSION) >= 9.6:
         # Check that the xmin and xid is 2 tx old
@@ -497,12 +546,12 @@ def test_wrong_version(integration_check, pg_instance):
     # Enforce the wrong version
     check._version_utils.get_raw_version = mock.MagicMock(return_value="9.6.0")
 
-    check.check(pg_instance)
+    check.run()
     assert_state_clean(check)
     # Reset the mock to a good version
     check._version_utils.get_raw_version = mock.MagicMock(return_value="13.0.0")
 
-    check.check(pg_instance)
+    check.run()
     assert_state_set(check)
 
 
@@ -549,7 +598,7 @@ def test_state_clears_on_connection_error(integration_check, pg_instance):
     'is_aurora',
     [True, False],
 )
-@flaky(max_runs=5)
+@pytest.mark.flaky(max_runs=5)
 def test_wal_stats(aggregator, integration_check, pg_instance, is_aurora):
     conn = _get_superconn(pg_instance)
     with conn.cursor() as cur:
@@ -570,7 +619,7 @@ def test_wal_stats(aggregator, integration_check, pg_instance, is_aurora):
     check.is_aurora = is_aurora
     if is_aurora is True:
         return
-    check.check(pg_instance)
+    check.run()
 
     expected_tags = _get_expected_tags(check, pg_instance)
     aggregator.assert_metric('postgresql.wal.records', count=1, tags=expected_tags)
@@ -616,7 +665,7 @@ def test_wal_metrics(aggregator, integration_check, pg_instance, is_aurora):
         cur.execute("select count(*) from pg_ls_waldir();")
         expected_num_wals = cur.fetchall()[0][0]
 
-    check.check(pg_instance)
+    check.run()
 
     expected_wal_size = expected_num_wals * wal_size
     dd_agent_tags = _get_expected_tags(check, pg_instance)
@@ -626,7 +675,7 @@ def test_wal_metrics(aggregator, integration_check, pg_instance, is_aurora):
 
 def test_pg_control(aggregator, integration_check, pg_instance):
     check = integration_check(pg_instance)
-    check.check(pg_instance)
+    check.run()
 
     dd_agent_tags = _get_expected_tags(check, pg_instance)
     aggregator.assert_metric('postgresql.control.timeline_id', count=1, value=1, tags=dd_agent_tags)
@@ -636,7 +685,7 @@ def test_pg_control(aggregator, integration_check, pg_instance):
         cur.execute("CHECKPOINT;")
 
     aggregator.reset()
-    check.check(pg_instance)
+    check.run()
     # checkpoint should be less than 2s old
     assert_metric_at_least(
         aggregator, 'postgresql.control.checkpoint_delay', count=1, higher_bound=2.0, tags=dd_agent_tags
@@ -648,9 +697,11 @@ def test_config_tags_is_unchanged_between_checks(integration_check, pg_instance)
     check = integration_check(pg_instance)
 
     # Put elements in set as we don't care about order, only elements equality
-    expected_tags = set(_get_expected_tags(check, pg_instance, db=DB_NAME, with_version=False, role=None))
+    expected_tags = set(
+        _get_expected_tags(check, pg_instance, db=DB_NAME, with_version=False, with_sys_id=False, role=None)
+    )
     for _ in range(3):
-        check.check(pg_instance)
+        check.run()
         assert set(check._config.tags) == expected_tags
 
 
@@ -679,11 +730,8 @@ def test_correct_hostname(dbm_enabled, reported_hostname, expected_hostname, agg
         'datadog_checks.postgres.PostgreSql.resolve_db_host', return_value=expected_hostname
     ) as resolve_db_host:
         check = PostgreSql('test_instance', {}, [pg_instance])
-        check.check(pg_instance)
-        if reported_hostname:
-            assert resolve_db_host.called is False, 'Expected resolve_db_host.called to be False'
-        else:
-            assert resolve_db_host.called is True
+        check.run()
+        assert resolve_db_host.called is True
 
     expected_tags_no_db = _get_expected_tags(check, pg_instance, server=HOST)
     expected_tags_with_db = expected_tags_no_db + ['db:datadog_test']
@@ -726,7 +774,7 @@ def test_database_instance_metadata(aggregator, pg_instance, dbm_enabled, report
     expected_host = reported_hostname if reported_hostname else 'stubbed.hostname'
     expected_tags = pg_instance['tags'] + ['port:{}'.format(pg_instance['port'])]
     check = PostgreSql('test_instance', {}, [pg_instance])
-    run_one_check(check, pg_instance)
+    run_one_check(check)
 
     dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
     event = next((e for e in dbm_metadata if e['kind'] == 'database_instance'), None)
@@ -735,7 +783,7 @@ def test_database_instance_metadata(aggregator, pg_instance, dbm_enabled, report
     assert event['dbms'] == "postgres"
     assert event['tags'].sort() == expected_tags.sort()
     assert event['integration_version'] == __version__
-    assert event['collection_interval'] == 1800
+    assert event['collection_interval'] == 300
     assert event['metadata'] == {
         'dbm': dbm_enabled,
         'connection_host': pg_instance['host'],
@@ -743,7 +791,7 @@ def test_database_instance_metadata(aggregator, pg_instance, dbm_enabled, report
 
     # Run a second time and expect the metadata to not be emitted again because of the cache TTL
     aggregator.reset()
-    run_one_check(check, pg_instance)
+    run_one_check(check)
 
     dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
     event = next((e for e in dbm_metadata if e['kind'] == 'database_instance'), None)
@@ -766,9 +814,9 @@ def test_database_instance_metadata(aggregator, pg_instance, dbm_enabled, report
                 "instance_endpoint": "mydb.cfxgae8cilcf.us-east-1.rds.amazonaws.com",
                 "region": "us-east-1",
             },
-            psycopg2.OperationalError,
-            'password authentication failed',
-            True,
+            None,
+            None,
+            False,
         ),
         (
             {
@@ -786,9 +834,9 @@ def test_database_instance_metadata(aggregator, pg_instance, dbm_enabled, report
             {
                 'region': 'us-east-1',
             },
-            psycopg2.OperationalError,
-            'password authentication failed',
-            True,
+            None,
+            None,
+            False,
         ),
         (
             {
@@ -1038,14 +1086,6 @@ def assert_state_set(check):
     assert check.metrics_cache.replication_metrics
 
 
-def test_host_autodiscover_init_config(aggregator, pg_host_autodiscover_init_config):
-    check_with_init = PostgreSql('test_instance', pg_host_autodiscover_init_config, [{}])
-    assert check_with_init._config.host_autodiscovery_enabled is True
-    check_with_init.check({})
-    # assert that the service check is OK
-    aggregator.assert_service_check('postgres.can_connect', count=1, status=PostgreSql.OK)
-
-
 @requires_over_10
 def test_replication_tag(aggregator, integration_check, pg_instance):
     test_metric = 'postgresql.db.count'
@@ -1054,7 +1094,7 @@ def test_replication_tag(aggregator, integration_check, pg_instance):
     check = integration_check(pg_instance)
 
     # no replication
-    check.check(pg_instance)
+    check.run()
     aggregator.assert_metric(test_metric, tags=_get_expected_tags(check, pg_instance, role=None))
     aggregator.reset()
 
@@ -1062,12 +1102,90 @@ def test_replication_tag(aggregator, integration_check, pg_instance):
     pg_instance['tag_replication_role'] = True
     check = integration_check(pg_instance)
 
-    check.check(pg_instance)
+    check.run()
     aggregator.assert_metric(test_metric, tags=_get_expected_tags(check, pg_instance, role='master'))
     aggregator.reset()
 
     # switchover: master -> standby
     standby_role = 'standby'
     check._get_replication_role = mock.MagicMock(return_value=standby_role)
-    check.check(pg_instance)
+    check.run()
     aggregator.assert_metric(test_metric, tags=_get_expected_tags(check, pg_instance, role=standby_role))
+
+
+@pytest.mark.parametrize(
+    'collect_wal_metrics',
+    [True, False, None],
+)
+@requires_over_10
+def test_collect_wal_metrics_metrics(aggregator, integration_check, pg_instance, collect_wal_metrics):
+    pg_instance['collect_wal_metrics'] = collect_wal_metrics
+    check = integration_check(pg_instance)
+    check.is_aurora = False
+    check.check(pg_instance)
+
+    expected_tags = _get_expected_tags(check, pg_instance, with_cluster_name=False, with_sys_id=False)
+    # if collect_wal_metrics is not set, wal metrics are collected on pg >= 10 by default
+    expected_count = 0 if collect_wal_metrics is False else 1
+    check_file_wal_metrics(aggregator, expected_tags=expected_tags, count=expected_count)
+
+
+@pytest.mark.parametrize(
+    'instance_propagate_agent_tags,init_config_propagate_agent_tags,should_propagate_agent_tags',
+    [
+        pytest.param(True, True, True, id="both true"),
+        pytest.param(True, False, True, id="instance config true prevails"),
+        pytest.param(False, True, False, id="instance config false prevails"),
+        pytest.param(False, False, False, id="both false"),
+        pytest.param(None, True, True, id="init_config true applies to all instances"),
+        pytest.param(None, False, False, id="init_config false applies to all instances"),
+        pytest.param(None, None, False, id="default to false"),
+        pytest.param(True, None, True, id="instance config true prevails, init_config is None"),
+        pytest.param(False, None, False, id="instance config false prevails, init_config is None"),
+    ],
+)
+def test_propagate_agent_tags(
+    aggregator,
+    integration_check,
+    pg_instance,
+    instance_propagate_agent_tags,
+    init_config_propagate_agent_tags,
+    should_propagate_agent_tags,
+):
+    init_config = {}
+    if instance_propagate_agent_tags is not None:
+        pg_instance['propagate_agent_tags'] = instance_propagate_agent_tags
+    if init_config_propagate_agent_tags is not None:
+        init_config['propagate_agent_tags'] = init_config_propagate_agent_tags
+
+    agent_tags = ["my-env:test-env", "random:tag", "bar:foo"]
+
+    with mock.patch('datadog_checks.postgres.config.get_agent_host_tags', return_value=agent_tags):
+        check = integration_check(pg_instance, init_config)
+        assert check._config._should_propagate_agent_tags(pg_instance, init_config) == should_propagate_agent_tags
+        if should_propagate_agent_tags:
+            assert all(tag in check.tags for tag in agent_tags)
+            check.run()
+            expected_tags = _get_expected_tags(check, pg_instance, with_db=True)
+            aggregator.assert_service_check(
+                'postgres.can_connect', count=1, status=PostgreSql.OK, tags=expected_tags + agent_tags
+            )
+
+
+@requires_over_16
+@pytest.mark.parametrize(
+    'dbm_enabled',
+    [True, False],
+)
+def test_pg_stat_io_metrics(aggregator, integration_check, pg_instance, dbm_enabled):
+    pg_instance['dbm'] = dbm_enabled
+    # this will block on cancel and wait for the coll interval of 600 seconds,
+    # unless the collection_interval is set to a short amount of time
+    pg_instance['collect_resources'] = {'collection_interval': 0.1}
+
+    check = integration_check(pg_instance)
+    run_one_check(check)
+
+    expected_tags = _get_expected_tags(check, pg_instance)
+    expected_count = 0 if dbm_enabled is False else 1
+    check_stat_io_metrics(aggregator, expected_tags, count=expected_count)

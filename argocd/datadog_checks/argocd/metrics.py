@@ -22,7 +22,7 @@ GENERAL_METRICS = {
     'go_memstats_mallocs': 'go.memstats.mallocs',
     'go_memstats_mcache_inuse_bytes': 'go.memstats.mcache.inuse_bytes',
     'go_memstats_mcache_sys_bytes': 'go.memstats.mcache.sys_bytes',
-    'go_memstats_mspan_inuse_bytes': 'go.memstats.mspan.inuse_use',
+    'go_memstats_mspan_inuse_bytes': 'go.memstats.mspan.inuse_bytes',
     'go_memstats_mspan_sys_bytes': 'go.memstats.mspan.sys_bytes',
     'go_memstats_next_gc_bytes': 'go.memstats.next.gc_bytes',
     'go_memstats_other_sys_bytes': 'go.memstats.other.sys_bytes',
@@ -64,9 +64,13 @@ APPLICATION_CONTROLLER = {
 APPSET_CONTROLLER = {
     'controller_runtime_active_workers': 'active.workers',
     'controller_runtime_max_concurrent_reconciles': 'max.concurrent.reconciles',
-    'controller_runtime_reconcile_errors_total': 'reconcile.errors.total',
+    'controller_runtime_reconcile_errors': 'reconcile.errors',
     'controller_runtime_reconcile_time_seconds': 'reconcile.time_seconds',
-    'controller_runtime_reconcile_total': 'runtime.reconcile.total',
+    'controller_runtime_reconcile': 'runtime.reconcile',
+    'argocd_appset_info': 'appset.info',
+    'argocd_appset_reconcile': 'appset.reconcile',
+    'argocd_appset_owned_applications': 'appset.owned.applications',
+    'argocd_appset_labels': 'appset.labels',
 }
 
 API_SERVER = {

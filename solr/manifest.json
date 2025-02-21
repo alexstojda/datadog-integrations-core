@@ -17,7 +17,8 @@
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -50,13 +51,10 @@
       "auto_install": true
     },
     "dashboards": {
-      "solr": "assets/dashboards/solr_dashboard.json"
+      "solr": "assets/dashboards/solr_overview.json"
     },
     "saved_views": {
       "solr_processes": "assets/saved_views/solr_processes.json"
-    },
-    "logs": {
-      "source": "solr"
     }
   }
 }
