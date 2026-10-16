@@ -2,7 +2,7 @@
 
 ## Overview
 
-This integration watches for Windows Event Logs and forwards them to Datadog. 
+This integration watches for Windows Event Logs and forwards them to Datadog.
 
 Enable this integration to:
 
@@ -11,11 +11,13 @@ Enable this integration to:
 
 For more information, see the [Windows Event Logging documentation][13].
 
+**Minimum Agent version:** 6.0.0
+
 ## Setup
 
 ### Installation
 
-The Windows Event Log check is included in the [Datadog Agent][1] package. There is no additional installation required.
+The Windows Event Log check is included in the [Datadog Agent][1] package. There is no additional installation required. 
 
 ### Configuration
 
@@ -24,8 +26,9 @@ Windows Event Logs can be collected as one or both of the following methods.
 - As [Datadog Events][16]
 - As [Datadog Logs][17]
 
-Both methods are configured in `win32_event_log.d/conf.yaml` in the `conf.d/` folder at the root of your [Agent's configuration directory][2]. See the [sample win32_event_log.d/conf.yaml][3] for all available configuration options.
+Both methods are configured in `win32_event_log.d/conf.yaml` in the `conf.d/` folder at the root of your [Agent's configuration directory][2]. See the [sample win32_event_log.d/conf.yaml][3] for all available configuration options. For a quickstart option to send Security event logs, see [Send default Security logs](#send-default-security-logs).
 
+This integration also comes with an out-of-the-box [Windows Event Log Overview][32] dashboard available in-app.
 
 #### List Windows Event channels
 
@@ -258,7 +261,7 @@ Here is an example regex pattern to only collect Windows Events Logs from a cert
 logs:
   - type: windows_event
     channel_path: Security
-    source: windows.event
+    source: windows.events
     service: Windows
     log_processing_rules:
       - type: include_at_match
@@ -283,7 +286,7 @@ The following regex must be used to match these EventIDs:
 logs:
   - type: windows_event
     channel_path: Security
-    source: windows.event
+    source: windows.events
     service: Windows
     log_processing_rules:
       - type: include_at_match
@@ -297,7 +300,7 @@ Agent versions 7.41 or later normalize the EventID field. This removes the need 
 logs:
   - type: windows_event
     channel_path: Security
-    source: windows.event
+    source: windows.events
     service: Windows
     log_processing_rules:
       - type: include_at_match
@@ -464,6 +467,34 @@ Checks
 <!-- xxz tab xxx -->
 <!-- xxz tabs xxx -->
 
+## Send Default Security logs
+
+Starting with Agent 7.54, you can automatically send Security Events to Datadog as logs by using the `dd_security_events` flag. These logs can be used with [Datadog's Cloud SIEM][29] to automatically detect threats and suspicious activity in real-time. These default security events are compatible with Datadog's out-of-the-box Windows detection rules to create security signals when a user clears the Security logs, disables the Windows firewall, changes the Directory Services Restore Mode (DSRM) password, and more.
+
+1. [Enable collecting logs][18] in your `datadog.yaml` file. It is disabled by default in the Datadog Agent.
+
+   ```yaml
+   logs_enabled: true
+   ```
+
+2. In the integration configuration file, (`win32_event_log.d/conf.yaml`) set the `dd_security_events` flag to `low` or `high` to start sending Security Events to Datadog.
+
+   ```yaml
+   init_config:
+     legacy_mode: false
+   instances:
+     - dd_security_events: high
+   ```
+
+   - `low`: sends only the most important and critical Security events, including Audit log cleared (1102), Replay attack detected (4649), and System audit policy was changed (4719). For a full list of events collected on the `low` setting, [see here][30]. 
+   - `high`: sends a higher volume of Security events, including Encrypted data recovery policy was changed (4714), Domain policy was changed (4739), and Security-disabled group was deleted (4764). For a full list of events collected on the `high` setting, [see here][31].
+  
+Teams can change which event IDs are associated with `low` or `high` settings by editing these profiles. 
+
+
+3. [Restart the Agent][4].
+
+
 ## Data Collected
 
 ### Metrics
@@ -511,8 +542,9 @@ Additional helpful documentation, links, and articles:
 - [How to collect Windows Server 2012 metrics][10]
 - [Monitoring Windows Server 2012 with Datadog][11]
 - [Monitor Windows event logs with Datadog][27]
+- [Monitor your Windows event logs with Datadog Cloud SIEM][33]]
 
-[1]: https://app.datadoghq.com/account/settings/agent/latest?platform=windows
+[1]: /account/settings/agent/latest?platform=windows
 [2]: https://docs.datadoghq.com/agent/guide/agent-configuration-files/#agent-configuration-directory
 [3]: https://github.com/DataDog/integrations-core/blob/master/win32_event_log/datadog_checks/win32_event_log/data/conf.yaml.example
 [4]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
@@ -539,3 +571,8 @@ Additional helpful documentation, links, and articles:
 [26]: https://docs.datadoghq.com/agent/logs/advanced_log_collection/?tab=configurationfile
 [27]: https://www.datadoghq.com/blog/monitor-windows-event-logs-with-datadog/
 [28]: https://docs.datadoghq.com/integrations/guide/add-event-log-files-to-the-win32-ntlogevent-wmi-class/
+[29]: https://docs.datadoghq.com/security/cloud_siem/
+[30]: https://github.com/DataDog/datadog-agent/blob/main/cmd/agent/dist/conf.d/win32_event_log.d/profiles/dd_security_events_low.yaml.example
+[31]: https://github.com/DataDog/datadog-agent/blob/main/cmd/agent/dist/conf.d/win32_event_log.d/profiles/dd_security_events_high.yaml.example
+[32]: /integrations?integrationId=event-viewer
+[33]: https://www.datadoghq.com/blog/datadog-cloud-siem-windows-event-logs/

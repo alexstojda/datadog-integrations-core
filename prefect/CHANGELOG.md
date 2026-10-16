@@ -1,0 +1,37 @@
+# CHANGELOG - Prefect
+
+<!-- towncrier release notes start -->
+
+## 2.0.0 / 2026-10-01
+
+***Changed***:
+
+* Add support for standard HTTP configuration options (TLS, authentication, proxy, timeouts, headers) and remove the `custom_headers` option in favor of the standard `headers`/`extra_headers` options. ([#25259](https://github.com/DataDog/integrations-core/pull/25259))
+
+## 1.2.0 / 2026-09-02 / Agent 7.84.0
+
+***Added***:
+
+* Add ``metrics_prefix`` to the ``discovery`` block of ``auto_conf.yaml``. ([#24861](https://github.com/DataDog/integrations-core/pull/24861))
+
+## 1.1.0 / 2026-08-05 / Agent 7.83.0
+
+***Added***:
+
+* Add container-based config discovery support. ([#24483](https://github.com/DataDog/integrations-core/pull/24483))
+
+***Fixed***:
+
+* Require `datadog-checks-base>=37.41.0` since config discovery relies on it. ([#24545](https://github.com/DataDog/integrations-core/pull/24545))
+
+## 1.0.1 / 2026-04-21 / Agent 7.79.0
+
+***Fixed***:
+
+* Adds validation for event pagination URLs. ([#23354](https://github.com/DataDog/integrations-core/pull/23354))
+
+## 1.0.0 / 2026-03-18 / Agent 7.78.1
+
+***Added***:
+
+* Initial Release ([#22757](https://github.com/DataDog/integrations-core/pull/22757))

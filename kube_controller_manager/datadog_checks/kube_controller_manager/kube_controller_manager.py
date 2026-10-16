@@ -5,7 +5,6 @@
 import re
 
 import requests
-from six import iteritems
 
 from datadog_checks.base import AgentCheck
 from datadog_checks.base.checks.kube_leader import KubeLeaderElectionMixin
@@ -130,8 +129,7 @@ class KubeControllerManagerCheck(KubeLeaderElectionMixin, SliMetricsScraperMixin
                         {'node_collector_unhealthy_nodes_in_zone': 'nodes.unhealthy'},
                         {'node_collector_zone_size': 'nodes.count'},
                         {
-                            "job_controller_terminated_pods_"
-                            "tracking_finalizer_total": "job_controller.terminated"
+                            "job_controller_terminated_pods_tracking_finalizer_total": "job_controller.terminated"
                             "_pods_tracking_finalizer"
                         },
                         NEW_1_24_COUNTERS,
@@ -169,7 +167,7 @@ class KubeControllerManagerCheck(KubeLeaderElectionMixin, SliMetricsScraperMixin
             transformers[limiter + "_rate_limiter_use"] = self.rate_limiter_use
         queues = self.DEFAULT_QUEUES + instance.get("extra_queues", [])
         for queue in queues:
-            for metric, func in iteritems(self.QUEUE_METRICS_TRANSFORMERS):
+            for metric, func in self.QUEUE_METRICS_TRANSFORMERS.items():
                 transformers[queue + metric] = func
 
         # Support new metrics (introduced in v1.14.0)

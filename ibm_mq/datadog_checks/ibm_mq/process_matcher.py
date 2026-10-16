@@ -17,14 +17,15 @@ else:
     import shlex
 
     def join_command_args(command_args):
-        # TODO: when we drop Python 2 use `shlex.join`
-        return ' '.join(shlex.quote(arg) for arg in command_args)
+        return shlex.join(shlex.quote(arg) for arg in command_args)
 
 
 class QueueManagerProcessMatcher(ConditionLimiter):
     def condition(self, pattern, logger):
         logger.debug('Searching for a process that matches: %s', pattern.pattern)
         for process in psutil.process_iter(['cmdline']):
+            if not process.info['cmdline']:
+                continue
             command = join_command_args(process.info['cmdline'])
             if pattern.search(command):
                 logger.debug('Process found: %s', command)

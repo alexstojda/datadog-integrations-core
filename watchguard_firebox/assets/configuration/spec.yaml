@@ -1,0 +1,11 @@
+name: WatchGuard Firebox
+fleet_configurable: true
+files:
+- name: watchguard_firebox.yaml
+  options:
+  - template: logs
+    example:
+    - type: udp
+      port: <PORT>
+      service: watchguard-firebox
+      source: watchguard-firebox

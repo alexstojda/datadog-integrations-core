@@ -2,22 +2,25 @@
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
 
+from unittest.mock import patch
+
 import pytest
-from mock import patch
 
 from datadog_checks.argocd import ArgocdCheck
+from datadog_checks.argocd.resources import ArgocdResourceCollector
 from datadog_checks.base.constants import ServiceCheck
-from datadog_checks.base.errors import ConfigurationError
 from datadog_checks.dev.utils import get_metadata_metrics
 
 from .common import (
     API_SERVER_METRICS,
     APP_CONTROLLER_METRICS,
     APPSET_CONTROLLER_METRICS,
+    COMMIT_SERVER_METRICS,
     MOCKED_API_SERVER_INSTANCE,
     MOCKED_APP_CONTROLLER_INSTANCE,
     MOCKED_APP_CONTROLLER_WITH_OTHER_PARAMS,
     MOCKED_APPSET_CONTROLLER_INSTANCE,
+    MOCKED_COMMIT_SERVER_INSTANCE,
     MOCKED_NOTIFICATIONS_CONTROLLER_INSTANCE,
     MOCKED_REPO_SERVER_INSTANCE,
     NOT_EXPOSED_METRICS,
@@ -36,6 +39,7 @@ from .utils import get_fixture_path
         ('api_server', MOCKED_API_SERVER_INSTANCE, API_SERVER_METRICS),
         ('repo_server', MOCKED_REPO_SERVER_INSTANCE, REPO_SERVER_METRICS),
         ('notifications_controller', MOCKED_NOTIFICATIONS_CONTROLLER_INSTANCE, NOTIFICATIONS_CONTROLLER_METRICS),
+        ('commit_server', MOCKED_COMMIT_SERVER_INSTANCE, COMMIT_SERVER_METRICS),
     ],
 )
 def test_app_controller(dd_run_check, aggregator, mock_http_response, namespace, instance, metrics):
@@ -61,9 +65,11 @@ def test_app_controller(dd_run_check, aggregator, mock_http_response, namespace,
 def test_empty_instance(dd_run_check):
     with pytest.raises(
         Exception,
-        match="Must specify at least one of the following:"
-        "`app_controller_endpoint`, `appset_controller_endpoint`, `repo_server_endpoint`, `api_server_endpoint` or"
-        " `notifications_controller_endpoint`.",
+        match=(
+            "Must specify at least one of the following: `app_controller_endpoint`, `appset_controller_endpoint`, "
+            "`api_server_endpoint`, `repo_server_endpoint`, `notifications_controller_endpoint`, "
+            "`commit_server_endpoint`"
+        ),
     ):
         check = ArgocdCheck('argocd', {}, [{}])
         dd_run_check(check)
@@ -98,8 +104,22 @@ def test_app_controller_service_check(dd_run_check, aggregator, mock_http_respon
     )
 
 
-@patch('datadog_checks.argocd.check.PY2', True)
-def test_py2():
-    # Test to ensure that a ConfigurationError is raised when running with Python 2.
-    with pytest.raises(ConfigurationError, match="This version of the integration is only available when using py3."):
-        ArgocdCheck('argocd', {}, [MOCKED_APP_CONTROLLER_INSTANCE])
+def test_both_collectors_disabled_raises(dd_run_check):
+    check = ArgocdCheck('argocd', {}, [{"collect_openmetrics": False, "collect_genresources": False}])
+    with pytest.raises(Exception, match="Enable at least one of"):
+        dd_run_check(check)
+
+
+def test_genresources_only_mode_skips_the_metrics_scrape(aggregator, dd_run_check):
+    instance = {
+        "collect_openmetrics": False,
+        "collect_genresources": True,
+        "genresources_endpoint": "https://argocd.example.com",
+        "genresources_stream_applications_enabled": False,
+    }
+    check = ArgocdCheck('argocd', {}, [instance])
+    with patch.object(ArgocdResourceCollector, "collect") as collect:
+        dd_run_check(check)
+
+    collect.assert_called_once()  # the generic resources collector still runs
+    assert aggregator.metric_names == []  # ...but nothing is scraped from the OpenMetrics endpoints

@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "f6177896-da1e-4bc4-ab19-fd32e8868647",
   "app_id": "mysql",
+  "owner": "database-monitoring",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,14 @@
       "Supported OS::macOS",
       "Supported OS::Windows",
       "Category::Data Stores",
-      "Category::Log Collection"
+      "Category::Log Collection",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitoring-mysql-performance-metrics"
+      }
     ]
   },
   "author": {
@@ -43,7 +51,8 @@
         "metadata_path": "assets/service_checks.json"
       },
       "process_signatures": [
-        "mysqld"
+        "mysqld",
+        "mariadbd"
       ],
       "source_type_id": 18,
       "auto_install": true
@@ -53,17 +62,14 @@
       "mysql-screenboard": "assets/dashboards/overview-screenboard.json"
     },
     "monitors": {
-      "select query rate": "assets/monitors/select_query_rate.json",
-      "replica running": "assets/monitors/replica_running.json"
+      "SELECT query volume is dropping": "assets/monitors/select_query_rate.json",
+      "MySQL database replica is not running properly": "assets/monitors/replica_running.json"
     },
     "saved_views": {
       "operations": "assets/saved_views/operations.json",
       "operations_overview": "assets/saved_views/operations_overview.json",
       "slow_operations": "assets/saved_views/slow_operations.json",
       "mysql_processes": "assets/saved_views/mysql_processes.json"
-    },
-    "logs": {
-      "source": "mysql"
     }
   }
 }

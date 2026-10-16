@@ -71,7 +71,15 @@ instances:
     ##   include: This is the list of regular expressions used to select which instances to monitor.
     ##            If not set, all instances are monitored.
     ##   exclude: This is the list of regular expressions used to select which instances to ignore.
-    ##            If not set, no instances are ignored. Note: `_Total` instances are always ignored.
+    ##            If not set, no instances are ignored. Note: `_Total` instances are ignored by default;
+    ##            set `include_total` to `true` to collect them.
+    ##   include_total: Whether to collect the `_Total` aggregate instance for this performance object.
+    ##                  Defaults to `false`. Most performance objects report `_Total` as the sum of the
+    ##                  individual instances, in which case it is preferable to compute the total in
+    ##                  Datadog. However, some perf objects (e.g. `MSExchangeTransport Queues`) report
+    ##                  data on `_Total` that is not derivable from the visible instances, and in that
+    ##                  case opting in restores the missing data without forcing the collection of every
+    ##                  individual instance.
     ##   include_fast: This is the list of wildcards or exact instance names used to select which
     ##                 instances to monitor. It is faster than the regular expression `include` filter
     ##                 because it relies on the Windows PDH built-in wildcard filtering.
@@ -166,24 +174,3 @@ instances:
     #   - <INCLUDE_REGEX>
     #   exclude:
     #   - <EXCLUDE_REGEX>
-
-## Log Section
-##
-## type - required - Type of log input source (tcp / udp / file / windows_event).
-## port / path / channel_path - required - Set port if type is tcp or udp.
-##                                         Set path if type is file.
-##                                         Set channel_path if type is windows_event.
-## source  - required - Attribute that defines which integration sent the logs.
-## encoding - optional - For file specifies the file encoding. Default is utf-8. Other
-##                       possible values are utf-16-le and utf-16-be.
-## service - optional - The name of the service that generates the log.
-##                      Overrides any `service` defined in the `init_config` section.
-## tags - optional - Add tags to the collected logs.
-##
-## Discover Datadog log collection: https://docs.datadoghq.com/logs/log_collection/
-#
-# logs:
-#   - type: file
-#     path: C:\path\to\my\directory\file.log
-#     source: ruby
-#     service: <SERVICE_NAME>

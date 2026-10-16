@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "00434289-3c74-4c25-8841-9e0c826510c2",
   "app_id": "hazelcast",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -17,7 +18,8 @@
       "Supported OS::Windows",
       "Category::Data Stores",
       "Category::Caching",
-      "Category::Log Collection"
+      "Category::Log Collection",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -51,9 +53,6 @@
     },
     "dashboards": {
       "Hazelcast Overview": "assets/dashboards/overview.json"
-    },
-    "logs": {
-      "source": "hazelcast"
     }
   }
 }

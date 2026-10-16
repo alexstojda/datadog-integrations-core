@@ -4,11 +4,11 @@
 from typing import Any, Dict, List, Optional, Type  # noqa: F401
 
 from pyVmomi import vim
-from six import iteritems
 
 from datadog_checks.base import to_string
 from datadog_checks.vsphere.constants import (
     BOTH,
+    CPU_COUNT_PROPERTY_BY_RESOURCE_TYPE,
     HISTORICAL,
     MOR_TYPE_AS_STRING,
     OBJECT_PROPERTIES_BY_RESOURCE_TYPE,
@@ -135,6 +135,11 @@ def properties_to_collect(mor_type, metric_filters):
     return resource_simple_properties + resource_object_properties
 
 
+def cpu_count_metric_name(resource_type):
+    # type: (str) -> str
+    return "{}.{}".format(resource_type, CPU_COUNT_PROPERTY_BY_RESOURCE_TYPE[resource_type])
+
+
 def simple_properties_to_collect(mor_string, resource_filters):
     # type: (str, MetricFilters) -> List[str]
     filters = resource_filters.get(mor_string)
@@ -238,7 +243,7 @@ def get_mapped_instance_tag(metric_name):
     tag cannot be guessed by looking at the api results and has to be inferred using documentation or experience.
     This method acts as a utility to map a metric_name to the meaning of its instance tag.
     """
-    for prefix, tag_key in iteritems(METRIC_TO_INSTANCE_TAG_MAPPING):
+    for prefix, tag_key in METRIC_TO_INSTANCE_TAG_MAPPING.items():
         if metric_name.startswith(prefix):
             return tag_key
     return 'instance'

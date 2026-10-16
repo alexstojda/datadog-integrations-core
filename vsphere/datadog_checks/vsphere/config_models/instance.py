@@ -13,11 +13,15 @@ from types import MappingProxyType
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from typing_extensions import Literal
 
 from datadog_checks.base.utils.functions import identity
 from datadog_checks.base.utils.models import validation
 
 from . import defaults, validators
+
+
+SECURE_FIELD_NAMES = frozenset(['ssl_cafile', 'ssl_capath'])
 
 
 class CollectPerInstanceFilters(BaseModel):
@@ -29,6 +33,15 @@ class CollectPerInstanceFilters(BaseModel):
     datastore: Optional[tuple[str, ...]] = None
     host: Optional[tuple[str, ...]] = None
     vm: Optional[tuple[str, ...]] = None
+
+
+class IncludeEvent(BaseModel):
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        frozen=True,
+    )
+    event: Optional[str] = None
+    excluded_messages: Optional[tuple[str, ...]] = None
 
 
 class MetricFilters(BaseModel):
@@ -96,7 +109,7 @@ class RestApiOptions(BaseModel):
     connect_timeout: Optional[float] = None
     extra_headers: Optional[MappingProxyType[str, Any]] = None
     headers: Optional[MappingProxyType[str, Any]] = None
-    kerberos_auth: Optional[str] = None
+    kerberos_auth: Optional[Literal['required', 'optional', 'disabled']] = None
     kerberos_cache: Optional[str] = None
     kerberos_delegate: Optional[bool] = None
     kerberos_force_initiate: Optional[bool] = None
@@ -114,6 +127,7 @@ class RestApiOptions(BaseModel):
     timeout: Optional[float] = None
     tls_ca_cert: Optional[str] = None
     tls_cert: Optional[str] = None
+    tls_ciphers: Optional[tuple[str, ...]] = None
     tls_ignore_warning: Optional[bool] = None
     tls_private_key: Optional[str] = None
     tls_protocols_allowed: Optional[tuple[str, ...]] = None
@@ -138,15 +152,20 @@ class InstanceConfig(BaseModel):
     collect_per_instance_filters: Optional[CollectPerInstanceFilters] = None
     collect_property_metrics: Optional[bool] = None
     collect_tags: Optional[bool] = None
+    collect_vsan_data: Optional[bool] = None
     collection_level: Optional[int] = None
     collection_type: Optional[str] = None
     connection_reset_timeout: Optional[int] = None
     disable_generic_tags: Optional[bool] = None
     empty_default_hostname: bool
+    enable_legacy_tags_normalization: Optional[bool] = None
     event_resource_filters: Optional[tuple[str, ...]] = None
     excluded_host_tags: Optional[tuple[str, ...]] = None
     host: str
+    hostname_transform: Optional[str] = None
     include_datastore_cluster_folder_tag: Optional[bool] = None
+    include_events: Optional[tuple[IncludeEvent, ...]] = None
+    infrastructure_mode: Optional[str] = None
     max_historical_metrics: Optional[int] = None
     metric_filters: Optional[MetricFilters] = None
     metric_patterns: Optional[MetricPatterns] = None
@@ -158,7 +177,9 @@ class InstanceConfig(BaseModel):
     resource_filters: Optional[tuple[ResourceFilter, ...]] = None
     rest_api_options: Optional[RestApiOptions] = None
     service: Optional[str] = None
+    ssl_cafile: Optional[str] = None
     ssl_capath: Optional[str] = None
+    ssl_ciphers: Optional[tuple[str, ...]] = None
     ssl_verify: Optional[bool] = None
     tags: Optional[tuple[str, ...]] = None
     tags_prefix: Optional[str] = None
@@ -180,6 +201,11 @@ class InstanceConfig(BaseModel):
         field_name = field.alias or info.field_name
         if field_name in info.context['configured_fields']:
             value = getattr(validators, f'instance_{info.field_name}', identity)(value, field=field)
+
+            if info.field_name in SECURE_FIELD_NAMES:
+                validation.security.check_field_trusted_provider(
+                    info.field_name, value, info.context.get('security_config')
+                )
         else:
             value = getattr(defaults, f'instance_{info.field_name}', lambda: value)()
 

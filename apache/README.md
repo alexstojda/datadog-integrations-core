@@ -6,6 +6,8 @@
 
 The Apache check tracks requests per second, bytes served, number of worker threads, service uptime, and more.
 
+**Minimum Agent version:** 6.0.0
+
 ## Setup
 
 ### Installation
@@ -109,7 +111,9 @@ To configure this check for an Agent running on Kubernetes:
 
 ##### Metric collection
 
-Set [Autodiscovery Integrations Templates][10] as pod annotations on your application container. Aside from this, templates can also be configured with [a file, a configmap, or a key-value store][11].
+Choose one of the following Kubernetes Autodiscovery configurations. You can also configure templates with [a file, a configmap, or a key-value store][11].
+
+###### Kubernetes annotations
 
 **Annotations v1** (for Datadog Agent < v7.36)
 
@@ -155,6 +159,29 @@ spec:
   containers:
     - name: apache
 ```
+###### DatadogInstrumentation CRD
+
+```yaml
+apiVersion: datadoghq.com/v1alpha1
+kind: DatadogInstrumentation
+metadata:
+  name: <CR_NAME>
+  namespace: <WORKLOAD_NAMESPACE>
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment # Or another target kind, if applicable.
+    name: <APACHE_WORKLOAD_NAME>
+  config:
+    checks:
+      - integration: apache
+        containerName: apache
+        initConfig: {}
+        instances:
+          - apache_status_url: "http://%%host%%/server-status?auto"
+```
+
+For setup details, see [Configure Autodiscovery with the DatadogInstrumentation CRD][23].
 
 ##### Log collection
 
@@ -261,7 +288,7 @@ Additional helpful documentation, links, and articles:
 - [How to monitor Apache web server with Datadog][22]
 
 [1]: https://raw.githubusercontent.com/DataDog/integrations-core/master/apache/images/apache_dashboard.png
-[2]: https://app.datadoghq.com/account/settings/agent/latest
+[2]: /account/settings/agent/latest
 [3]: https://docs.datadoghq.com/agent/
 [4]: https://docs.datadoghq.com/agent/guide/agent-configuration-files/#agent-configuration-directory
 [5]: https://github.com/DataDog/integrations-core/blob/master/apache/datadog_checks/apache/data/conf.yaml.example
@@ -282,3 +309,4 @@ Additional helpful documentation, links, and articles:
 [20]: https://www.datadoghq.com/blog/monitoring-apache-web-server-performance
 [21]: https://www.datadoghq.com/blog/collect-apache-performance-metrics
 [22]: https://www.datadoghq.com/blog/monitor-apache-web-server-datadog
+[23]: https://docs.datadoghq.com/containers/guide/configure-autodiscovery-with-the-datadoginstrumentation-crd/

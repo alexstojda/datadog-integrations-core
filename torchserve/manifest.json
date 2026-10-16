@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "d5400c22-0f0a-4ce4-894d-c3cda48140e9",
   "app_id": "torchserve",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -12,11 +13,15 @@
     "title": "TorchServe",
     "media": [],
     "classifier_tags": [
+      "Category::Configuration & Deployment",
+      "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
       "Supported OS::macOS",
-      "Category::Log Collection",
-      "Category::AI/ML"
+      "Category::AI/ML",
+      "Submitted Data Type::Metrics",
+      "Submitted Data Type::Logs",
+      "Offering::Integration"
     ]
   },
   "assets": {
@@ -46,10 +51,7 @@
       "auto_install": true
     },
     "monitors": {
-      "error_ratio": "assets/monitors/error_ratio.json"
-    },
-    "logs": {
-      "source": "torchserve"
+      "Request error ratio is high": "assets/monitors/error_ratio.json"
     },
     "dashboards": {
       "torchserve_overview": "assets/dashboards/overview.json"

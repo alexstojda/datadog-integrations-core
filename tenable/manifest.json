@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "09a46b1b-a940-4aba-8e9f-bde9e5ae2c3f",
   "app_id": "tenable",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -15,7 +16,8 @@
       "Supported OS::Linux",
       "Supported OS::macOS",
       "Supported OS::Windows",
-      "Category::Log Collection"
+      "Category::Log Collection",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -38,9 +40,6 @@
       },
       "source_type_id": 10089,
       "auto_install": true
-    },
-    "logs": {
-      "source": "tenable"
     }
   }
 }

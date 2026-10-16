@@ -1,7 +1,5 @@
 # Amazon EKS Integration
 
-![EKS Dashboard][1]
-
 ## Overview
 
 Amazon Elastic Kubernetes Service (EKS) is a managed Kubernetes service that automates certain aspects of deployment and maintenance for any standard Kubernetes environment. Whether you are migrating an existing Kubernetes application to Amazon EKS, or are deploying a new cluster on Amazon EKS on AWS Outposts, Datadog helps you monitor your EKS environments in real time.
@@ -22,7 +20,7 @@ Monitoring EKS requires that you set up one of the following Datadog integration
 
 - [Kubernetes][4]
 - [AWS][5]
-- [AWS EC2][6]
+- [Amazon EC2][6]
 
 ### Log collection
 
@@ -45,7 +43,6 @@ Need help? Contact [Datadog support][11].
 - [Key metrics for Amazon EKS monitoring][13]
 - [Amazon EKS on AWS Fargate][14]
 
-[1]: https://raw.githubusercontent.com/DataDog/integrations-core/master/amazon_eks/images/amazon_eks_dashboard.png
 [2]: https://docs.aws.amazon.com/eks/latest/userguide/managed-node-groups.html
 [3]: https://docs.aws.amazon.com/eks/latest/userguide/eks-on-outposts.html
 [4]: https://docs.datadoghq.com/integrations/kubernetes/

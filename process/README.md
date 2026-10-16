@@ -6,6 +6,8 @@ The Process Check lets you:
 - Collect resource usage metrics for specific running processes on any host. For example, CPU, memory, I/O, and number of threads.
 - Use [Process Monitors][1] to configure thresholds for how many instances of a specific process should be running and get alerts when the thresholds aren't met (see **Service Checks** below).
 
+**Minimum Agent version:** 6.0.0
+
 ## Setup
 
 ### Installation
@@ -16,15 +18,15 @@ The Process check is included in the [Datadog Agent][2] package, so you don't ne
 
 Unlike many checks, the Process check doesn't monitor anything useful by default. You must configure which processes you want to monitor.
 
-While there's no standard default check configuration, here's an example `process.d/conf.yaml` that monitors SSH/SSHD processes. See the [sample process.d/conf.yaml][3] for all available configuration options:
+While there's no standard default check configuration, here's an example `process.d/conf.yaml` that monitors SSH/SSHD processes. See the [sample process.d/conf.yaml][3] for all available configuration options. For regex-based process matching, see [Process matching](#process-matching).
 
 ```yaml
 init_config:
 instances:
-- name: ssh
-  search_string:
-    - ssh
-    - sshd
+  - name: ssh
+    search_string:
+      - ssh
+      - sshd
 ```
 
 **Note**: After you make configuration changes, make sure you [restart the Agent][4].
@@ -35,6 +37,34 @@ Retrieving some process metrics requires the Datadog collector to either run as 
 dd-agent ALL=NOPASSWD: /bin/ls /proc/*/fd/
 ```
 
+#### Process matching
+
+By default, the Process check matches processes by exact name. Set `exact_match` to `false` to match using substrings instead.
+
+When `exact_match` is `false`, values in `search_string` are interpreted as Python regular expressions using `re.search()`. Regex metacharacters (`. + * ? ( ) [ ] { } ^ $ | \`) must be escaped with a backslash for literal matching.
+
+For example, to match the literal path `/usr/lib/jdk-11.0.10+9/bin/java`, escape the `.` and `+` characters:
+
+Unescaped (does not match literally):
+
+```yaml
+instances:
+  - exact_match: false
+    name: java_jdk11
+    search_string:
+      - /usr/lib/jdk-11.0.10+9/bin/java
+```
+
+Escaped (matches literally):
+
+```yaml
+instances:
+  - exact_match: false
+    name: java_jdk11
+    search_string:
+      - /usr/lib/jdk-11\.0\.10\+9/bin/java
+```
+
 ### Validation
 
 Run the [Agent's status subcommand][5] and look for `process` under the Checks section.
@@ -42,7 +72,7 @@ Run the [Agent's status subcommand][5] and look for `process` under the Checks s
 ### Metrics notes
 
 The following metrics are not available on Linux or macOS:
-- Process I/O metrics are **not** available on Linux or macOS since the files that the Agent reads (`/proc//io`) are only readable by the process's owner. For more information, [read the Agent FAQ][6].
+- Process I/O metrics are **not** available on Linux or macOS since the files that the Agent reads (`/proc/<PID>/io`) are only readable by the process's owner. For more information, [read the Agent FAQ][6].
 
 The following metrics are not available on Windows:
 - `system.cpu.iowait`
@@ -50,6 +80,7 @@ The following metrics are not available on Windows:
 - `system.processes.mem.page_faults.children_minor_faults`
 - `system.processes.mem.page_faults.major_faults`
 - `system.processes.mem.page_faults.children_major_faults`
+- `system.processes.mem.real`
 
 **Note**: Use a [WMI check][11] to gather page fault metrics on Windows.
 
@@ -87,7 +118,7 @@ Need help? Contact [Datadog support][9].
 To get a better idea of how (or why) to monitor process resource consumption with Datadog, check out this [series of blog posts][10] about it.
 
 [1]: https://docs.datadoghq.com/monitors/create/types/process_check/?tab=checkalert
-[2]: https://app.datadoghq.com/account/settings/agent/latest
+[2]: /account/settings/agent/latest
 [3]: https://github.com/DataDog/integrations-core/blob/master/process/datadog_checks/process/data/conf.yaml.example
 [4]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
 [5]: https://docs.datadoghq.com/agent/guide/agent-commands/#agent-status-and-information

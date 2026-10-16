@@ -8,8 +8,12 @@
 #     ddev -x validate models -s <INTEGRATION_NAME>
 
 
+def shared_propagate_agent_tags():
+    return False
+
+
 def instance_adoprovider():
-    return 'SQLOLEDB'
+    return 'MSOLEDBSQL'
 
 
 def instance_autodiscovery_db_service_check():
@@ -37,7 +41,7 @@ def instance_database_autodiscovery_interval():
 
 
 def instance_database_instance_collection_interval():
-    return False
+    return 300
 
 
 def instance_dbm():
@@ -56,52 +60,20 @@ def instance_empty_default_hostname():
     return False
 
 
+def instance_enable_legacy_tags_normalization():
+    return True
+
+
+def instance_exclude_hostname():
+    return False
+
+
 def instance_ignore_missing_database():
     return False
 
 
-def instance_include_ao_metrics():
-    return False
-
-
-def instance_include_db_fragmentation_metrics():
-    return False
-
-
-def instance_include_fci_metrics():
-    return False
-
-
-def instance_include_index_usage_metrics():
-    return True
-
-
 def instance_include_instance_metrics():
     return True
-
-
-def instance_include_master_files_metrics():
-    return False
-
-
-def instance_include_primary_log_shipping_metrics():
-    return False
-
-
-def instance_include_secondary_log_shipping_metrics():
-    return False
-
-
-def instance_include_task_scheduler_metrics():
-    return False
-
-
-def instance_include_tempdb_file_space_usage_metrics():
-    return True
-
-
-def instance_index_usage_metrics_interval():
-    return 300
 
 
 def instance_log_unobfuscated_plans():
@@ -120,12 +92,12 @@ def instance_only_custom_queries():
     return False
 
 
-def instance_only_emit_local():
-    return False
-
-
 def instance_proc_only_if_database():
     return 'master'
+
+
+def instance_propagate_agent_tags():
+    return False
 
 
 def instance_server_version():

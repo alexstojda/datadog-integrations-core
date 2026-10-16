@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "49687997-bbf2-45db-9b4f-223cf7c492ed",
   "app_id": "gunicorn",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -14,7 +15,14 @@
     "classifier_tags": [
       "Category::Log Collection",
       "Supported OS::Linux",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-gunicorn-performance"
+      }
     ]
   },
   "author": {
@@ -55,9 +63,6 @@
       "status_code_overview": "assets/saved_views/status_code_overview.json",
       "bot_errors": "assets/saved_views/bot_errors.json",
       "gunicorn_processes": "assets/saved_views/gunicorn_processes.json"
-    },
-    "logs": {
-      "source": "gunicorn"
     }
   }
 }

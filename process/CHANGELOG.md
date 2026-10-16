@@ -2,6 +2,95 @@
 
 <!-- towncrier release notes start -->
 
+## 5.5.3 / 2026-10-01
+
+***Fixed***:
+
+* Explicitly declare `warning`/`critical` as named properties of the `thresholds` option so it can be validated when configured remotely via Fleet Automation. ([#25140](https://github.com/DataDog/integrations-core/pull/25140))
+* Fix `collect_children` failing to collect any child processes when a single pid on the system is inaccessible (eg. `AccessDenied`). ([#25367](https://github.com/DataDog/integrations-core/pull/25367))
+
+## 5.5.2 / 2026-08-05 / Agent 7.83.0
+
+***Fixed***:
+
+* Clarify ``exact_match`` behavior for ``search_string``, including the required file extension on Windows. ([#24560](https://github.com/DataDog/integrations-core/pull/24560))
+
+## 5.5.1 / 2026-04-15 / Agent 7.79.0
+
+***Fixed***:
+
+* Improve descriptions ([#23047](https://github.com/DataDog/integrations-core/pull/23047))
+
+## 5.5.0 / 2026-04-01 / Agent 7.78.0
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 5.4.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+## 5.3.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 5.2.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 5.1.0 / 2025-07-10 / Agent 7.69.0
+
+***Added***:
+
+* Add `reset_cache_on_process_changes` configuration option to control when the shared process list cache is reset ([#20570](https://github.com/DataDog/integrations-core/pull/20570))
+
+## 5.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 4.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+* Upgrade psutil to 6.0.0 to fix performance issues addressed ([#18688](https://github.com/DataDog/integrations-core/pull/18688))
+
+## 3.5.0 / 2024-09-05
+
+***Added***:
+
+* Bump `psutil`  version to 5.9.6 ([#18491](https://github.com/DataDog/integrations-core/pull/18491))
+
+## 3.4.0 / 2024-07-05 / Agent 7.56.0
+
+***Added***:
+
+* Add `use_oneshot` parameter to speed up check runs with `psutil.Process().oneshot()` ([#17817](https://github.com/DataDog/integrations-core/pull/17817))
+
+## 3.3.0 / 2024-03-08 / Agent 7.52.0
+
+***Added***:
+
+* Revert "Bump psutil version to 5.9.7 (#16547)" ([#17112](https://github.com/DataDog/integrations-core/pull/17112))
+
 ## 3.2.0 / 2024-02-16
 
 ***Added***:

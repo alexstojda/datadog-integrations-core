@@ -16,6 +16,10 @@ def shared_pid_cache_duration():
     return 120
 
 
+def shared_reset_cache_on_process_changes():
+    return True
+
+
 def shared_shared_process_list_cache_duration():
     return 120
 
@@ -30,6 +34,10 @@ def instance_disable_generic_tags():
 
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
 
 
 def instance_exact_match():
@@ -50,3 +58,7 @@ def instance_pid_cache_duration():
 
 def instance_try_sudo():
     return False
+
+
+def instance_use_oneshot():
+    return True

@@ -1,0 +1,11 @@
+name: ossec-security
+fleet_configurable: true
+files:
+- name: ossec_security.yaml
+  options:
+  - template: logs
+    example:
+    - type: udp
+      port: <PORT>
+      source: ossec-security
+      service: ossec-security

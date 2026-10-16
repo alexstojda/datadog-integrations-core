@@ -78,6 +78,9 @@ def serve_openmetrics_payload(
             ],
         }
 
+        if integration == 'openmetrics':
+            check_config['instances'][0]['metrics'] = [".*"]
+
     metadata = {
         "docker_volumes": [
             f"{HERE}/scripts/serve.py:/tmp/serve.py",
@@ -88,7 +91,7 @@ def serve_openmetrics_payload(
     env_data.write_config(check_config)
     env_data.write_metadata(metadata)
 
-    agent = DockerAgent(app.platform, intg, ENVIRONMENT_NAME, metadata, env_data.config_file)
+    agent = DockerAgent(app, intg, ENVIRONMENT_NAME, metadata, env_data.config_file)
     agent_env_vars = _get_agent_env_vars(app.config.org.config, {}, {}, False)
 
     try:

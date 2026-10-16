@@ -15,7 +15,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_huawei_switches(dd_agent_check):
@@ -27,8 +27,12 @@ def test_e2e_profile_huawei_switches(dd_agent_check):
     common_tags = [
         'snmp_profile:huawei-switches',
         'snmp_host:huawei-switches.device.name',
+        'device_hostname:huawei-switches.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + []
 
     # --- TEST EXTENDED METRICS ---
@@ -75,6 +79,7 @@ def test_e2e_profile_huawei_switches(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.2011.2.23.606',
         'vendor': 'huawei',
         'device_type': 'switch',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

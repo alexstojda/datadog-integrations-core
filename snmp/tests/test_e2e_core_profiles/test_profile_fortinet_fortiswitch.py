@@ -16,7 +16,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_fortinet_fortiswitch(dd_agent_check):
@@ -28,8 +28,12 @@ def test_e2e_profile_fortinet_fortiswitch(dd_agent_check):
     common_tags = [
         'snmp_profile:fortinet-fortiswitch',
         'snmp_host:fortinet.fortiswitch.example',
+        'device_hostname:fortinet.fortiswitch.example',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + [
         'fs_sys_serial:their acted quaintly Jaded zombies forward oxen but driving',
         'fs_sys_version:but forward quaintly zombies forward kept quaintly',
@@ -60,6 +64,7 @@ def test_e2e_profile_fortinet_fortiswitch(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.12356.106.1.1',
         'vendor': 'fortinet',
         'device_type': 'switch',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

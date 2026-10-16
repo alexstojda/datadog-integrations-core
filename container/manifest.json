@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "ac3cc203-5b28-457d-8737-bbe32fa7c3b9",
   "app_id": "container",
+  "owner": "container-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -15,7 +16,8 @@
       "Category::Containers",
       "Category::Kubernetes",
       "Supported OS::Linux",
-      "Supported OS::Windows"
+      "Supported OS::Windows",
+      "Offering::Integration"
     ]
   },
   "author": {

@@ -32,12 +32,28 @@ def instance_collect_response_time():
     return True
 
 
+def instance_days_critical():
+    return 7
+
+
+def instance_days_warning():
+    return 14
+
+
 def instance_disable_generic_tags():
     return False
 
 
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_http_outcome_tag():
+    return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
 
 
 def instance_http_response_status_code():

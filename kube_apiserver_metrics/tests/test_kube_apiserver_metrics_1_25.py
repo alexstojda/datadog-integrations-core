@@ -25,7 +25,7 @@ def mock_get():
     with open(f_name, 'r') as f:
         text_data = f.read()
     with mock.patch(
-        'requests.get',
+        'requests.Session.get',
         return_value=mock.MagicMock(
             status_code=200,
             iter_lines=lambda **kwargs: text_data.split("\n"),
@@ -66,6 +66,7 @@ class TestKubeAPIServerMetrics:
         NAMESPACE + '.admission_controller_admission_duration_seconds.count',
         NAMESPACE + '.request_duration_seconds.sum',
         NAMESPACE + '.request_duration_seconds.count',
+        NAMESPACE + '.process_cpu_total',
         NAMESPACE + '.process_resident_memory_bytes',
         NAMESPACE + '.process_virtual_memory_bytes',
         NAMESPACE + '.etcd_request_duration_seconds.sum',
@@ -82,6 +83,7 @@ class TestKubeAPIServerMetrics:
         NAMESPACE + '.storage_list_returned_objects_total',
         NAMESPACE + '.requested_deprecated_apis',
         NAMESPACE + '.apiserver_admission_webhook_fail_open_count',
+        NAMESPACE + '.apiserver_admission_webhook_request_total',
         NAMESPACE + '.admission_webhook_admission_latencies_seconds.sum',
         NAMESPACE + '.admission_webhook_admission_latencies_seconds.count',
         NAMESPACE + '.kubernetes_feature_enabled',
@@ -92,6 +94,8 @@ class TestKubeAPIServerMetrics:
         NAMESPACE + '.flowcontrol_rejected_requests_total',
         NAMESPACE + '.flowcontrol_current_inqueue_requests',
         NAMESPACE + '.flowcontrol_dispatched_requests_total',
+        NAMESPACE + '.flowcontrol_request_wait_duration_seconds.sum',
+        NAMESPACE + '.flowcontrol_request_wait_duration_seconds.count',
     ]
     COUNT_METRICS = [
         NAMESPACE + '.audit_event.count',
@@ -100,6 +104,7 @@ class TestKubeAPIServerMetrics:
         NAMESPACE + '.apiserver_request_total.count',
         NAMESPACE + '.apiserver_request_terminations_total.count',
         NAMESPACE + '.apiserver_admission_webhook_fail_open_count.count',
+        NAMESPACE + '.apiserver_admission_webhook_request_total.count',
     ]
 
     def test_check(self, dd_run_check, aggregator, mock_get):

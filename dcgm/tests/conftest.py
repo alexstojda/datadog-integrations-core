@@ -28,7 +28,6 @@ def dd_environment():
         }
 
 
-# For E2E and Unit testing:
 @pytest.fixture
 def instance():
     return copy.deepcopy(common.INSTANCE)
@@ -46,7 +45,21 @@ def mock_metrics():
     with open(f_name, 'r') as f:
         text_data = f.read()
     with mock.patch(
-        'requests.get',
+        'requests.Session.get',
+        return_value=mock.MagicMock(
+            status_code=200, iter_lines=lambda **kwargs: text_data.split("\n"), headers={'Content-Type': "text/plain"}
+        ),
+    ):
+        yield
+
+
+@pytest.fixture()
+def mock_label_remap():
+    f_name = os.path.join(os.path.dirname(__file__), 'fixtures', 'label_remap.txt')
+    with open(f_name, 'r') as f:
+        text_data = f.read()
+    with mock.patch(
+        'requests.Session.get',
         return_value=mock.MagicMock(
             status_code=200, iter_lines=lambda **kwargs: text_data.split("\n"), headers={'Content-Type': "text/plain"}
         ),

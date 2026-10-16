@@ -15,7 +15,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_servertech_pdu3(dd_agent_check):
@@ -27,8 +27,12 @@ def test_e2e_profile_servertech_pdu3(dd_agent_check):
     common_tags = [
         'snmp_profile:servertech-pdu3',
         'snmp_host:servertech-pdu3.device.name',
+        'device_hostname:servertech-pdu3.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + [
         'servertech_sentry3_system_nic_serial_number:oxen',
         'servertech_sentry3_system_version:zombies acted kept quaintly but but',
@@ -214,6 +218,7 @@ def test_e2e_profile_servertech_pdu3(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.1718.3',
         'vendor': 'servertech',
         'device_type': 'pdu',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

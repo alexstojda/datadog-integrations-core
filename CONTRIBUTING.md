@@ -9,8 +9,8 @@ To propose improvements, feel free to submit a PR.
 
 * If you have a feature request, you should [contact support][3] so the request 
 can be properly tracked.
-* If you think you've found an issue, please search the [Troubleshooting][1]
-  section of our [Knowledge base][2] to see if it's known.
+* If you think you've found an issue, please check the [Agent troubleshooting
+  guide][1] and search our [Knowledge base][2] to see if it's known.
 * If you can't find anything useful, please contact our [support][3] and
   [send them your logs][4].
 * Finally, you can open a Github issue.
@@ -26,16 +26,7 @@ when submitting your PR:
 * Write tests for the code you wrote.
 * Make sure that all tests pass locally.
 * Summarize your PR with a meaningful title, [see later on this doc](#pull-request-title).
-* Add the most suitable changelog label choosing one of the following:
-  * `changelog/Added` for new features.
-  * `changelog/Changed` for changes in existing functionality.
-  * `changelog/Deprecated` for soon-to-be removed features.
-  * `changelog/Removed` for now removed features.
-  * `changelog/Fixed` for any bug fixes.
-  * `changelog/Security` in case of vulnerabilities.
-  * `changelog/no-changelog` in case this PR should not appear in the changelog at all.
-
-See [here][5] for more details about changelogs.
+* Add the most suitable changelog entry, [see here for more][8].
 
 Your pull request must pass all CI tests before we will merge it. If you're seeing
 an error and don't think it's your fault, it may not be! [Join us on Slack][6]
@@ -65,10 +56,11 @@ working on for a day.
 
 For new integrations, please open a pull request in the [integrations-extras][7] repo.
 
-[1]: https://datadog.zendesk.com/hc/en-us/sections/200766955-Troubleshooting
-[2]: https://datadog.zendesk.com/hc/en-us
+[1]: https://docs.datadoghq.com/agent/troubleshooting/
+[2]: https://help.datadoghq.com/hc/en-us
 [3]: https://docs.datadoghq.com/help/
-[4]: https://docs.datadoghq.com/agent/troubleshooting/#send-a-flare
+[4]: https://docs.datadoghq.com/agent/troubleshooting/send_a_flare/
 [5]: https://keepachangelog.com/en/1.0.0
 [6]: https://datadoghq.slack.com
 [7]: https://github.com/DataDog/integrations-extras
+[8]: https://datadoghq.dev/integrations-core/guidelines/pr

@@ -7,32 +7,42 @@ on:
   pull_request:
     branches:
     - master
+    paths:
+    - '.github/workflows/docs.yml'
+    - 'docs/**'
+    - 'ddev/**'
+    - 'datadog_checks_dev/**'
+    - 'mkdocs.yml'
+    # We care about changes to base package dependencies because they get installed
+    # in the docs virtualenv along with the dependencies of ddev. For example, this PR:
+    # https://github.com/DataDog/integrations-core/pull/17319/files#diff-1b02d4258aa29155f48813d2eb55fc87f62abbded6d8a9fa9e3b8f08365d771aR64
+    # broke the docs job (pydantic incompatible with ddev's version) but we didn't find out until later.
+    - 'datadog_checks_base/pyproject.toml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         # Fetch all history for applying timestamps to every page
         fetch-depth: 0
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
-        python-version: '3.11'
-
-    - name: Upgrade Python packaging tools
-      run: pip install --disable-pip-version-check --upgrade pip setuptools wheel
+        python-version: '3.13'
 
     - name: Install ddev
-      run: |
-        pip install -e ./datadog_checks_dev[cli]
-        pip install -e ./ddev
+      uses: ./.github/actions/setup-ddev
+      with:
+        install-mode: local
+        cache-profile: local-ddev-base
 
     - name: Configure ddev
       run: |
+        ddev config set upgrade_check false
         ddev config set repos.core .
         ddev config set repo core
 
@@ -47,7 +57,7 @@ jobs:
     - name: Build documentation
       run: ddev -v docs build
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: documentation
         path: site
@@ -59,13 +69,16 @@ jobs:
     needs:
     - build
 
+    permissions:
+      contents: write
+      
     steps:
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
       with:
         name: documentation
         path: site
 
-    - uses: peaceiris/actions-gh-pages@v3
+    - uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./site

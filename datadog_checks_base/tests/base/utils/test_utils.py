@@ -8,10 +8,9 @@ from decimal import ROUND_HALF_DOWN
 
 import mock
 import pytest
-from six import PY2, PY3
 
 from datadog_checks.base.utils.common import ensure_bytes, ensure_unicode, pattern_filter, round_value, to_native_string
-from datadog_checks.base.utils.containers import hash_mutable, iter_unique
+from datadog_checks.base.utils.containers import hash_mutable, hash_mutable_stable, iter_unique
 from datadog_checks.base.utils.limiter import Limiter
 from datadog_checks.base.utils.secrets import SecretsSanitizer
 
@@ -132,6 +131,15 @@ class TestRounding:
 
 
 class TestContainers:
+    COMPLEX_OBJECT = {
+        'url': 'http://localhost:9090/metrics',
+        'tags': ['test:tag', 'env:dev'],
+        'port': 9090,
+        'options': {'timeout': 5, 'retries': 3},
+        'none_value': None,
+        123: 'integer_key',
+    }
+
     def test_iter_unique(self):
         custom_queries = [
             {
@@ -167,10 +175,6 @@ class TestContainers:
         h = hash_mutable(value)
         assert isinstance(h, int)
 
-    @pytest.mark.skipif(
-        PY2,
-        reason="In Python 2, a < b when a and b are of different types returns `False` (does not raise `TypeError`)",
-    )
     @pytest.mark.parametrize(
         'value',
         [
@@ -184,10 +188,12 @@ class TestContainers:
     )
     def test_hash_mutable_unsupported_mixed_type(self, value):
         """
-        Hashing mixed type containers is not supported, mostly because we haven't needed to add support for it yet.
+        Mixed typed containers should be valid as well.
         """
-        with pytest.raises(TypeError):
+        try:
             hash_mutable(value)
+        except TypeError:
+            pytest.fail("Mixed typed containers should not raise TypeError.")
 
     @pytest.mark.parametrize(
         'left, right',
@@ -202,28 +208,26 @@ class TestContainers:
         """
         assert hash_mutable(left) == hash_mutable(right)
 
+    # Tests for the hash_mutable_stable just ensure that the hash is always the same
+    # No need to cover all usecases since internally we use the same logic as with hash_mutable
+    def test_hash_mutable_stable(self):
+        expected = "13d8320744fcf8a4c2a1dfe3c4401153b81f5481ddae622374fcf44712198b3c"
+        assert hash_mutable_stable(self.COMPLEX_OBJECT) == expected
+
 
 class TestBytesUnicode:
-    @pytest.mark.skipif(PY3, reason="Python 3 does not support explicit bytestring with special characters")
-    def test_ensure_bytes_py2(self):
-        assert ensure_bytes('éâû') == 'éâû'
-        assert ensure_bytes(u'éâû') == 'éâû'
-
     def test_ensure_bytes(self):
         assert ensure_bytes('qwerty') == b'qwerty'
 
     def test_ensure_unicode(self):
-        assert ensure_unicode('éâû') == u'éâû'
-        assert ensure_unicode(u'éâû') == u'éâû'
+        assert ensure_unicode('éâû') == 'éâû'
+        assert ensure_unicode('éâû') == 'éâû'
 
     def test_to_native_string(self):
         # type: () -> None
-        text = u'éâû'
+        text = 'éâû'
         binary = text.encode('utf-8')
-        if PY3:
-            assert to_native_string(binary) == text
-        else:
-            assert to_native_string(binary) == binary
+        assert to_native_string(binary) == text
 
 
 class TestSecretsSanitizer:

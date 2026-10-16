@@ -26,7 +26,9 @@ class CustomQuery(BaseModel):
         arbitrary_types_allowed=True,
         frozen=True,
     )
+    collection_interval: Optional[int] = None
     columns: Optional[tuple[MappingProxyType[str, Any], ...]] = None
+    metric_prefix: Optional[str] = None
     query: Optional[str] = None
     tags: Optional[tuple[str, ...]] = None
 
@@ -40,7 +42,7 @@ class MetricPatterns(BaseModel):
     include: Optional[tuple[str, ...]] = None
 
 
-class Table(BaseModel):
+class Tables(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         frozen=True,
@@ -64,6 +66,7 @@ class InstanceConfig(BaseModel):
     database: str
     disable_generic_tags: Optional[bool] = None
     empty_default_hostname: Optional[bool] = None
+    enable_legacy_tags_normalization: Optional[bool] = None
     https_port: Optional[int] = None
     metric_patterns: Optional[MetricPatterns] = None
     min_collection_interval: Optional[float] = None
@@ -74,7 +77,7 @@ class InstanceConfig(BaseModel):
     service: Optional[str] = None
     ssl_mode: Optional[Literal['Allow', 'Disable', 'Prefer', 'Require']] = None
     ssl_protocol: Optional[str] = None
-    tables: Optional[Union[tuple[str, ...], Table]] = None
+    tables: Optional[Union[tuple[str, ...], Tables]] = None
     tags: Optional[tuple[str, ...]] = None
     use_global_custom_queries: Optional[str] = None
     username: Optional[str] = None

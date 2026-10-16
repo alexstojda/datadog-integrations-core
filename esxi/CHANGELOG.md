@@ -1,0 +1,89 @@
+# CHANGELOG - ESXi
+
+<!-- towncrier release notes start -->
+
+## 4.4.0 / 2026-08-05 / Agent 7.83.0
+
+***Security***:
+
+* Expand the set of configuration fields protected behind integration security settings. ([#24646](https://github.com/DataDog/integrations-core/pull/24646))
+
+## 4.3.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+## 4.2.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 4.1.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 4.0.0 / 2025-05-15 / Agent 7.67.0
+
+***Changed***:
+
+* Bump datadog-checks-base to 37.10.1 and python to 3.12 ([#20271](https://github.com/DataDog/integrations-core/pull/20271))
+
+## 3.0.1 / 2025-04-09 / Agent 7.66.0
+
+***Fixed***:
+
+* Properly support custom tags. ([#20022](https://github.com/DataDog/integrations-core/pull/20022))
+
+## 3.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+## 2.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 1.2.0 / 2024-07-05 / Agent 7.56.0
+
+***Added***:
+
+* Update dependencies ([#17953](https://github.com/DataDog/integrations-core/pull/17953))
+
+***Fixed***:
+
+* Properly submit percent metrics ([#17745](https://github.com/DataDog/integrations-core/pull/17745))
+* Maintain a long lived connection to ESXi host. ([#17919](https://github.com/DataDog/integrations-core/pull/17919))
+
+## 1.1.0 / 2024-05-31 / Agent 7.55.0
+
+***Added***:
+
+* Add option to use configured host as hostname. ([#17544](https://github.com/DataDog/integrations-core/pull/17544))
+* Add socks proxy support. ([#17622](https://github.com/DataDog/integrations-core/pull/17622))
+
+***Fixed***:
+
+* Remove invalid host tags ([#17549](https://github.com/DataDog/integrations-core/pull/17549))
+* Enable empty_default_hostname by default ([#17595](https://github.com/DataDog/integrations-core/pull/17595))
+
+## 1.0.0 / 2024-04-26 / Agent 7.54.0
+
+***Added***:
+
+* Add ESXi integration ([#17027](https://github.com/DataDog/integrations-core/pull/17027))
+
+***Fixed***:
+
+* Lower log level for missing metric ([#17459](https://github.com/DataDog/integrations-core/pull/17459))

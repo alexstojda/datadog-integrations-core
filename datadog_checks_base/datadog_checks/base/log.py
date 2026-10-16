@@ -1,21 +1,23 @@
 # (C) Datadog, Inc. 2018-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
+from __future__ import annotations
+
 import logging
 import sys
-import warnings
-from typing import Callable  # noqa: F401
+from typing import TYPE_CHECKING, Callable
 
-from six import PY2, text_type
-from urllib3.exceptions import InsecureRequestWarning
+import lazy_loader
+
+from datadog_checks.base.agent import datadog_agent
 
 from .utils.common import to_native_string
 from .utils.tracing import tracing_enabled
 
-try:
-    import datadog_agent
-except ImportError:
-    from .stubs import datadog_agent
+if TYPE_CHECKING:
+    import inspect as _module_inspect
+
+inspect: _module_inspect = lazy_loader.load('inspect')
 
 # Arbitrary number less than 10 (DEBUG)
 TRACE_LEVEL = 7
@@ -32,44 +34,31 @@ class AgentLogger(logging.getLoggerClass()):
 
 
 class CheckLoggingAdapter(logging.LoggerAdapter):
-    def __init__(self, logger, check):
+    def __init__(self, logger, check_id=''):
         super(CheckLoggingAdapter, self).__init__(logger, {})
-        self.check = check
-        self.check_id = self.check.check_id
+        self.set_check_id(check_id)
 
-    def setup_sanitization(self, sanitize):
-        # type: (Callable[[str], str]) -> None
+    def set_check_id(self, check_id: str) -> None:
+        """
+        Stamp ``check_id`` onto every record this adapter processes from now on.
+
+        An empty ``check_id`` is recorded as ``unknown``, which is what records logged before the
+        Agent assigns an id carry.
+        """
+        self.check_id = check_id
+        self.extra['_check_id'] = check_id or 'unknown'
+
+    def setup_sanitization(self, sanitize: Callable[[str], str]) -> None:
         for handler in self.logger.handlers:
             if isinstance(handler, AgentLogHandler):
                 handler.setFormatter(SanitizationFormatter(handler.formatter, sanitize=sanitize))
 
     def process(self, msg, kwargs):
-        # Cache for performance
-        if not self.check_id:
-            self.check_id = self.check.check_id
-            # Default to `unknown` for checks that log during
-            # `__init__` and therefore have no `check_id` yet
-            self.extra['_check_id'] = self.check_id or 'unknown'
-            if self.check_id:
-                # Break the reference cycle, once we resolved check_id we don't need the check anymore
-                self.check = None
-
         kwargs.setdefault('extra', self.extra)
         return msg, kwargs
 
     def trace(self, msg, *args, **kwargs):
         self.log(TRACE_LEVEL, msg, *args, **kwargs)
-
-    if PY2:
-
-        def warn(self, msg, *args, **kwargs):
-            self.log(logging.WARNING, msg, *args, **kwargs)
-
-        def getEffectiveLevel(self):
-            """
-            Get the effective level for the underlying logger.
-            """
-            return self.logger.getEffectiveLevel()
 
 
 class CheckLogFormatter(logging.Formatter):
@@ -149,10 +138,6 @@ def _get_py_loglevel(lvl):
     """
     Map log levels to strings
     """
-    # In Python2, transform the unicode object into plain string
-    if PY2 and isinstance(lvl, text_type):
-        lvl = lvl.encode('ascii', 'ignore')
-
     # Be resilient to bad input since `lvl` comes from a configuration file
     try:
         lvl = lvl.upper()
@@ -176,9 +161,6 @@ def init_logging():
     rootLogger = logging.getLogger()
     rootLogger.addHandler(AgentLogHandler())
     rootLogger.setLevel(_get_py_loglevel(datadog_agent.get_config('log_level')))
-
-    # We log instead of emit warnings for unintentionally insecure HTTPS requests
-    warnings.simplefilter('ignore', InsecureRequestWarning)
 
     # `requests` (used in a lot of checks) imports `urllib3`, which logs a bunch of stuff at the info level
     # Therefore, pre emptively increase the default level of that logger to `WARN`

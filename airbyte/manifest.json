@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "5994a02c-8754-40c3-9e99-a39ffc862b1c",
   "app_id": "airbyte",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -13,9 +14,12 @@
     "media": [],
     "classifier_tags": [
       "Category::AI/ML",
+      "Category::Data Stores",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Submitted Data Type::Metrics",
+      "Offering::Integration"
     ]
   },
   "assets": {
@@ -47,7 +51,7 @@
       "airbyte_overview": "assets/dashboards/airbyte_overview.json"
     },
     "monitors": {
-      "long_running_jobs": "assets/monitors/long_running_jobs.json"
+      "Sync Jobs are taking a longer time than usual": "assets/monitors/long_running_jobs.json"
     }
   },
   "author": {

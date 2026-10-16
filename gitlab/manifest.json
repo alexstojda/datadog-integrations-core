@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "3d165411-7734-4f72-b39a-f222add296b2",
   "app_id": "gitlab",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -19,7 +20,10 @@
       "Category::Source Control",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Submitted Data Type::Metrics",
+      "Submitted Data Type::Logs",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -58,9 +62,6 @@
     },
     "dashboards": {
       "Gitlab Overview": "assets/dashboards/overview.json"
-    },
-    "logs": {
-      "source": "gitlab"
     }
   }
 }

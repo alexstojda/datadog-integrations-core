@@ -16,7 +16,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_generic_ups(dd_agent_check):
@@ -28,8 +28,12 @@ def test_e2e_profile_generic_ups(dd_agent_check):
     common_tags = [
         'snmp_profile:generic-ups',
         'snmp_host:generic-ups.device.name',
+        'device_hostname:generic-ups.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ]
 
     # --- TEST EXTENDED METRICS ---
@@ -49,6 +53,7 @@ def test_e2e_profile_generic_ups(dd_agent_check):
         'status': 1,
         'sys_object_id': '1.3.6.1.2.1.33',
         'device_type': 'ups',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

@@ -1,12 +1,14 @@
 # Elasticsearch Integration
 
-![Elastic search dashboard][1]
+![Elasticsearch dashboard][1]
 
 ## Overview
 
 Stay up-to-date on the health of your Elasticsearch cluster, from its overall status down to JVM heap usage and everything in between. Get notified when you need to revive a replica, add capacity to the cluster, or otherwise tweak its configuration. After doing so, track how your cluster metrics respond.
 
 The Datadog Agent's Elasticsearch check collects metrics for search and indexing performance, memory usage and garbage collection, node availability, shard statistics, disk space and performance, pending tasks, and many more. The Agent also sends events and service checks for the overall status of your cluster.
+
+**Minimum Agent version:** 6.0.0
 
 ## Setup
 
@@ -36,6 +38,16 @@ To configure this check for an Agent running on a host:
      ## fetch statistics from the nodes and information about the cluster health.
      #
      - url: http://localhost:9200
+
+      ## @param username - string - optional
+      ## The username to use if services are behind basic or digest auth.
+      #
+      # username: <USERNAME>
+
+      ## @param password - string - optional
+      ## The password to use if services are behind basic or NTLM auth.
+      #
+      # password: <PASSWORD>
    ```
 
     **Notes**:
@@ -60,7 +72,7 @@ To configure this check for an Agent running on a host:
       - All requests to the Amazon ES configuration API must be signed. See the [Making and signing OpenSearch Service requests][6] for details.
       - The `aws` auth type relies on [boto3][7] to automatically gather AWS credentials from `.aws/credentials`. Use `auth_type: basic` in the `conf.yaml` and define the credentials with `username: <USERNAME>` and `password: <PASSWORD>`.
       - You must create a user and a role (if you don't already have them) in Elasticsearch with the proper permissions to monitor. This can be done through the REST API offered by Elasticsearch, or through the Kibana UI.
-      - If you have enabled security features in Elastic Search, you can use `monitor` or `manage` privilege while using the API to make the calls to the Elastic Search indices.
+      - If you have enabled security features in Elasticsearch, you can use `monitor` or `manage` privilege while using the API to make the calls to the Elasticsearch indices.
       - Include the following properties in the created role:
         ```json
         name = "datadog"
@@ -79,11 +91,23 @@ To configure this check for an Agent running on a host:
 
 2. [Restart the Agent][8].
 
-###### Custom Queries
+###### Custom queries
 
-The ElasticSearch integration allows you to collect custom metrics through custom queries by using the `custom_queries` configuration option. 
+The Elasticsearch integration allows you to collect custom metrics through custom queries by using the `custom_queries` configuration option. A custom query endpoint can collect multiple metrics and tags.
 
-**Note:** When running custom queries, use a read only account to ensure that the ElasticSearch instance does not change.
+Each custom query has the following parameters:
+
+- `endpoint` (required): The Elasticsearch API endpoint to query.
+- `data_path` (optional): The JSON path up to (not including) the metric. Cannot contain wildcards. For example: if you are querying for the size of a parent circuit breaker, and the full path is `breakers.parent.estimated_size_in_bytes`, then the `data_path` is `breakers.parent`. If omitted or empty, `value_path` is resolved against the root of the response, which is useful for flat responses such as `/<index>/_count`.
+- `columns` (required): A list representing the data to be collected from the JSON query. Each item in this list includes:
+   - `value_path` (required): The JSON path from the `data_path` to the metric. This path can include string keys and list indices. For example: if you are querying for the size of a parent circuit breaker, and the full path is `breakers.parent.estimated_size_in_bytes`, then the `value_path` is `estimated_size_in_bytes`.
+   - `name` (required): The full metric name sent to Datadog. If you also set `type` to `tag`, then every metric collected by this query is tagged with this name.
+   - `type` (optional): Designates the type of data sent. Possible values: `gauge`, `monotonic_count`, `rate`, `tag`. Defaults to `gauge`.
+- `payload` (optional): If declared, turns the GET request into a POST request. Use YAML formatting and a read-only user when writing custom queries with a payload.
+
+**Note:** When running custom queries, use a read only account to ensure that the Elasticsearch instance does not change.
+
+Examples:
 
 ```yaml
 custom_queries:
@@ -119,12 +143,13 @@ The custom query sends as a `GET` request. If you use an optional `payload` para
 
 `value_path: foo.bar.1` returns the value `result1`.
 
+
 ##### Trace collection
 
 Datadog APM integrates with Elasticsearch to see the traces across your distributed system. Trace collection is enabled by default in the Datadog Agent v6+. To start collecting traces:
 
 1. [Enable trace collection in Datadog][9].
-2. [Instrument your application that makes requests to ElasticSearch][10].
+2. [Instrument your application that makes requests to Elasticsearch][10].
 
 ##### Log collection
 
@@ -250,7 +275,9 @@ To configure this check for an Agent running on Kubernetes:
 
 ##### Metric collection
 
-Set [Autodiscovery Integrations Templates][17] as pod annotations on your application container. Aside from this, templates can also be configured with [a file, a configmap, or a key-value store][18].
+Choose one of the following Kubernetes Autodiscovery configurations. You can also configure templates with [a file, a configmap, or a key-value store][18].
+
+###### Kubernetes annotations
 
 **Annotations v1** (for Datadog Agent < v7.36)
 
@@ -296,6 +323,29 @@ spec:
   containers:
     - name: elasticsearch
 ```
+###### DatadogInstrumentation CRD
+
+```yaml
+apiVersion: datadoghq.com/v1alpha1
+kind: DatadogInstrumentation
+metadata:
+  name: <CR_NAME>
+  namespace: <WORKLOAD_NAMESPACE>
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet # Or another target kind, if applicable.
+    name: <ELASTICSEARCH_WORKLOAD_NAME>
+  config:
+    checks:
+      - integration: elastic
+        containerName: elasticsearch
+        initConfig: {}
+        instances:
+          - url: "http://%%host%%:9200"
+```
+
+For setup details, see [Configure Autodiscovery with the DatadogInstrumentation CRD][31].
 
 ##### Log collection
 
@@ -410,6 +460,7 @@ By default, not all of the following metrics are sent by the Agent. To send all 
 - `index_stats` sends **elasticsearch.index.\*** metrics
 - `pending_task_stats` sends **elasticsearch.pending\_\*** metrics
 - `slm_stats` sends **elasticsearch.slm.\*** metrics
+- `cat_allocation_stats` sends **elasticsearch.disk.\*** metrics
 
 ### Metrics
 
@@ -434,7 +485,7 @@ See [service_checks.json][26] for a list of service checks provided by this inte
 
 
 [1]: https://raw.githubusercontent.com/DataDog/integrations-core/master/elastic/images/elasticsearch-dash.png
-[2]: https://app.datadoghq.com/account/settings/agent/latest
+[2]: /account/settings/agent/latest
 [3]: https://docs.datadoghq.com/agent/guide/agent-configuration-files/#agent-configuration-directory
 [4]: https://github.com/DataDog/integrations-core/blob/master/elastic/datadog_checks/elastic/data/conf.yaml.example
 [5]: https://docs.datadoghq.com/getting_started/tagging/assigning_tags?tab=noncontainerizedenvironments#file-location
@@ -462,3 +513,4 @@ See [service_checks.json][26] for a list of service checks provided by this inte
 [28]: https://www.datadoghq.com/blog/monitor-elasticsearch-performance-metrics
 [29]: https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-put-role.html
 [30]: https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-put-user.html
+[31]: https://docs.datadoghq.com/containers/guide/configure-autodiscovery-with-the-datadoginstrumentation-crd/

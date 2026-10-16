@@ -273,32 +273,252 @@ class TestStatementMetrics:
 
     def test_compute_derivative_rows_mem_usage(self):
         '''
-        Test that the memory usage of `compute_derivative_rows` is within acceptable limits
-        Make sure we minimize the temporary objects created when computing the derivative
-        This test is skipped if tracemalloc is not available
+        Test that _previous_statements only caches metric columns, not full rows.
+        This ensures we don't hold on to large non-metric fields (e.g. query text) between check runs.
         '''
-        MEMORY_USAGE_THRESHOLD = 7 * 1024 * 1024  # 7 MB
-
-        try:
-            import tracemalloc
-        except ImportError:
-            return
-
-        tracemalloc.start()
-
-        _, peak_before = tracemalloc.get_traced_memory()
         sm = StatementMetrics()
-        self.__run_compute_derivative_rows(sm)
+        metrics = ['count', 'time']
+        rows = [
+            {
+                'count': 100,
+                'time': 2005,
+                'errors': 1,
+                'query': 'x' * 3000,
+                'db': 'puppies',
+                'user': 'dog',
+                'query_signature': 'sig{}'.format(random.randint(0, 10000)),
+            }
+            for _ in range(10000)
+        ]
+        sm.compute_derivative_rows(rows, metrics, key=lambda x: x['query_signature'])
 
-        _, peak_after = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-
-        # Calculate the difference in memory usage
-        peak_diff = peak_after - peak_before
-        assert peak_diff < MEMORY_USAGE_THRESHOLD, "Memory usage difference {} is over the threshold {}".format(
-            peak_diff, MEMORY_USAGE_THRESHOLD
-        )
+        violations = {
+            key: set(cached_row.keys()) - set(metrics)
+            for key, cached_row in sm._previous_statements.items()
+            if not set(cached_row.keys()) <= set(metrics)
+        }
+        assert not violations, "Cache contains non-metric columns: {}".format(violations)
 
     def test_compute_derivative_rows_benchmark(self, benchmark):
         sm = StatementMetrics()
         benchmark(self.__run_compute_derivative_rows, sm)
+
+    def test_compute_derivative_rows_with_execution_indicators(self):
+        sm = StatementMetrics()
+
+        def key(row):
+            return (row['query'], row['db'], row['user'])
+
+        metrics = ['calls', 'total_time', 'rows']
+        execution_indicators = ['calls']
+
+        # Initial state
+        rows1 = [
+            {'calls': 10, 'total_time': 1000, 'rows': 50, 'query': 'SELECT 1', 'db': 'test', 'user': 'user1'},
+            {'calls': 5, 'total_time': 500, 'rows': 25, 'query': 'SELECT 2', 'db': 'test', 'user': 'user1'},
+        ]
+
+        sm.compute_derivative_rows(rows1, metrics, key=key, execution_indicators=execution_indicators)
+
+        # Second run - only duration changes (should be ignored)
+        rows2 = [
+            {'calls': 10, 'total_time': 1001, 'rows': 50, 'query': 'SELECT 1', 'db': 'test', 'user': 'user1'},
+            {'calls': 5, 'total_time': 501, 'rows': 25, 'query': 'SELECT 2', 'db': 'test', 'user': 'user1'},
+        ]
+        assert [] == sm.compute_derivative_rows(rows2, metrics, key=key, execution_indicators=execution_indicators)
+
+        # Third run - calls change (should be included)
+        rows3 = [
+            {'calls': 11, 'total_time': 1002, 'rows': 51, 'query': 'SELECT 1', 'db': 'test', 'user': 'user1'},
+            {'calls': 5, 'total_time': 502, 'rows': 25, 'query': 'SELECT 2', 'db': 'test', 'user': 'user1'},
+        ]
+        result = sm.compute_derivative_rows(rows3, metrics, key=key, execution_indicators=execution_indicators)
+        assert len(result) == 1
+        assert result[0]['calls'] == 1
+        assert result[0]['total_time'] == 1
+        assert result[0]['rows'] == 1
+
+    def test_compute_derivative_rows_with_multiple_execution_indicators(self):
+        sm = StatementMetrics()
+
+        def key(row):
+            return (row['query'], row['db'], row['user'])
+
+        metrics = ['calls', 'executions', 'total_time', 'rows']
+        execution_indicators = ['calls', 'executions']
+
+        # Initial state
+        rows1 = [
+            {
+                'calls': 10,
+                'executions': 10,
+                'total_time': 1000,
+                'rows': 50,
+                'query': 'SELECT 1',
+                'db': 'test',
+                'user': 'user1',
+            },
+        ]
+
+        sm.compute_derivative_rows(rows1, metrics, key=key, execution_indicators=execution_indicators)
+
+        # Second run - only one execution indicator changes
+        rows2 = [
+            {
+                'calls': 11,
+                'executions': 10,
+                'total_time': 1001,
+                'rows': 50,
+                'query': 'SELECT 1',
+                'db': 'test',
+                'user': 'user1',
+            },
+        ]
+        result = sm.compute_derivative_rows(rows2, metrics, key=key, execution_indicators=execution_indicators)
+        assert len(result) == 1
+        assert result[0]['calls'] == 1
+        assert result[0]['executions'] == 0
+        assert result[0]['total_time'] == 1
+        assert result[0]['rows'] == 0
+
+        # Third run - both execution indicators change
+        rows3 = [
+            {
+                'calls': 12,
+                'executions': 11,
+                'total_time': 1002,
+                'rows': 51,
+                'query': 'SELECT 1',
+                'db': 'test',
+                'user': 'user1',
+            },
+        ]
+        result = sm.compute_derivative_rows(rows3, metrics, key=key, execution_indicators=execution_indicators)
+        assert len(result) == 1
+        assert result[0]['calls'] == 1
+        assert result[0]['executions'] == 1
+        assert result[0]['total_time'] == 1
+        assert result[0]['rows'] == 1
+
+    def test_compute_derivative_rows_with_invalid_execution_indicators(self):
+        sm = StatementMetrics()
+
+        def key(row):
+            return (row['query'], row['db'], row['user'])
+
+        metrics = ['calls', 'total_time', 'rows']
+
+        # Test with empty execution indicators
+        rows1 = [
+            {'calls': 10, 'total_time': 1000, 'rows': 50, 'query': 'SELECT 1', 'db': 'test', 'user': 'user1'},
+        ]
+        rows2 = [
+            {'calls': 11, 'total_time': 1001, 'rows': 51, 'query': 'SELECT 1', 'db': 'test', 'user': 'user1'},
+        ]
+
+        # Empty execution indicators should behave like no execution indicators specified
+        _ = sm.compute_derivative_rows(rows1, metrics, key=key, execution_indicators=[])
+        result = sm.compute_derivative_rows(rows2, metrics, key=key, execution_indicators=[])
+        assert len(result) == 1
+        assert result[0]['calls'] == 1
+        assert result[0]['total_time'] == 1
+        assert result[0]['rows'] == 1
+
+    def test_compute_derivative_rows_with_mismatched_metric_columns(self):
+        """
+        Test that when metric columns differ between runs (e.g., pg_stat_statements plan/timing tracking
+        was enabled or disabled), the derivative is computed only for common columns without raising KeyError.
+        """
+        sm = StatementMetrics()
+
+        def key(row):
+            return (row['query'], row['db'], row['user'])
+
+        # Initial state - without plan timing columns
+        rows1 = [
+            {'calls': 10, 'total_time': 1000, 'query': 'SELECT 1', 'db': 'test', 'user': 'user1'},
+        ]
+        # Note: we request metrics that include plan timing columns, but row1 doesn't have them
+        metrics = ['calls', 'total_time', 'min_plan_time', 'max_plan_time']
+        sm.compute_derivative_rows(rows1, metrics, key=key)
+
+        # Second run - plan timing columns added (e.g., pg_stat_statements plan timing enabled)
+        rows2 = [
+            {
+                'calls': 15,
+                'total_time': 1500,
+                'min_plan_time': 0.1,
+                'max_plan_time': 0.5,
+                'query': 'SELECT 1',
+                'db': 'test',
+                'user': 'user1',
+            },
+        ]
+        # Should compute derivative only for common columns (calls, total_time), not raise KeyError
+        result = sm.compute_derivative_rows(rows2, metrics, key=key)
+        assert len(result) == 1
+        assert result[0]['calls'] == 5
+        assert result[0]['total_time'] == 500
+        # The new columns should be present in the result but not diffed
+        assert result[0]['min_plan_time'] == 0.1
+        assert result[0]['max_plan_time'] == 0.5
+
+        # Third run - with the new baseline (now has plan timing columns)
+        rows3 = [
+            {
+                'calls': 20,
+                'total_time': 2000,
+                'min_plan_time': 0.2,
+                'max_plan_time': 0.8,
+                'query': 'SELECT 1',
+                'db': 'test',
+                'user': 'user1',
+            },
+        ]
+        # Now all metrics should be computed
+        result = sm.compute_derivative_rows(rows3, metrics, key=key)
+        assert len(result) == 1
+        assert result[0]['calls'] == 5
+        assert result[0]['total_time'] == 500
+        # Plan timing columns should now show the diff since both rows have them
+        assert result[0]['min_plan_time'] == pytest.approx(0.1, abs=0.001)
+        assert result[0]['max_plan_time'] == pytest.approx(0.3, abs=0.001)
+
+    def test_compute_derivative_rows_with_columns_removed(self):
+        """
+        Test that when metric columns are removed between runs (e.g., pg_stat_statements plan timing
+        was disabled), the derivative is computed only for common columns without raising KeyError.
+        """
+        sm = StatementMetrics()
+
+        def key(row):
+            return (row['query'], row['db'], row['user'])
+
+        metrics = ['calls', 'total_time', 'min_plan_time', 'max_plan_time']
+
+        # Initial state - with plan timing columns
+        rows1 = [
+            {
+                'calls': 10,
+                'total_time': 1000,
+                'min_plan_time': 0.1,
+                'max_plan_time': 0.5,
+                'query': 'SELECT 1',
+                'db': 'test',
+                'user': 'user1',
+            },
+        ]
+        sm.compute_derivative_rows(rows1, metrics, key=key)
+
+        # Second run - plan timing columns removed (e.g., pg_stat_statements plan timing disabled)
+        rows2 = [
+            {'calls': 15, 'total_time': 1500, 'query': 'SELECT 1', 'db': 'test', 'user': 'user1'},
+        ]
+        # Should compute derivative only for common columns (calls, total_time), not raise KeyError
+        result = sm.compute_derivative_rows(rows2, metrics, key=key)
+        assert len(result) == 1
+        assert result[0]['calls'] == 5
+        assert result[0]['total_time'] == 500
+        # Plan timing columns should not be present in the result
+        assert 'min_plan_time' not in result[0]
+        assert 'max_plan_time' not in result[0]

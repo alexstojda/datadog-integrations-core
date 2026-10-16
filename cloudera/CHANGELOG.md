@@ -2,6 +2,63 @@
 
 <!-- towncrier release notes start -->
 
+## 3.6.0 / 2026-04-01 / Agent 7.78.0
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 3.5.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+## 3.4.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 3.3.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+***Fixed***:
+
+* Fix event collection on non-UTC servers. ([#21460](https://github.com/DataDog/integrations-core/pull/21460))
+
+## 3.2.0 / 2024-10-23 / Agent 7.60.0
+
+***Added***:
+
+* [cloudera] Configure the number of connection pools to cache ([#18886](https://github.com/DataDog/integrations-core/pull/18886))
+
+## 3.1.0 / 2024-10-04 / Agent 7.59.0
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 3.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 2.2.0 / 2024-06-12 / Agent 7.56.0
+
+***Added***:
+
+* Add Cloudera ssl config parameters and functionality ([#17649](https://github.com/DataDog/integrations-core/pull/17649))
+
 ## 2.1.0 / 2024-01-05 / Agent 7.51.0
 
 ***Added***:

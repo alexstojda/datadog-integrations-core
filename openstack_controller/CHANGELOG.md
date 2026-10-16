@@ -2,7 +2,205 @@
 
 <!-- towncrier release notes start -->
 
-## 6.3.0 / 2024-02-16
+## 9.8.0 / 2026-09-02 / Agent 7.84.0
+
+***Added***:
+
+* Update dependencies ([#24817](https://github.com/DataDog/integrations-core/pull/24817))
+
+## 9.7.0 / 2026-08-05 / Agent 7.83.0
+
+***Added***:
+
+* Update dependencies ([#24321](https://github.com/DataDog/integrations-core/pull/24321))
+
+## 9.6.1 / 2026-04-15 / Agent 7.79.0
+
+***Fixed***:
+
+* Improve descriptions ([#23047](https://github.com/DataDog/integrations-core/pull/23047))
+
+## 9.6.0 / 2026-04-01 / Agent 7.78.0
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 9.5.0 / 2026-03-18
+
+***Added***:
+
+* Update dependencies ([#22707](https://github.com/DataDog/integrations-core/pull/22707))
+
+## 9.4.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+## 9.3.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 9.2.1 / 2025-10-31 / Agent 7.73.0
+
+***Fixed***:
+
+* Add allowed values list on kerberos_auth field ([#20879](https://github.com/DataDog/integrations-core/pull/20879))
+
+## 9.2.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 9.1.0 / 2025-09-05 / Agent 7.71.0
+
+***Added***:
+
+* Update dependencies ([#21217](https://github.com/DataDog/integrations-core/pull/21217))
+
+## 9.0.0 / 2025-07-10 / Agent 7.69.0
+
+***Changed***:
+
+* Bump datadog_checks_base to 37.16.0 ([#20711](https://github.com/DataDog/integrations-core/pull/20711))
+
+## 8.6.0 / 2025-06-12 / Agent 7.68.0
+
+***Added***:
+
+* Update dependencies ([#20470](https://github.com/DataDog/integrations-core/pull/20470))
+
+## 8.5.0 / 2025-05-15 / Agent 7.67.0
+
+***Added***:
+
+* Update dependencies ([#20215](https://github.com/DataDog/integrations-core/pull/20215))
+
+***Fixed***:
+
+* Replace deprecated `cert.not_valid_after` and `datetime.utcnow()` with `cert.not_valid_after_utc` and `datetime.now(timezone.utc)` respectively. ([#20100](https://github.com/DataDog/integrations-core/pull/20100))
+
+## 8.4.0 / 2025-04-17 / Agent 7.66.0
+
+***Added***:
+
+* Update dependencies ([#19962](https://github.com/DataDog/integrations-core/pull/19962))
+* Add failover support with Agent High Availability feature. ([#19992](https://github.com/DataDog/integrations-core/pull/19992))
+
+## 8.3.1 / 2025-03-19 / Agent 7.65.0
+
+***Fixed***:
+
+* Remove unused code. ([#19701](https://github.com/DataDog/integrations-core/pull/19701))
+
+## 8.3.0 / 2025-02-20 / Agent 7.64.0
+
+***Added***:
+
+* Update dependencies ([#19576](https://github.com/DataDog/integrations-core/pull/19576))
+
+## 8.2.0 / 2025-01-25 / Agent 7.63.0
+
+***Added***:
+
+* Update dependencies ([#19430](https://github.com/DataDog/integrations-core/pull/19430))
+
+## 8.1.0 / 2025-01-16
+
+***Added***:
+
+* Add `tls_ciphers` param to integration ([#19334](https://github.com/DataDog/integrations-core/pull/19334))
+
+## 8.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 7.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 6.9.0 / 2024-08-09 / Agent 7.57.0
+
+***Added***:
+
+* Update dependencies ([#18187](https://github.com/DataDog/integrations-core/pull/18187))
+
+## 6.8.1 / 2024-07-24 / Agent 7.56.0
+
+***Fixed***:
+
+* Fixed the heat endpoint for the Openstack Controller ([#17996](https://github.com/DataDog/integrations-core/pull/17996))
+
+## 6.8.0 / 2024-06-21
+
+***Added***:
+
+* Added handling for new exception: 'CatalogEndPointFailure' and clearer log messages for exception handling ([#17904](https://github.com/DataDog/integrations-core/pull/17904))
+
+## 6.7.0 / 2024-06-20
+
+***Added***:
+
+* Handle more exceptions by lowering severity of logs ([#17773](https://github.com/DataDog/integrations-core/pull/17773))
+* Add 'all_projects' option for compute servers ([#17871](https://github.com/DataDog/integrations-core/pull/17871))
+
+***Fixed***:
+
+* Fix uninitialized variables ([#17771](https://github.com/DataDog/integrations-core/pull/17771))
+* Remove baremetal allocations microversion check ([#17791](https://github.com/DataDog/integrations-core/pull/17791))
+* Update config model names ([#17802](https://github.com/DataDog/integrations-core/pull/17802))
+
+## 6.6.0 / 2024-05-31
+
+***Added***:
+
+* Update dependencies ([#17424](https://github.com/DataDog/integrations-core/pull/17424))
+* Adding new glance image metrics ([#17492](https://github.com/DataDog/integrations-core/pull/17492))
+* Adding new Ironic metrics ([#17541](https://github.com/DataDog/integrations-core/pull/17541))
+* Added Heat Component ([#17573](https://github.com/DataDog/integrations-core/pull/17573))
+* Added Swift component ([#17640](https://github.com/DataDog/integrations-core/pull/17640))
+* Added volume_type tag to cinder volumes for ceph monitoring ([#17643](https://github.com/DataDog/integrations-core/pull/17643))
+
+***Fixed***:
+
+* Update the description for the `tls_ca_cert` config option to use `openssl rehash` instead of `c_rehash` ([#16981](https://github.com/DataDog/integrations-core/pull/16981))
+
+## 6.5.0 / 2024-04-26 / Agent 7.54.0
+
+***Added***:
+
+* Added new cinder metrics ([#17422](https://github.com/DataDog/integrations-core/pull/17422))
+
+## 6.4.0 / 2024-03-22 / Agent 7.53.0
+
+***Added***:
+
+* Add pagination support for network networks ([#16930](https://github.com/DataDog/integrations-core/pull/16930))
+* Update dependencies ([#16963](https://github.com/DataDog/integrations-core/pull/16963))
+* Add pagination support for baremetal conductors ([#17026](https://github.com/DataDog/integrations-core/pull/17026))
+* Add pagination support for loadbalancers ([#17100](https://github.com/DataDog/integrations-core/pull/17100))
+* Add pagination support for listeners ([#17120](https://github.com/DataDog/integrations-core/pull/17120))
+* Add pagination support for pools ([#17140](https://github.com/DataDog/integrations-core/pull/17140))
+* Add pagination support for amphorae ([#17150](https://github.com/DataDog/integrations-core/pull/17150))
+
+## 6.3.0 / 2024-02-16 / Agent 7.52.0
 
 ***Added***:
 

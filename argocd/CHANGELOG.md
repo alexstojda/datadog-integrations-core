@@ -2,7 +2,151 @@
 
 <!-- towncrier release notes start -->
 
-## 2.3.0 / 2024-02-16
+## 4.9.0 / 2026-10-01
+
+***Added***:
+
+* Add container-based config discovery support. ([#24624](https://github.com/DataDog/integrations-core/pull/24624))
+
+***Fixed***:
+
+* Default Argo CD Application streaming opt-in for entity collection ([#25464](https://github.com/DataDog/integrations-core/pull/25464))
+
+## 4.8.0 / 2026-07-08 / Agent 7.82.0
+
+***Added***:
+
+* Add opt-in streaming of Argo CD Application changes for near real-time generic resource collection, configurable per-resource-type collection intervals, and a `collect_openmetrics` option to collect generic resources without scraping metrics. ([#24288](https://github.com/DataDog/integrations-core/pull/24288))
+
+## 4.7.0 / 2026-06-18 / Agent 7.81.0
+
+***Added***:
+
+* Add more fields for metadata collection ([#24091](https://github.com/DataDog/integrations-core/pull/24091))
+
+## 4.6.0 / 2026-06-15
+
+***Added***:
+
+* Add a collector that submits ArgoCD applications, clusters, and repositories to Datadog as generic resources. ([#23917](https://github.com/DataDog/integrations-core/pull/23917))
+
+## 4.5.0 / 2026-04-15 / Agent 7.79.0
+
+***Added***:
+
+* Add support for new ArgoCD metrics including kubectl, OCI, GitHub API, login, and proxy extension metrics. ([#22960](https://github.com/DataDog/integrations-core/pull/22960))
+
+***Fixed***:
+
+* Improve descriptions ([#23047](https://github.com/DataDog/integrations-core/pull/23047))
+
+## 4.4.0 / 2026-04-01 / Agent 7.78.0
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 4.3.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+## 4.2.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Add a new metric for [application sync duration time](https://github.com/argoproj/argo-cd/issues/11675). ([#21882](https://github.com/DataDog/integrations-core/pull/21882))
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 4.1.1 / 2025-10-31 / Agent 7.73.0
+
+***Fixed***:
+
+* Add allowed values list on kerberos_auth field ([#20879](https://github.com/DataDog/integrations-core/pull/20879))
+
+## 4.1.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 4.0.1 / 2025-08-07 / Agent 7.70.0
+
+***Fixed***:
+
+* Improve descriptions and examples in example configuration file ([#20878](https://github.com/DataDog/integrations-core/pull/20878))
+
+## 4.0.0 / 2025-07-10 / Agent 7.69.0
+
+***Changed***:
+
+* Bump datadog_checks_base to 37.16.0 ([#20711](https://github.com/DataDog/integrations-core/pull/20711))
+
+## 3.4.0 / 2025-06-12 / Agent 7.68.0
+
+***Added***:
+
+* Add functionality to collect metrics from [commit server](https://argo-cd.readthedocs.io/en/latest/operator-manual/metrics/#commit-server-metrics) ([#20412](https://github.com/DataDog/integrations-core/pull/20412))
+
+## 3.3.0 / 2025-01-16 / Agent 7.63.0
+
+***Added***:
+
+* Add `tls_ciphers` param to integration ([#19334](https://github.com/DataDog/integrations-core/pull/19334))
+
+## 3.2.0 / 2024-11-28 / Agent 7.61.0
+
+***Added***:
+
+* Add new Application Set metrics ([#18961](https://github.com/DataDog/integrations-core/pull/18961))
+
+## 3.1.0 / 2024-10-04 / Agent 7.59.0
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 3.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 2.4.3 / 2024-08-09 / Agent 7.57.0
+
+***Fixed***:
+
+* Fix collection of 2 appset counters ([#18018](https://github.com/DataDog/integrations-core/pull/18018))
+
+## 2.4.2 / 2024-07-05 / Agent 7.55.0
+
+***Fixed***:
+
+* Update config model names ([#17802](https://github.com/DataDog/integrations-core/pull/17802))
+
+## 2.4.1 / 2024-05-31
+
+***Fixed***:
+
+* Update the description for the `tls_ca_cert` config option to use `openssl rehash` instead of `c_rehash` ([#16981](https://github.com/DataDog/integrations-core/pull/16981))
+
+## 2.4.0 / 2024-03-22 / Agent 7.53.0
+
+***Added***:
+
+* Collect 'argocd_app_labels' for ArgoCD metric ([#16897](https://github.com/DataDog/integrations-core/pull/16897))
+
+***Fixed***:
+
+* Rename Go inuse_use metric to the correct inuse_bytes name ([#17252](https://github.com/DataDog/integrations-core/pull/17252))
+
+## 2.3.0 / 2024-02-16 / Agent 7.52.0
 
 ***Added***:
 
@@ -18,7 +162,7 @@
 
 ***Added***:
 
-* Collect metrics for ArgoCD ApplicationSet ([#15308](https://github.com/DataDog/integrations-core/pull/15308))
+* Collect metrics for ArgoCD ApplicationSet ([#15308](https://github.com/DataDog/integrations-core/pull/15308)) Thanks [smartfin](https://github.com/smartfin).
 
 ## 2.0.0 / 2023-08-10 / Agent 7.48.0
 

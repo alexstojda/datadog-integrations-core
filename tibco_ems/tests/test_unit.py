@@ -1,0 +1,228 @@
+# (C) Datadog, Inc. 2024-present
+# All rights reserved
+# Licensed under a 3-clause BSD style license (see LICENSE)
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from datadog_checks.dev.utils import get_metadata_metrics
+from datadog_checks.tibco_ems import TibcoEMSCheck
+
+from .common import METRIC_DATA, SHOW_MAP, mock_output
+
+
+def test_check(dd_run_check, aggregator, instance):
+    """
+    Test the main check functionality
+    """
+    check = TibcoEMSCheck('tibco_ems', {}, [instance])
+    check.run_tibco_command = MagicMock(return_value=mock_output('show_all'))
+    dd_run_check(check)
+
+    for metric in METRIC_DATA:
+        aggregator.assert_metric(metric)
+        aggregator.assert_metric_has_tag(metric, 'server_version:10.1.0')
+    aggregator.assert_metrics_using_metadata(get_metadata_metrics())
+    aggregator.assert_all_metrics_covered()
+
+
+def test_show_server_metrics(dd_run_check, aggregator, instance):
+    """
+    Test specific show server metrics
+    """
+    expected_metrics = SHOW_MAP['show server']['expected_metrics']
+
+    check = TibcoEMSCheck('tibco_ems', {}, [instance])
+    check.run_tibco_command = MagicMock(return_value=mock_output('show_server'))
+    dd_run_check(check)
+
+    for metric in expected_metrics:
+        aggregator.assert_metric(metric)
+    aggregator.assert_metrics_using_metadata(get_metadata_metrics())
+
+
+def test_parse_show_server():
+    """
+    Test the parse_show_server method
+    """
+    section = SHOW_MAP['show server']['section'].decode('utf-8')
+    regex = SHOW_MAP['show server']['regex']
+
+    check = TibcoEMSCheck('tibco_ems', {}, [{}])
+    output = check._section_output(section)['show server']
+    result = check._parse_show_server(output, regex)
+
+    expected_result = SHOW_MAP['show server']['expected_result']
+
+    assert result == expected_result
+
+
+@pytest.mark.parametrize(
+    "output, expected_metrics",
+    [
+        pytest.param(
+            mock_output('show_queues'),
+            SHOW_MAP['show queues']['expected_metrics'],
+            id="show queues",
+        ),
+        pytest.param(
+            mock_output('show_topics'),
+            SHOW_MAP['show topics']['expected_metrics'],
+            id="show topics",
+        ),
+        pytest.param(
+            mock_output('show_stat_consumers'),
+            SHOW_MAP['show stat consumers']['expected_metrics'],
+            id="show stat consumers",
+        ),
+        pytest.param(
+            mock_output('show_stat_producers'),
+            SHOW_MAP['show stat producers']['expected_metrics'],
+            id="show stat producers",
+        ),
+        pytest.param(
+            mock_output('show_connections'),
+            SHOW_MAP['show connections full']['expected_metrics'],
+            id="show connections full",
+        ),
+        pytest.param(
+            mock_output('show_durables'),
+            SHOW_MAP['show durables']['expected_metrics'],
+            id="show durables",
+        ),
+    ],
+)
+def test_show_metrics(dd_run_check, aggregator, instance, output, expected_metrics):
+    check = TibcoEMSCheck('tibco_ems', {}, [instance])
+    check.run_tibco_command = MagicMock(return_value=output)
+    dd_run_check(check)
+
+    for metric in expected_metrics:
+        aggregator.assert_metric(metric)
+    aggregator.assert_metrics_using_metadata(get_metadata_metrics())
+
+
+@pytest.mark.parametrize(
+    "command, metric_prefix",
+    [
+        pytest.param("show stat consumers", "consumer", id="consumers"),
+        pytest.param("show stat producers", "producer", id="producers"),
+    ],
+)
+def test_stat_metrics_are_aggregated_by_tags(dd_run_check, aggregator, instance, command, metric_prefix):
+    output = f"""Command: {command}
+                                      Total Count      Rate/Second
+User       Conn  T  Destination       Msgs   Size      Msgs   Size
+admin         2  Q  sample.queue         1    2.4 Kb      3    0.6 Kb
+admin         2  Q  sample.queue         4    0.5 Mb      5    0.4 Kb
+admin         2  Q  other.queue          6    1.0 Kb      7    2.0 Kb
+admin         0  Q  sample.queue         9    3.0 Kb     10    4.0 Kb
+""".encode()
+    tags = [
+        'destination:sample.queue',
+        'user:admin',
+        'component_type:Q',
+        'conn:2',
+        'optional:tag1',
+    ]
+    other_tags = [
+        'destination:other.queue',
+        'user:admin',
+        'component_type:Q',
+        'conn:2',
+        'optional:tag1',
+    ]
+    # conn=0 parses falsy and is dropped at submission by _submit_metrics_factory's
+    # own truthy tag filter, same as it would be for a single, unaggregated row.
+    falsy_conn_tags = [
+        'destination:sample.queue',
+        'user:admin',
+        'component_type:Q',
+        'optional:tag1',
+    ]
+    check = TibcoEMSCheck('tibco_ems', {}, [instance])
+    check.run_tibco_command = MagicMock(return_value=output)
+
+    dd_run_check(check)
+
+    aggregator.assert_metric(f'tibco_ems.{metric_prefix}.total_messages', value=5, tags=tags, count=1)
+    aggregator.assert_metric(f'tibco_ems.{metric_prefix}.total_messages_size', value=502_400, tags=tags, count=1)
+    aggregator.assert_metric(f'tibco_ems.{metric_prefix}.messages_rate', value=8, tags=tags, count=1)
+    aggregator.assert_metric(f'tibco_ems.{metric_prefix}.messages_rate_size', value=1_000, tags=tags, count=1)
+
+    # A different destination must stay a separate series, not fold into the group above.
+    aggregator.assert_metric(f'tibco_ems.{metric_prefix}.total_messages', value=6, tags=other_tags, count=1)
+    aggregator.assert_metric(f'tibco_ems.{metric_prefix}.messages_rate', value=7, tags=other_tags, count=1)
+
+    # conn=0 is still its own aggregation group (grouping now keys on presence,
+    # not truthiness), even though the tag itself is dropped at submission.
+    aggregator.assert_metric(f'tibco_ems.{metric_prefix}.total_messages', value=9, tags=falsy_conn_tags, count=1)
+    aggregator.assert_metric(f'tibco_ems.{metric_prefix}.messages_rate', value=10, tags=falsy_conn_tags, count=1)
+
+
+@pytest.mark.parametrize(
+    "expected_result, data, regex",
+    [
+        pytest.param(
+            SHOW_MAP['show queues']['expected_result'],
+            SHOW_MAP['show queues']['section'],
+            SHOW_MAP['show queues']['regex'],
+            id="show queues",
+        ),
+        pytest.param(
+            SHOW_MAP['show topics']['expected_result'],
+            SHOW_MAP['show topics']['section'],
+            SHOW_MAP['show topics']['regex'],
+            id="show topics",
+        ),
+        pytest.param(
+            SHOW_MAP['show stat consumers']['expected_result'],
+            SHOW_MAP['show stat consumers']['section'],
+            SHOW_MAP['show stat consumers']['regex'],
+            id="show stat consumers",
+        ),
+        pytest.param(
+            SHOW_MAP['show stat producers']['expected_result'],
+            SHOW_MAP['show stat producers']['section'],
+            SHOW_MAP['show stat producers']['regex'],
+            id="show stat producers",
+        ),
+        pytest.param(
+            SHOW_MAP['show connections full']['expected_result'],
+            SHOW_MAP['show connections full']['section'],
+            SHOW_MAP['show connections full']['regex'],
+            id="show connections full",
+        ),
+        pytest.param(
+            SHOW_MAP['show durables']['expected_result'],
+            SHOW_MAP['show durables']['section'],
+            SHOW_MAP['show durables']['regex'],
+            id="show durables",
+        ),
+    ],
+)
+def test_parse_factory(data, regex, expected_result):
+    check = TibcoEMSCheck('tibco_ems', {}, [{}])
+    result = check._parse_factory(data.decode('utf-8'), regex)
+
+    assert result == expected_result
+
+
+def test_base_tags(dd_run_check, instance):
+    check = TibcoEMSCheck('tibco_ems', {}, [instance])
+    check.run_tibco_command = MagicMock(return_value=mock_output('show_all'))
+    dd_run_check(check)
+    assert len(check.tags) == 3
+
+    dd_run_check(check)
+    dd_run_check(check)
+    dd_run_check(check)
+
+    # assert the lenght of tags does not grow indefinitely
+    assert len(check.tags) == 3
+
+
+def test_use_ssl_server_string(instance):
+    check = TibcoEMSCheck('tibco_ems', {}, [{**instance, 'use_ssl': True}])
+    assert 'ssl://localhost:7222' in check.cmd

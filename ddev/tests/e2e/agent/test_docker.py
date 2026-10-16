@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from ddev.e2e.agent.docker import DockerAgent
+from ddev.e2e.agent.docker import APT_MIRROR, APT_MIRRORLIST_FILE, DockerAgent
 from ddev.integration.core import Integration
 from ddev.repo.config import RepositoryConfig
 from ddev.utils.fs import Path
@@ -27,15 +27,47 @@ def free_port(mocker):
     return port
 
 
+def apt_mirror_reset_call(mocker, docker_path, container_name):
+    """The apt mirror reset that precedes start and post-install commands on Linux containers."""
+    return mocker.call(
+        [
+            docker_path,
+            'exec',
+            container_name,
+            'sh',
+            '-c',
+            f'test -f {APT_MIRRORLIST_FILE} && echo {APT_MIRROR} > {APT_MIRRORLIST_FILE}',
+        ],
+        shell=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
 class TestStart:
     @pytest.mark.parametrize(
         'agent_build, agent_image, use_jmx',
         [
-            pytest.param('', 'datadog/agent-dev:master-py3', False, id='default'),
-            pytest.param('datadog/agent:7', 'datadog/agent:7', False, id='release'),
-            pytest.param('datadog/agent-dev:master-py3', 'datadog/agent-dev:master-py3', False, id='exact'),
-            pytest.param('datadog/agent-dev:master', 'datadog/agent-dev:master-py3-jmx', True, id='jmx'),
-            pytest.param('datadog/agent-dev:master-py3-jmx', 'datadog/agent-dev:master-py3-jmx', True, id='jmx exact'),
+            pytest.param('', 'registry.datadoghq.com/agent-dev:master-py3', False, id='default'),
+            pytest.param('registry.datadoghq.com/agent:7', 'registry.datadoghq.com/agent:7', False, id='release'),
+            pytest.param(
+                'registry.datadoghq.com/agent-dev:master-py3',
+                'registry.datadoghq.com/agent-dev:master-py3',
+                False,
+                id='exact',
+            ),
+            pytest.param(
+                'registry.datadoghq.com/agent-dev:master',
+                'registry.datadoghq.com/agent-dev:master-py3-jmx',
+                True,
+                id='jmx',
+            ),
+            pytest.param(
+                'registry.datadoghq.com/agent-dev:master-py3-jmx',
+                'registry.datadoghq.com/agent-dev:master-py3-jmx',
+                True,
+                id='jmx exact',
+            ),
             pytest.param(
                 'my-custom-build-that-I-have-locally', 'my-custom-build-that-I-have-locally', False, id='custom build'
             ),
@@ -46,28 +78,40 @@ class TestStart:
                 id='custom build with jmx',
             ),
             pytest.param(
-                'datadog/agent:7.46.0',
-                'datadog/agent:7.46.0',
+                'registry.datadoghq.com/agent:7.46.0',
+                'registry.datadoghq.com/agent:7.46.0',
                 False,
                 id='Specific stable release',
             ),
             pytest.param(
-                'datadog/agent:7.45.0',
-                'datadog/agent:7.45.0-jmx',
+                'registry.datadoghq.com/agent:7.45.0',
+                'registry.datadoghq.com/agent:7.45.0-jmx',
                 True,
                 id='Specific stable release with jmx',
             ),
             pytest.param(
-                'datadog/agent:6.44.0-jmx',
-                'datadog/agent:6.44.0-jmx',
+                'registry.datadoghq.com/agent:6.44.0-jmx',
+                'registry.datadoghq.com/agent:6.44.0-jmx',
                 True,
                 id='Specific stable release with jmx exact',
+            ),
+            pytest.param(
+                'registry.datadoghq.com/agent:latest',
+                'registry.datadoghq.com/agent:latest',
+                False,
+                id='Latest stable release',
+            ),
+            pytest.param(
+                'registry.datadoghq.com/agent-dev:master-jmx-win-servercore',
+                'registry.datadoghq.com/agent-dev:master-py3-jmx-win-servercore',
+                False,
+                id='Servercore without version',
             ),
         ],
     )
     def test_agent_build(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -88,7 +132,7 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'use_jmx': use_jmx}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build=agent_build, local_packages={}, env_vars={})
 
         assert run.call_args_list == [
@@ -107,6 +151,8 @@ class TestStart:
                     '-v',
                     f'{config_file.parent}:/etc/datadog-agent/conf.d/{integration}.d',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -118,8 +164,6 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
                     agent_image,
                 ],
                 shell=False,
@@ -130,7 +174,7 @@ class TestStart:
 
     def test_env_vars(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -148,15 +192,19 @@ class TestStart:
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(
             agent_build='',
             local_packages={},
-            env_vars={'DD_API_KEY': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'DD_LOGS_ENABLED': 'true'},
+            env_vars={
+                'DD_AGENT_TELEMETRY_ENABLED': 'true',
+                'DD_API_KEY': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                'DD_LOGS_ENABLED': 'true',
+            },
         )
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -171,6 +219,8 @@ class TestStart:
                     '-v',
                     f'{config_file.parent}:/etc/datadog-agent/conf.d/{integration}.d',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=true',
+                    '-e',
                     'DD_API_KEY=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -184,9 +234,7 @@ class TestStart:
                     'DD_LOGS_ENABLED=true',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -194,9 +242,133 @@ class TestStart:
             ),
         ]
 
+    def test_docker_network(
+        self,
+        app,
+        temp_dir,
+        default_hostname,
+        get_integration,
+        docker_path,
+        mocker,
+    ):
+        run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
+        find_free_port = mocker.patch('ddev.e2e.agent.docker._find_free_port')
+
+        config_file = temp_dir / 'config' / 'config.yaml'
+        config_file.parent.mkdir()
+        config_file.touch()
+
+        integration = 'cilium'
+        environment = 'py3.13-1.11'
+        metadata = {'docker_network': 'kind'}
+
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
+        agent.start(agent_build='', local_packages={}, env_vars={})
+
+        find_free_port.assert_not_called()
+        assert run.call_args_list == [
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
+            mocker.call(
+                [
+                    docker_path,
+                    'run',
+                    '-d',
+                    '--name',
+                    f'dd_{integration}_{environment}',
+                    '--network',
+                    'kind',
+                    '-v',
+                    '/proc:/host/proc',
+                    '-v',
+                    f'{config_file.parent}:/etc/datadog-agent/conf.d/{integration}.d',
+                    '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
+                    'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    '-e',
+                    'DD_APM_ENABLED=false',
+                    '-e',
+                    'DD_EXPVAR_PORT=5000',
+                    '-e',
+                    f'DD_HOSTNAME={default_hostname}',
+                    '-e',
+                    'DD_TELEMETRY_ENABLED=1',
+                    'registry.datadoghq.com/agent-dev:master-py3',
+                ],
+                shell=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            ),
+        ]
+
+    def test_docker_network_host(
+        self,
+        app,
+        temp_dir,
+        get_integration,
+        docker_path,
+        free_port,
+        mocker,
+    ):
+        run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
+
+        config_file = temp_dir / 'config' / 'config.yaml'
+        config_file.parent.mkdir()
+        config_file.touch()
+
+        metadata = {'docker_network': 'host'}
+        agent = DockerAgent(app, get_integration('postgres'), 'py3.12', metadata, config_file)
+        agent.start(agent_build='', local_packages={}, env_vars={})
+
+        command = run.call_args_list[1].args[0]
+        assert command[command.index('--network') + 1] == 'host'
+        assert f'DD_CMD_PORT={free_port}' in command
+
+    def test_docker_network_rejects_shared_container_namespace(
+        self,
+        app,
+        temp_dir,
+        get_integration,
+        mocker,
+    ):
+        run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
+
+        config_file = temp_dir / 'config' / 'config.yaml'
+        config_file.parent.mkdir()
+        config_file.touch()
+
+        metadata = {'docker_network': 'container:another-agent'}
+        agent = DockerAgent(app, get_integration('postgres'), 'py3.12', metadata, config_file)
+
+        with pytest.raises(ValueError, match='share another container network namespace'):
+            agent.start(agent_build='', local_packages={}, env_vars={})
+
+        run.assert_not_called()
+
+    def test_docker_network_rejects_windows_agent(
+        self,
+        app,
+        temp_dir,
+        get_integration,
+        mocker,
+    ):
+        run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
+
+        config_file = temp_dir / 'config' / 'config.yaml'
+        config_file.parent.mkdir()
+        config_file.touch()
+
+        metadata = {'docker_network': 'kind', 'docker_platform': 'windows'}
+        agent = DockerAgent(app, get_integration('cilium'), 'py3.13-1.11', metadata, config_file)
+
+        with pytest.raises(ValueError, match='Custom Docker networks are not supported for Windows Agent containers'):
+            agent.start(agent_build='', local_packages={}, env_vars={})
+
+        run.assert_not_called()
+
     def test_no_config_file(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -210,11 +382,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, temp_dir / 'config.yaml')
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, temp_dir / 'config.yaml')
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -227,6 +399,8 @@ class TestStart:
                     '-v',
                     '/proc:/host/proc',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -238,9 +412,7 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -250,7 +422,7 @@ class TestStart:
 
     def test_windows_container(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -268,11 +440,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'docker_platform': 'windows'}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -282,6 +454,8 @@ class TestStart:
                     f'dd_{integration}_{environment}',
                     '-v',
                     f'{config_file.parent}:C:\\ProgramData\\Datadog\\conf.d\\{integration}.d',
+                    '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
                     '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
@@ -294,9 +468,7 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -307,7 +479,7 @@ class TestStart:
     @pytest.mark.requires_linux
     def test_docker_volumes_linux(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -325,11 +497,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'docker_volumes': ['/a/b/c:/d/e/f']}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -346,6 +518,8 @@ class TestStart:
                     '-v',
                     '/a/b/c:/d/e/f',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -357,9 +531,7 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -370,7 +542,7 @@ class TestStart:
     @pytest.mark.requires_windows
     def test_docker_volumes_windows_running_linux(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -388,11 +560,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'docker_volumes': ['/a/b/c:/d/e/f', f'{config_file}:/mnt/{config_file.name}']}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -411,6 +583,8 @@ class TestStart:
                     '-v',
                     f'/{str(config_file).replace(":", "", 1).replace(os.sep, "/")}:/mnt/{config_file.name}',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -422,9 +596,7 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -435,7 +607,7 @@ class TestStart:
     @pytest.mark.requires_windows
     def test_docker_volumes_windows_running_windows(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -453,11 +625,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'docker_volumes': [f'{config_file.parent.parent}:C:\\mnt'], 'docker_platform': 'windows'}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -470,6 +642,8 @@ class TestStart:
                     '-v',
                     f'{config_file.parent.parent}:C:\\mnt',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -481,9 +655,7 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -493,7 +665,7 @@ class TestStart:
 
     def test_retry_pull_image(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -515,13 +687,13 @@ class TestStart:
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, temp_dir / 'config.yaml')
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, temp_dir / 'config.yaml')
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -534,6 +706,8 @@ class TestStart:
                     '-v',
                     '/proc:/host/proc',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -545,9 +719,7 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -557,7 +729,7 @@ class TestStart:
 
     def test_custom_hosts(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -575,11 +747,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'custom_hosts': [['host2', '127.0.0.1'], ['host1', '127.0.0.1']]}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -594,6 +766,8 @@ class TestStart:
                     '-v',
                     f'{config_file.parent}:/etc/datadog-agent/conf.d/{integration}.d',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -605,13 +779,11 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
                     '--add-host',
                     'host2:127.0.0.1',
                     '--add-host',
                     'host1:127.0.0.1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -621,7 +793,7 @@ class TestStart:
 
     def test_dogstatsd_port(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -639,11 +811,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={'DD_DOGSTATSD_PORT': '9000'})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -658,6 +830,8 @@ class TestStart:
                     '-v',
                     f'{config_file.parent}:/etc/datadog-agent/conf.d/{integration}.d',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -671,11 +845,9 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
                     '-p',
                     '9000:9000/udp',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -685,7 +857,7 @@ class TestStart:
 
     def test_proxies(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -703,11 +875,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'proxy': {'http': 'http://localhost:8080', 'https': 'https://localhost:4443'}}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -721,6 +893,8 @@ class TestStart:
                     '/proc:/host/proc',
                     '-v',
                     f'{config_file.parent}:/etc/datadog-agent/conf.d/{integration}.d',
+                    '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
                     '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
@@ -737,9 +911,7 @@ class TestStart:
                     'DD_PROXY_HTTPS=https://localhost:4443',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -749,7 +921,7 @@ class TestStart:
 
     def test_start_commands(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -767,11 +939,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'start_commands': ['echo "hello world"']}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -786,6 +958,8 @@ class TestStart:
                     '-v',
                     f'{config_file.parent}:/etc/datadog-agent/conf.d/{integration}.d',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -797,14 +971,13 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
             ),
+            apt_mirror_reset_call(mocker, docker_path, f'dd_{integration}_{environment}'),
             mocker.call([docker_path, 'exec', f'dd_{integration}_{environment}', 'echo', 'hello world'], shell=False),
             mocker.call(
                 [docker_path, 'restart', f'dd_{integration}_{environment}'],
@@ -816,7 +989,7 @@ class TestStart:
 
     def test_post_install_commands(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -834,11 +1007,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'post_install_commands': ['echo "hello world"']}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -853,6 +1026,8 @@ class TestStart:
                     '-v',
                     f'{config_file.parent}:/etc/datadog-agent/conf.d/{integration}.d',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -864,14 +1039,13 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
             ),
+            apt_mirror_reset_call(mocker, docker_path, f'dd_{integration}_{environment}'),
             mocker.call([docker_path, 'exec', f'dd_{integration}_{environment}', 'echo', 'hello world'], shell=False),
             mocker.call(
                 [docker_path, 'restart', f'dd_{integration}_{environment}'],
@@ -883,7 +1057,7 @@ class TestStart:
 
     def test_local_packages_linux_container(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -901,11 +1075,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={temp_dir / 'foo': '[deps]'}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -922,6 +1096,8 @@ class TestStart:
                     '-v',
                     f'{temp_dir / "foo"}:/home/foo',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -933,9 +1109,7 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -966,7 +1140,7 @@ class TestStart:
 
     def test_local_packages_windows_container(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -984,11 +1158,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'docker_platform': 'windows'}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={temp_dir / 'foo': '[deps]'}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -1001,6 +1175,8 @@ class TestStart:
                     '-v',
                     f'{temp_dir / "foo"}:C:\\Users\\ContainerAdministrator\\foo',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -1012,9 +1188,7 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
@@ -1045,7 +1219,7 @@ class TestStart:
 
     def test_all_post_run_logic(
         self,
-        platform,
+        app,
         temp_dir,
         default_hostname,
         get_integration,
@@ -1063,11 +1237,11 @@ class TestStart:
         environment = 'py3.12'
         metadata = {'start_commands': ['echo "hello world1"'], 'post_install_commands': ['echo "hello world2"']}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, config_file)
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
         agent.start(agent_build='', local_packages={temp_dir / 'foo': '[deps]'}, env_vars={})
 
         assert run.call_args_list == [
-            mocker.call([docker_path, 'pull', 'datadog/agent-dev:master-py3'], shell=False),
+            mocker.call([docker_path, 'pull', 'registry.datadoghq.com/agent-dev:master-py3'], shell=False),
             mocker.call(
                 [
                     docker_path,
@@ -1084,6 +1258,8 @@ class TestStart:
                     '-v',
                     f'{temp_dir / "foo"}:/home/foo',
                     '-e',
+                    'DD_AGENT_TELEMETRY_ENABLED=false',
+                    '-e',
                     'DD_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '-e',
                     'DD_APM_ENABLED=false',
@@ -1095,14 +1271,13 @@ class TestStart:
                     f'DD_HOSTNAME={default_hostname}',
                     '-e',
                     'DD_TELEMETRY_ENABLED=1',
-                    '-e',
-                    'PYTHONDONTWRITEBYTECODE=1',
-                    'datadog/agent-dev:master-py3',
+                    'registry.datadoghq.com/agent-dev:master-py3',
                 ],
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
             ),
+            apt_mirror_reset_call(mocker, docker_path, f'dd_{integration}_{environment}'),
             mocker.call([docker_path, 'exec', f'dd_{integration}_{environment}', 'echo', 'hello world1'], shell=False),
             mocker.call(
                 [
@@ -1128,16 +1303,51 @@ class TestStart:
             ),
         ]
 
+    def test_apt_mirror_not_reset_on_windows_container(self, app, temp_dir, get_integration, docker_path, mocker):
+        run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
+
+        config_file = temp_dir / 'config' / 'config.yaml'
+        config_file.parent.mkdir()
+        config_file.touch()
+
+        integration = 'postgres'
+        environment = 'py3.12'
+        metadata = {'docker_platform': 'windows', 'start_commands': ['echo "hello world"']}
+
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, config_file)
+        agent.start(agent_build='', local_packages={}, env_vars={})
+
+        assert apt_mirror_reset_call(mocker, docker_path, f'dd_{integration}_{environment}') not in run.call_args_list
+        assert (
+            mocker.call([docker_path, 'exec', f'dd_{integration}_{environment}', 'echo', 'hello world'], shell=False)
+            in run.call_args_list
+        )
+
+    def test_apt_mirror_not_reset_without_lifecycle_commands(self, app, temp_dir, get_integration, docker_path, mocker):
+        run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
+
+        config_file = temp_dir / 'config' / 'config.yaml'
+        config_file.parent.mkdir()
+        config_file.touch()
+
+        integration = 'postgres'
+        environment = 'py3.12'
+
+        agent = DockerAgent(app, get_integration(integration), environment, {}, config_file)
+        agent.start(agent_build='', local_packages={}, env_vars={})
+
+        assert apt_mirror_reset_call(mocker, docker_path, f'dd_{integration}_{environment}') not in run.call_args_list
+
 
 class TestStop:
-    def test_basic(self, platform, get_integration, docker_path, mocker):
+    def test_basic(self, app, get_integration, docker_path, mocker):
         run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
 
         integration = 'postgres'
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, Path('config.yaml'))
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, Path('config.yaml'))
         agent.stop()
 
         assert run.call_args_list == [
@@ -1155,14 +1365,14 @@ class TestStop:
             ),
         ]
 
-    def test_stop_commands(self, platform, get_integration, docker_path, mocker):
+    def test_stop_commands(self, app, get_integration, docker_path, mocker):
         run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
 
         integration = 'postgres'
         environment = 'py3.12'
         metadata = {'stop_commands': ['echo "hello world"']}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, Path('config.yaml'))
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, Path('config.yaml'))
         agent.stop()
 
         assert run.call_args_list == [
@@ -1183,14 +1393,14 @@ class TestStop:
 
 
 class TestRestart:
-    def test_basic(self, platform, get_integration, docker_path, mocker):
+    def test_basic(self, app, get_integration, docker_path, mocker):
         run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
 
         integration = 'postgres'
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, Path('config.yaml'))
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, Path('config.yaml'))
         agent.restart()
 
         assert run.call_args_list == [
@@ -1204,14 +1414,14 @@ class TestRestart:
 
 
 class TestInvoke:
-    def test_basic(self, platform, get_integration, docker_path, mocker):
+    def test_basic(self, app, get_integration, docker_path, mocker):
         run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
 
         integration = 'postgres'
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, Path('config.yaml'))
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, Path('config.yaml'))
         agent.invoke(['check', 'postgres'])
 
         assert run.call_args_list == [
@@ -1222,9 +1432,38 @@ class TestInvoke:
             ),
         ]
 
+    def test_with_env_vars(self, app, get_integration, docker_path, mocker):
+        run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
+
+        integration = 'postgres'
+        environment = 'py3.12'
+        metadata = {}
+
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, Path('config.yaml'))
+        agent.invoke(['check', 'postgres'], env_vars={'FOO': 'bar', 'BAZ': 'qux'})
+
+        assert run.call_args_list == [
+            mocker.call(
+                [
+                    docker_path,
+                    'exec',
+                    '-e',
+                    'FOO=bar',
+                    '-e',
+                    'BAZ=qux',
+                    f'dd_{integration}_{environment}',
+                    'agent',
+                    'check',
+                    'postgres',
+                ],
+                shell=False,
+                check=True,
+            ),
+        ]
+
 
 class TestEnterShell:
-    def test_linux_container(self, platform, get_integration, docker_path, mocker):
+    def test_linux_container(self, app, get_integration, docker_path, mocker):
         run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
         mocker.patch('sys.stdout', return_value=mocker.MagicMock(isatty=lambda: True))
 
@@ -1232,7 +1471,7 @@ class TestEnterShell:
         environment = 'py3.12'
         metadata = {}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, Path('config.yaml'))
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, Path('config.yaml'))
         agent.enter_shell()
 
         assert run.call_args_list == [
@@ -1243,7 +1482,7 @@ class TestEnterShell:
             ),
         ]
 
-    def test_windows_container(self, platform, get_integration, docker_path, mocker):
+    def test_windows_container(self, app, get_integration, docker_path, mocker):
         run = mocker.patch('subprocess.run', return_value=mocker.MagicMock(returncode=0))
         mocker.patch('sys.stdout', return_value=mocker.MagicMock(isatty=lambda: True))
 
@@ -1251,7 +1490,7 @@ class TestEnterShell:
         environment = 'py3.12'
         metadata = {'docker_platform': 'windows'}
 
-        agent = DockerAgent(platform, get_integration(integration), environment, metadata, Path('config.yaml'))
+        agent = DockerAgent(app, get_integration(integration), environment, metadata, Path('config.yaml'))
         agent.enter_shell()
 
         assert run.call_args_list == [

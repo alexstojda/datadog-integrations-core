@@ -1,3 +1,5 @@
+# bypass-global-date-remapper-parse-failure-checks
+# bypass-global-timestamp-format-in-sample-checks
 id: "gitlab-runner"
 tests:
  -
@@ -65,6 +67,7 @@ tests:
       level: "ERROR"
       message: "Failed to load config Near line 3 (last key parsed 'log_format'): expected value but found 'json' instead  builds=0"
     message: "ERROR: Failed to load config Near line 3 (last key parsed 'log_format'): expected value but found 'json' instead  builds=0"
+    status: "error"
     tags:
      - "source:LOGS_SOURCE"
     timestamp: 1

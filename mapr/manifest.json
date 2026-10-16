@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "96cb179f-2a53-424b-95ce-302610f155eb",
   "app_id": "mapr",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -14,7 +15,8 @@
     "classifier_tags": [
       "Category::Data Stores",
       "Category::Log Collection",
-      "Supported OS::Linux"
+      "Supported OS::Linux",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -45,9 +47,6 @@
     },
     "dashboards": {
       "MapR - Overview": "assets/dashboards/mapr_overview.json"
-    },
-    "logs": {
-      "source": "mapr"
     }
   }
 }

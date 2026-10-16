@@ -2,6 +2,122 @@
 
 <!-- towncrier release notes start -->
 
+## 9.4.1 / 2026-10-01
+
+***Fixed***:
+
+* Retry transient 5xx/429 and network errors on TUF metadata and wheel fetches instead of failing immediately. ([#25308](https://github.com/DataDog/integrations-core/pull/25308))
+
+## 9.4.0 / 2026-09-02 / Agent 7.84.0
+
+***Added***:
+
+* Update dependencies ([#24817](https://github.com/DataDog/integrations-core/pull/24817))
+
+## 9.3.0 / 2026-08-05 / Agent 7.83.0
+
+***Added***:
+
+* Update dependencies ([#24321](https://github.com/DataDog/integrations-core/pull/24321))
+
+## 9.2.2 / 2026-06-22 / Agent 7.81.0
+
+***Fixed***:
+
+* Use ``https://agent-integration-wheels.datadoghq.com`` (CloudFront) as the default v2 repository URL, replacing the direct S3 URL. The ``--repository`` flag still accepts any HTTPS base URL. ([#24084](https://github.com/DataDog/integrations-core/pull/24084))
+
+## 9.2.1 / 2026-06-15
+
+***Fixed***:
+
+* Use the versioned ``wheelsmith/v1`` v2 target namespace and tighten pointer validation. ([#23937](https://github.com/DataDog/integrations-core/pull/23937))
+
+## 9.2.0 / 2026-06-09
+
+***Added***:
+
+* Add v2 TUF pointer downloader support. ([#23144](https://github.com/DataDog/integrations-core/pull/23144))
+
+## 9.1.0 / 2026-03-18 / Agent 7.78.0
+
+***Added***:
+
+* Update dependencies ([#22707](https://github.com/DataDog/integrations-core/pull/22707))
+
+## 9.0.0 / 2025-12-17 / Agent 7.75.0
+
+***Changed***:
+
+* Update the root layout version to v8 (vault ceremony v18) ([#22089](https://github.com/DataDog/integrations-core/pull/22089))
+
+## 8.1.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+
+## 8.0.0 / 2025-06-12 / Agent 7.68.0
+
+***Changed***:
+
+* Update the root layout version to v7 (vault ceremony v17) ([#20477](https://github.com/DataDog/integrations-core/pull/20477))
+
+## 7.2.0 / 2025-05-15 / Agent 7.67.0
+
+***Added***:
+
+* Update dependencies ([#20215](https://github.com/DataDog/integrations-core/pull/20215))
+
+## 7.1.0 / 2025-01-25 / Agent 7.63.0
+
+***Added***:
+
+* Update dependencies ([#19430](https://github.com/DataDog/integrations-core/pull/19430))
+
+## 7.0.0 / 2024-11-28 / Agent 7.61.0
+
+***Changed***:
+
+* v16 ceremony: bump root layout to v6. ([#19146](https://github.com/DataDog/integrations-core/pull/19146))
+
+## 6.1.0 / 2024-10-31 / Agent 7.60.0
+
+***Added***:
+
+* Update root.json for v14 ceremony. ([#18824](https://github.com/DataDog/integrations-core/pull/18824))
+
+## 6.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+## 5.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 4.7.0 / 2024-07-05 / Agent 7.55.0
+
+***Security***:
+
+* Bump TUF dependency to address GHSA-77hh-43cm-v8j6 ([#17848](https://github.com/DataDog/integrations-core/pull/17848))
+
+***Added***:
+
+* Update dependencies ([#17817](https://github.com/DataDog/integrations-core/pull/17817))
+
+## 4.6.0 / 2024-04-26 / Agent 7.54.0
+
+***Added***:
+
+* Update dependencies ([#17319](https://github.com/DataDog/integrations-core/pull/17319))
+
 ## 4.5.0 / 2024-01-05 / Agent 7.51.0
 
 ***Added***:

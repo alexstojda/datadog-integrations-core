@@ -40,6 +40,10 @@ def instance_detailed_index_stats():
     return False
 
 
+def instance_detailed_shard_metrics():
+    return False
+
+
 def instance_disable_generic_tags():
     return False
 
@@ -48,8 +52,16 @@ def instance_disable_legacy_cluster_tag():
     return False
 
 
+def instance_disable_legacy_service_check_tags():
+    return False
+
+
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
 
 
 def instance_gc_collectors_as_rate():

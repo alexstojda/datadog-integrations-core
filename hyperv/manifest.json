@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "6024e97b-c3c6-45e3-ba71-a48adeebc191",
   "app_id": "hyper-v",
+  "owner": "windows-products",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -14,7 +15,15 @@
     "classifier_tags": [
       "Category::Cloud",
       "Category::OS & System",
-      "Supported OS::Windows"
+      "Category::Windows",
+      "Supported OS::Windows",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-microsoft-hyperv-with-datadog"
+      }
     ]
   },
   "author": {
@@ -37,6 +46,11 @@
         "check": "hyperv.hypervisor_logical_processor.total_run_time",
         "metadata_path": "metadata.csv"
       },
+      "process_signatures": [
+        "vmms",
+        "vmwp",
+        "vmcompute"
+      ],
       "service_checks": {
         "metadata_path": "assets/service_checks.json"
       },

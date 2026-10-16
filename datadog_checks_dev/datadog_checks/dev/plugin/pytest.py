@@ -6,16 +6,14 @@ from __future__ import absolute_import
 import json
 import os
 import re
-import warnings
 from base64 import urlsafe_b64encode
 from collections import namedtuple  # Not using dataclasses for Py2 compatibility
 from io import open
-from typing import Dict, List, Optional, Tuple  # noqa: F401
+from typing import Any, Dict, List, Literal, Optional, Tuple, overload  # noqa: F401
 
 import pytest
-from six import PY2, ensure_text
 
-from .._env import (
+from datadog_checks.dev._env import (
     E2E_FIXTURE_NAME,
     E2E_PARENT_PYTHON,
     E2E_RESULT_FILE,
@@ -138,7 +136,7 @@ def dd_environment_runner(request):
         # Exit testing and pass data back up to command
         if E2E_RESULT_FILE in os.environ:
             with open(os.environ[E2E_RESULT_FILE], 'w', encoding='utf-8') as f:
-                f.write(ensure_text(json.dumps(data)))
+                f.write(json.dumps(data))
 
             # Rather than exiting we skip every test to avoid the following output:
             # !!!!!!!!!! _pytest.outcomes.Exit: !!!!!!!!!!
@@ -205,6 +203,9 @@ def dd_agent_check(request, aggregator, datadog_agent):
         if 'times' in kwargs:
             kwargs['check_times'] = kwargs.pop('times')
 
+        for env_key, env_value in (kwargs.pop('env_vars', None) or {}).items():
+            check_command.extend(['--env', '{}={}'.format(env_key, env_value)])
+
         for key, value in kwargs.items():
             if value is not False:
                 check_command.append('--{}'.format(key.replace('_', '-')))
@@ -218,7 +219,10 @@ def dd_agent_check(request, aggregator, datadog_agent):
 
         if not matches:
             message_parts = []
-            debug_result = run_command(['docker', 'logs', 'dd_{}_{}'.format(check, env)], capture=True)
+            debug_result = run_command(
+                [python_path, '-m', 'ddev', 'env', 'logs', check, env],
+                capture=True,
+            )
             if not debug_result.code:
                 message_parts.append(debug_result.stdout + debug_result.stderr)
 
@@ -237,6 +241,83 @@ def dd_agent_check(request, aggregator, datadog_agent):
     # Give an explicit name so we don't shadow other uses
     with TempDir('dd_agent_check') as temp_dir:
         yield run_check
+
+
+CONTAINER_ORIGIN_TAG_PREFIXES = ('docker_image:', 'image_id:', 'image_name:', 'image_tag:', 'short_image:')
+
+
+def assert_discovery_used_expected_mechanism(aggregator: Any, *, process: bool) -> None:
+    """Assert that a ``dd_agent_check_discovery`` run actually used the mechanism it claims to.
+
+    Container-based Autodiscovery has its instances tagged by the Agent's tagger with container-origin
+    tags (``docker_image``, ``image_name``, etc.); process-based Autodiscovery does not. Without this
+    check, a bug that fails to exclude the ``docker`` feature during a ``process=True`` run can go
+    unnoticed: the container-based path silently produces a working instance, leaving the process CEL
+    selector completely untested even though the test still passes.
+    """
+    tags = set()
+    has_metrics = False
+    for name in aggregator.metric_names:
+        for metric in aggregator.metrics(name):
+            has_metrics = True
+            tags.update(metric.tags)
+
+    # If no data was submitted, don't assert anything here, let the test fail
+    # due to other assertions in the main test function.
+    if not has_metrics:
+        return
+
+    discovered_via_container = any(tag.startswith(prefix) for tag in tags for prefix in CONTAINER_ORIGIN_TAG_PREFIXES)
+
+    if process:
+        assert not discovered_via_container, (
+            'Process-based discovery was requested, but the submitted metrics carry container-origin '
+            'tags. Autodiscovery actually matched the container instead of the process, so the process '
+            'CEL selector was never exercised.'
+        )
+    else:
+        assert discovered_via_container, (
+            'Container-based discovery was requested, but the submitted metrics carry no container-origin '
+            'tags, so it is unclear that Autodiscovery actually matched via the container path.'
+        )
+
+
+@pytest.fixture
+def dd_agent_check_discovery(dd_agent_check):
+    """Wrapper around ``dd_agent_check`` for config-discovery e2e tests.
+
+    Passes the empty-instances config required to let ``auto_conf.yaml`` drive
+    autodiscovery, and sets sensible defaults for ``discovery_min_instances`` and
+    ``discovery_timeout`` — all of which can be overridden per call.
+
+    Pass ``process=True`` to exercise process-based (rather than container-based)
+    autodiscovery for a process that is otherwise container-bound.
+    """
+    if not e2e_testing():
+        pytest.skip('Not running E2E tests')
+
+    def run(*, discovery_min_instances=1, discovery_timeout=30, process=False, **kwargs):
+        if process:
+            env_vars = kwargs.pop('env_vars', None) or {}
+            # Exclude the `docker` feature so this run's autodiscovery never
+            # learns about any containers. This is because process-based
+            # autodiscovery normally ignores processes if it knows that they are
+            # inside containers, and we need to override this behavior.
+            env_vars.setdefault('DD_AUTOCONFIG_EXCLUDE_FEATURES', 'docker')
+            kwargs['env_vars'] = env_vars
+
+        aggregator = dd_agent_check(
+            {'init_config': {}, 'instances': []},
+            discovery_min_instances=discovery_min_instances,
+            discovery_timeout=discovery_timeout,
+            **kwargs,
+        )
+
+        assert_discovery_used_expected_mechanism(aggregator, process=process)
+
+        return aggregator
+
+    return run
 
 
 @pytest.fixture
@@ -287,15 +368,98 @@ def dd_default_hostname():
 
 
 @pytest.fixture
-def mock_http_response(mocker):
+def mock_response():
     # Lazily import `requests` as it may be costly under certain conditions
     global MockResponse
     if MockResponse is None:
-        from ..http import MockResponse
+        from datadog_checks.dev.http import MockResponse
 
+    yield MockResponse
+
+
+@pytest.fixture
+def mock_http_response(mocker, mock_response):
     yield lambda *args, **kwargs: mocker.patch(
-        kwargs.pop('method', 'requests.get'), return_value=MockResponse(*args, **kwargs)
+        kwargs.pop('method', 'requests.Session.get'), return_value=mock_response(*args, **kwargs)
     )
+
+
+@pytest.fixture
+def mock_http_response_per_endpoint(mocker, mock_response):
+    @overload
+    def _mock(
+        responses_by_endpoint: Dict[str, list[MockResponse]],
+        *,
+        mode: Literal["default"],
+        default_response: MockResponse,
+        method: str = ...,
+        url_arg_index: int = ...,
+        url_kwarg_name: str = ...,
+        strict: bool = ...,
+    ): ...
+    @overload
+    def _mock(
+        responses_by_endpoint: Dict[str, list[MockResponse]],
+        *,
+        mode: Literal["cycle", "exhaust"],
+        default_response: None = None,
+        method: str = ...,
+        url_arg_index: int = ...,
+        url_kwarg_name: str = ...,
+        strict: bool = ...,
+    ): ...
+    def _mock(
+        responses_by_endpoint: Dict[str, list[MockResponse]],
+        mode: Literal['cycle', 'exhaust', 'default'] = 'cycle',
+        default_response: MockResponse | None = None,
+        method: str = 'requests.Session.get',
+        url_arg_index: int = 1,
+        url_kwarg_name: str = "url",
+        strict: bool = True,
+    ):
+        """
+        Mocks HTTP responses for specific endpoints.
+        mode: The mode to use for the queue.
+            - 'cycle': loop through responses forever.
+            - 'exhaust': return each response once, then raise error.
+            - 'default': return responses once, then always return the default response.
+        url_arg_index: The index of the URL argument in the args tuple. e.g. for requests.get(url), url_arg_index=0
+        url_kwarg_name: The name of the URL key in the kwargs dict. e.g. for requests.get(url=url), url_kwarg_name="url"
+        strict: If True, an error is raised if the endpoint is not found. Otherwise, a 404 response is returned.
+        """
+
+        if default_response is None and mode == 'default':
+            raise ValueError("default_response is required when mode is 'default'")
+        elif default_response is not None and mode != 'default':
+            raise ValueError("default_response is only allowed when mode is 'default'")
+
+        if mode == 'cycle':
+            from itertools import cycle
+
+            queues = {url: cycle(resps) for url, resps in responses_by_endpoint.items()}
+
+        elif mode == 'exhaust' or mode == 'default':
+            queues = {url: iter(resps) for url, resps in responses_by_endpoint.items()}
+
+        def side_effect(*args, **kwargs):
+            url = kwargs.get(url_kwarg_name) or args[url_arg_index]
+            if url not in queues:
+                if strict:
+                    raise ValueError(f"Endpoint {url} not found in mocked responses")
+                else:
+                    return MockResponse(status_code=404)
+            else:
+                try:
+                    return next(queues[url])
+                except StopIteration:
+                    if mode == 'exhaust':
+                        raise StopIteration(f"No more responses available for endpoint {url}")
+                    elif mode == 'default':
+                        return default_response
+
+        return mocker.patch(method, autospec=True, side_effect=side_effect)
+
+    yield _mock
 
 
 @pytest.fixture
@@ -322,7 +486,7 @@ def mock_performance_objects(mocker, dd_default_hostname):
         counters = {}
         for object_name, data in perf_objects.items():
             instances, counter_values = data
-            instance_counts = {instance_name: 0 for instance_name in instances}
+            instance_counts = dict.fromkeys(instances, 0)
             instance_indices = []
             for instance_name in instances:
                 instance_indices.append(instance_counts[instance_name])
@@ -391,18 +555,6 @@ def pytest_configure(config):
 def pytest_addoption(parser):
     parser.addoption("--run-latest-metrics", action="store_true", default=False, help="run check_metrics tests")
 
-    if PY2:
-        # Add dummy memray options to make it possible to run memray with `ddev test --memray <integration>`
-        # in both py2 and 3 environments. In py2 the option is simply ignored, see pytest_collection_modifyitems.
-        # In py3 the option enables the memray plugin.
-        parser.addoption("--memray", action="store_true", default=False, help="Dummy parameter for memray")
-        parser.addoption(
-            "--hide-memray-summary",
-            action="store_true",
-            default=False,
-            help="Dummy parameter for memray to hide the summary",
-        )
-
 
 def pytest_collection_modifyitems(config, items):
     # at test collection time, this function gets called by pytest, see:
@@ -412,20 +564,12 @@ def pytest_collection_modifyitems(config, items):
         # --run-check-metrics given in cli: do not skip slow tests
         return
 
-    if PY2:
-        for option in ("--memray",):
-            if config.getoption(option):
-                warnings.warn(  # noqa: B028
-                    "`{}` option ignored as it's not supported for py2 environments.".format(option)
-                )  # noqa: B028, E501
-
     skip_latest_metrics = pytest.mark.skip(reason="need --run-latest-metrics option to run")
     for item in items:
         if "latest_metrics" in item.keywords:
             item.add_marker(skip_latest_metrics)
 
-        # In Python 2 we're using a much older version of pytest where the Item interface is different.
-        item_path = item.fspath if PY2 else item.path
+        item_path = item.path
         if item_path is None:
             continue
         for ttype in TEST_TYPES:

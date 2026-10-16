@@ -3,12 +3,37 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 import os
 import re
+import shutil
+import sys
+from typing import Dict, Optional, Sequence
+from xml.etree import ElementTree
 
 from datadog_checks.base.utils.platform import Platform
 from datadog_checks.sqlserver.const import ENGINE_EDITION_AZURE_MANAGED_INSTANCE, ENGINE_EDITION_SQL_DATABASE
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 DRIVER_CONFIG_DIR = os.path.join(CURRENT_DIR, 'data', 'driver_config')
+ODBC_INI = 'odbc.ini'
+ODBC_INST_INI = 'odbcinst.ini'
+
+DBM_COMMENT_MARKERS = (
+    'ddps=',
+    'dddbs=',
+    'ddh=',
+    'dddb=',
+    'ddprs=',
+    'dde=',
+    'ddpv=',
+    'traceparent=',
+    'ddsh=',
+)
+
+
+def serialize_database_names(database_names: list[str]) -> str:
+    root = ElementTree.Element('databases')
+    for database_name in database_names:
+        ElementTree.SubElement(root, 'database').text = database_name
+    return ElementTree.tostring(root, encoding='unicode')
 
 
 # Database is used to store both the name and physical_database_name
@@ -30,19 +55,90 @@ class Database:
         return "name:{}, physical_db_name:{}".format(self.name, self.physical_db_name)
 
 
+def raise_if_cancelled(cancel_event):
+    """Abort before issuing a query once the Agent has unscheduled the check owning the job.
+
+    Teardown waits for the job loop to stop, so a tick that keeps querying after a cancel holds up
+    the Agent. ``DBMAsyncJob._job_loop`` reports an exception raised after a cancel as a
+    cancellation rather than a crash, so raising here is how a job bails out of a tick.
+    """
+    if cancel_event.is_set():
+        raise Exception("Job loop cancelled. Aborting query.")
+
+
+def get_unixodbc_sysconfig(python_executable):
+    return os.path.join(os.path.dirname(os.path.dirname(python_executable)), "etc")
+
+
+def get_agent_default_driver_config(python_executable):
+    return os.path.join(os.path.dirname(os.path.dirname(python_executable)), "share", "odbc")
+
+
+def is_non_empty_file(path):
+    if not os.path.exists(path):
+        return False
+    try:
+        if os.path.getsize(path) > 0:
+            return True
+    # exists and getsize aren't atomic
+    except FileNotFoundError:
+        return False
+    return False
+
+
 def set_default_driver_conf():
-    if Platform.is_containerized():
-        # Use default `./driver_config/odbcinst.ini` when Agent is running in docker.
-        # `freetds` is shipped with the Docker Agent.
-        os.environ.setdefault('ODBCSYSINI', DRIVER_CONFIG_DIR)
-    else:
+    """Point unixODBC at the ODBC driver registration for the running Agent.
+
+    Tries, in order: the user-editable embedded/etc, the Agent's read-only default
+    in embedded/share/odbc, then the file bundled with this integration for older
+    Agents. A pre-set ODBCSYSINI always wins.
+    """
+    if 'ODBCSYSINI' in os.environ:
+        return
+    if not (Platform.is_linux() or Platform.is_containerized()):
+        return
+
+    sysconfig = get_unixodbc_sysconfig(sys.executable)
+    defaults = [
+        path
+        for path in (get_agent_default_driver_config(sys.executable), DRIVER_CONFIG_DIR)
+        if is_non_empty_file(os.path.join(path, ODBC_INST_INI))
+    ]
+
+    selected = None
+    if is_non_empty_file(os.path.join(sysconfig, ODBC_INST_INI)):
+        selected = sysconfig
+    elif is_non_empty_file(os.path.join(sysconfig, ODBC_INI)) and defaults:
+        # DSNs in odbc.ini only resolve against drivers registered in the same directory.
+        try:
+            shutil.copy(os.path.join(defaults[0], ODBC_INST_INI), os.path.join(sysconfig, ODBC_INST_INI))
+            selected = sysconfig
+        except OSError:
+            pass
+    if selected is None and defaults:
+        selected = defaults[0]
+    if selected is None:
+        return
+
+    os.environ['ODBCSYSINI'] = selected
+    if not Platform.is_containerized():
         # required when using pyodbc with FreeTDS on Ubuntu 18.04
         # see https://stackoverflow.com/a/22988748/1258743
+        # TODO: remove once we deprecate the embedded FreeTDS driver
         os.environ.setdefault('TDSVER', '8.0')
 
 
+# helper function ensures database name is correctly escaped
+# anywhere a `USE` statement is needed
 def construct_use_statement(database):
-    return 'use [{}]'.format(database)
+    # use bracket-quoting to handle non-regular identifiers
+    switch_db_tmpl = """USE [{}];"""
+
+    # doubling right-bracket is the only special handling needed
+    # for strings within bracket-quoting in SQL Server
+    database_escaped = database.replace(']', ']]')
+
+    return switch_db_tmpl.format(database_escaped)
 
 
 def is_statement_proc(text):
@@ -56,6 +152,16 @@ def is_statement_proc(text):
         if 0 <= idx_create < idx_proc and idx_proc >= 0:
             return True, _get_procedure_name(t, idx_proc)
     return False, None
+
+
+def has_dbm_comment_marker(text: Optional[str]) -> bool:
+    return bool(text) and any(marker in text for marker in DBM_COMMENT_MARKERS)
+
+
+def needs_comment_recovery(full_text: Optional[str], statement_comments: Optional[Sequence[str]]) -> bool:
+    return has_dbm_comment_marker(full_text) and not any(
+        has_dbm_comment_marker(comment) for comment in statement_comments or ()
+    )
 
 
 def _get_procedure_name(t, idx):
@@ -109,13 +215,25 @@ def extract_sql_comments_and_procedure_name(text):
     return result, is_proc, name
 
 
+def parse_sqlserver_year(version):
+    """
+    Parses the SQL Server year out of the full version
+    :param version: String representation of full SQL Server version (from @@version)
+    :return: integer representation of SQL Server year (i.e. 2012, 2019)
+    """
+    match = re.search(r"Microsoft SQL Server (\d+)", version)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def parse_sqlserver_major_version(version):
     """
     Parses the SQL Server major version out of the full version
     :param version: String representation of full SQL Server version (from @@version)
-    :return: integer representation of SQL Server major version (i.e. 2012, 2019)
+    :return: integer representation of SQL Server major version (i.e. 12, 13)
     """
-    match = re.search(r"Microsoft SQL Server (\d+)", version)
+    match = re.search(r"(\d+)\.\d+\.\d+\.\d+", version)
     if not match:
         return None
     return int(match.group(1))
@@ -137,3 +255,39 @@ def is_azure_sql_database(engine_edition):
     :return: bool
     """
     return engine_edition == ENGINE_EDITION_SQL_DATABASE
+
+
+def execute_query(query, cursor, convert_results_to_str=False, parameters=None) -> Dict[str, str]:
+    if parameters is not None:
+        cursor.execute(query, parameters)
+    else:
+        cursor.execute(query)
+    columns = [str(column[0]).lower() for column in cursor.description]
+    rows = []
+    if convert_results_to_str:
+        rows = [dict(zip(columns, [str(item) for item in row])) for row in cursor.fetchall()]
+    else:
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    return rows
+
+
+def get_list_chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i : i + n]
+
+
+def convert_to_bool(value):
+    if isinstance(value, int):
+        return bool(value)
+    else:
+        return value
+
+
+def is_collation_case_insensitive(collation):
+    """
+    Checks if the collation is case insensitive
+    :param collation: The collation string
+    :return: bool
+    """
+    return not collation or 'CI' in collation.upper()

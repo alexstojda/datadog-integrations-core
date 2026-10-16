@@ -8,6 +8,10 @@ The Postgres integration provides health and performance metrics for your Postgr
 
 Enable [Database Monitoring][28] (DBM) for enhanced insights into query performance and database health. In addition to the standard integration, Datadog DBM provides query-level metrics, live and historical query snapshots, wait event analysis, database load, query explain plans, and blocking query insights.
 
+Postgres versions 9.6-18 are supported.
+
+**Minimum Agent version:** 6.0.0
+
 ## Setup
 
 <div class="alert alert-info">This page describes the standard Postgres Agent integration. If you are looking for the Database Monitoring product for Postgres, see <a href="https://docs.datadoghq.com/database_monitoring" target="_blank">Datadog Database Monitoring</a>.</div>
@@ -87,26 +91,26 @@ To configure this check for an Agent running on a host:
       #
       - host: localhost
 
-        ## @param port - integer - required
-        ## Port to use when connecting to PostgreSQL.
+        ## @param port - integer - optional - default: 5432
+        ## The port to use when connecting to PostgreSQL.
         #
-        port: 5432
-
-        ## @param user - string - required
-        ## Datadog Username created to connect to PostgreSQL.
+        # port: 5432
+    
+        ## @param username - string - required
+        ## The Datadog username created to connect to PostgreSQL.
         #
         username: datadog
-
-        ## @param pass - string - required
-        ## Password associated with the Datadog user.
+    
+        ## @param password - string - optional
+        ## The password associated with the Datadog user.
         #
-        password: "<PASSWORD>"
-
+        # password: <PASSWORD>
+    
         ## @param dbname - string - optional - default: postgres
-        ## Name of the PostgresSQL database to monitor.
-        ## Note: If omitted, the default system postgres database is queried.
+        ## The name of the PostgresSQL database to monitor.
+        ## Note: If omitted, the default system Postgres database is queried.
         #
-        dbname: "<DB_NAME>"
+        # dbname: <DBNAME>
    
         # @param disable_generic_tags - boolean - optional - default: false
         # The integration will stop sending server tag as is redundant with host tag
@@ -120,7 +124,7 @@ To configure this check for an Agent running on a host:
     ```yaml
     instances:
       - host: localhost
-        port: 5432
+        # port: 5432
         database_autodiscovery:
           enabled: true
           # Optionally, set the include field to specify
@@ -137,14 +141,14 @@ To configure this check for an Agent running on a host:
     ```yaml
     instances:
       - host: example-service-primary.example-host.com
-        port: 5432
+        # port: 5432
         username: datadog
         password: '<PASSWORD>'
         relations:
           - relation_name: products
           - relation_name: external_seller_products
       - host: example-service-replica-1.example-host.com
-        port: 5432
+        # port: 5432
         username: datadog
         password: '<PASSWORD>'
         relations:
@@ -153,7 +157,7 @@ To configure this check for an Agent running on a host:
               - r
               - i
       - host: example-service-replica-2.example-host.com
-        port: 5432
+        # port: 5432
         username: datadog
         password: '<PASSWORD>'
         relations:
@@ -169,8 +173,6 @@ Datadog APM integrates with Postgres to see the traces across your distributed s
 2. [Instrument your application that makes requests to Postgres][6].
 
 ##### Log collection
-
-_Available for Agent versions >6.0_
 
 PostgreSQL default logging is to `stderr`, and logs do not include detailed information. It is recommended to log into a file with additional details specified in the log line prefix. See the PostgreSQL documentation on[Error Reporting and Logging][7] for more information.
 
@@ -280,8 +282,11 @@ Then, [instrument your application container that makes requests to Postgres][11
 To configure this check for an Agent running on Kubernetes:
 
 ##### Metric collection
+**Note**: The `<container-name>.check_names` must match the container name where the integration needs to collect metrics. In the example, we are using `postgres.check_names` because the container name is postgres.
 
-Set [Autodiscovery Integrations Templates][13] as pod annotations on your application container. Aside from this, templates can also be configured with [a file, a configmap, or a key-value store][14].
+Choose one of the following Kubernetes Autodiscovery configurations. You can also configure templates with [a file, a configmap, or a key-value store][14].
+
+###### Kubernetes annotations
 
 **Annotations v1** (for Datadog Agent < v7.36)
 
@@ -291,9 +296,9 @@ kind: Pod
 metadata:
   name: postgres
   annotations:
-    ad.datadoghq.com/postgresql.check_names: '["postgres"]'
-    ad.datadoghq.com/postgresql.init_configs: '[{}]'
-    ad.datadoghq.com/postgresql.instances: |
+    ad.datadoghq.com/postgres.check_names: '["postgres"]'
+    ad.datadoghq.com/postgres.init_configs: '[{}]'
+    ad.datadoghq.com/postgres.instances: |
       [
         {
           "host": "%%host%%",
@@ -333,6 +338,32 @@ spec:
   containers:
     - name: postgres
 ```
+###### DatadogInstrumentation CRD
+
+```yaml
+apiVersion: datadoghq.com/v1alpha1
+kind: DatadogInstrumentation
+metadata:
+  name: <CR_NAME>
+  namespace: <WORKLOAD_NAMESPACE>
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet # Or another target kind, if applicable.
+    name: <POSTGRESQL_WORKLOAD_NAME>
+  config:
+    checks:
+      - integration: postgres
+        containerName: postgres
+        initConfig: {}
+        instances:
+          - host: "%%host%%"
+            port: "5432"
+            username: "datadog"
+            password: "<PASSWORD>"
+```
+
+For setup details, see [Configure Autodiscovery with the DatadogInstrumentation CRD][31].
 
 ##### Log collection
 
@@ -382,6 +413,8 @@ To configure this check for an Agent running on ECS:
 
 Set [Autodiscovery Integrations Templates][9] as Docker labels on your application container:
 
+**Annotations v1** (for Datadog Agent < v7.36)
+
 ```json
 {
   "containerDefinitions": [{
@@ -391,6 +424,20 @@ Set [Autodiscovery Integrations Templates][9] as Docker labels on your applicati
       "com.datadoghq.ad.check_names": "[\"postgres\"]",
       "com.datadoghq.ad.init_configs": "[{}]",
       "com.datadoghq.ad.instances": "[{\"host\":\"%%host%%\", \"port\":5432,\"username\":\"datadog\",\"password\":\"<PASSWORD>\"}]"
+    }
+  }]
+}
+```
+
+**Annotations v2** (for Datadog Agent v7.36+)
+
+```json
+{
+  "containerDefinitions": [{
+    "name": "postgres",
+    "image": "postgres:latest",
+    "dockerLabels": {
+      "com.datadoghq.ad.checks": "{\"postgres\": {\"instances\": [{\"host\":\"%%host%%\", \"port\":5432, \"username\":\"postgres\", \"password\":\"<PASSWORD>\"}]}}"
     }
   }]
 }
@@ -476,7 +523,7 @@ Additional helpful documentation, links, and articles:
 - [How to collect and monitor PostgreSQL data with Datadog][26]
 
 [1]: https://raw.githubusercontent.com/DataDog/integrations-core/master/postgres/images/postgresql_dashboard.png
-[2]: https://app.datadoghq.com/account/settings/agent/latest
+[2]: /account/settings/agent/latest
 [3]: https://github.com/DataDog/integrations-core/blob/master/postgres/datadog_checks/postgres/data/conf.yaml.example
 [4]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
 [5]: https://docs.datadoghq.com/tracing/send_traces/
@@ -502,6 +549,7 @@ Additional helpful documentation, links, and articles:
 [25]: https://www.datadoghq.com/blog/postgresql-monitoring-tools
 [26]: https://www.datadoghq.com/blog/collect-postgresql-data-with-datadog
 [27]: https://docs.datadoghq.com/agent/docker/apm/
-[28]: https://docs.datadoghq.com/database_monitoring/
+[28]: https://docs.datadoghq.com/database_monitoring/setup_postgres/
 [29]: https://docs.datadoghq.com/database_monitoring/#postgres
 [30]: https://docs.datadoghq.com/integrations/postgres/?tab=host#faq
+[31]: https://docs.datadoghq.com/containers/guide/configure-autodiscovery-with-the-datadoginstrumentation-crd/

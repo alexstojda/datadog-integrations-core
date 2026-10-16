@@ -6,7 +6,6 @@ import logging
 import pytest
 import requests
 from packaging import version
-from six import iteritems
 
 from datadog_checks.dev.utils import get_metadata_metrics
 from datadog_checks.elastic import ESCheck
@@ -49,6 +48,29 @@ def test_custom_queries_valid_metrics(dd_environment, dd_run_check, instance, ag
 
     aggregator.assert_metric('elasticsearch.custom.metric2', metric_type=aggregator.MONOTONIC_COUNT)
     aggregator.assert_metric('elasticsearch.custom.metric', metric_type=aggregator.GAUGE)
+
+
+def test_custom_queries_root_data_path(dd_environment, dd_run_check, instance, aggregator):
+    # Mirror the reported use case: a flat `/_count` response is `{"count": N, "_shards": {...}}`, so the
+    # metric lives at the root and `data_path` is omitted. This exercises the end-to-end wiring against a
+    # live cluster; that the correct key is read from a given response is covered by the unit tests.
+    custom_queries = [
+        {
+            'endpoint': '/_count',
+            'columns': [
+                {
+                    'value_path': 'count',
+                    'name': 'elasticsearch.custom.doc_count',
+                },
+            ],
+        },
+    ]
+
+    instance['custom_queries'] = custom_queries
+    check = ESCheck('elastic', {}, instances=[instance])
+    dd_run_check(check)
+
+    aggregator.assert_metric('elasticsearch.custom.doc_count', metric_type=aggregator.GAUGE)
 
 
 def test_custom_queries_one_invalid(dd_environment, dd_run_check, instance, aggregator):
@@ -276,7 +298,7 @@ def test_node_name_as_host(dd_environment, instance_normalize_hostname, aggregat
     elastic_check.check(None)
     node_name = node_tags[-1].split(':')[1]
 
-    for m_name, _ in iteritems(STATS_METRICS):
+    for m_name in STATS_METRICS:
         aggregator.assert_metric(m_name, count=1, tags=node_tags, hostname=node_name)
 
 
@@ -288,7 +310,7 @@ def test_pshard_metrics(dd_environment, aggregator):
     elastic_check.check(None)
 
     pshard_stats_metrics = pshard_stats_for_version(es_version)
-    for m_name, desc in iteritems(pshard_stats_metrics):
+    for m_name, desc in pshard_stats_metrics.items():
         if desc[0] == 'gauge':
             aggregator.assert_metric(m_name)
 
@@ -310,7 +332,7 @@ def test_detailed_index_stats(dd_environment, aggregator):
     es_version = elastic_check._get_es_version()
     elastic_check.check(None)
     pshard_stats_metrics = pshard_stats_for_version(es_version)
-    for m_name, desc in iteritems(pshard_stats_metrics):
+    for m_name, desc in pshard_stats_metrics.items():
         if desc[0] == 'gauge' and desc[1].startswith('_all.'):
             aggregator.assert_metric(m_name)
 
@@ -360,8 +382,55 @@ def test_cat_allocation_metrics(dd_environment, aggregator, instance, cluster_ta
     elastic_check = ESCheck('elastic', {}, instances=[instance])
 
     elastic_check.check(None)
+
+    # Check all cat allocation metrics including aggregated shards
     for m_name in CAT_ALLOCATION_METRICS:
         aggregator.assert_metric(m_name)
+
+    # Verify default behavior - shards metric should NOT have index/prirep tags
+    metrics = aggregator.metrics('elasticsearch.shards')
+    assert len(metrics) > 0, "Expected at least one elasticsearch.shards metric"
+
+    # Default behavior: should only have node_name tag, no index or prirep
+    for metric in metrics:
+        tags = metric.tags
+        has_index_tag = any(tag.startswith('index:') for tag in tags)
+        has_prirep_tag = any(tag.startswith('prirep:') for tag in tags)
+        assert not has_index_tag, "Should not have index tag with detailed_shard_metrics disabled"
+        assert not has_prirep_tag, "Should not have prirep tag with detailed_shard_metrics disabled"
+
+
+def test_cat_allocation_detailed_shard_metrics(dd_environment, aggregator, instance, cluster_tags):
+    instance['cat_allocation_stats'] = True
+    instance['detailed_shard_metrics'] = True
+    elastic_check = ESCheck('elastic', {}, instances=[instance])
+
+    elastic_check.check(None)
+
+    # Check disk metrics (all except shards)
+    for m_name in CAT_ALLOCATION_METRICS:
+        if m_name != 'elasticsearch.shards':
+            aggregator.assert_metric(m_name)
+
+    # Check detailed shard placement metrics
+    aggregator.assert_metric('elasticsearch.shards')
+
+    # Verify tags are present - we should have index_name and prirep tags
+    metrics = aggregator.metrics('elasticsearch.shards')
+    assert metrics, "Expected at least one elasticsearch.shards metric"
+
+    # Check that at least one metric has both index_name and prirep tags
+    has_index_tag = False
+    has_prirep_tag = False
+    for metric in metrics:
+        tags = metric.tags
+        if any(tag.startswith('index_name:') for tag in tags):
+            has_index_tag = True
+        if any(tag.startswith('prirep:') for tag in tags):
+            has_prirep_tag = True
+
+    assert has_index_tag, "Expected index_name tag on elasticsearch.shards metric"
+    assert has_prirep_tag, "Expected prirep tag on elasticsearch.shards metric"
 
 
 def test_health_event(dd_environment, aggregator):

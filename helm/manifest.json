@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "754a061c-d896-4f3c-b54e-87125bb66241",
   "app_id": "helm",
+  "owner": "container-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,14 @@
       "Supported OS::macOS",
       "Supported OS::Windows",
       "Category::Configuration & Deployment",
-      "Category::Containers"
+      "Category::Containers",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-helm-kubernetes-with-datadog/"
+      }
     ]
   },
   "author": {
@@ -47,7 +55,7 @@
       "Helm - Overview": "assets/dashboards/overview.json"
     },
     "monitors": {
-      "[helm] Monitor Helm failed releases": "assets/monitors/monitor_failed_releases.json"
+      "Release is failed": "assets/monitors/monitor_failed_releases.json"
     }
   }
 }

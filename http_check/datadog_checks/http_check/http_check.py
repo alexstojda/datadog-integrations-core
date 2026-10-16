@@ -7,22 +7,19 @@ import copy
 import re
 import socket
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import requests
+import socks
 from cryptography import x509
 from requests import Response  # noqa: F401
-from six import PY2, string_types
-from six.moves.urllib.parse import urlparse
 
 from datadog_checks.base import AgentCheck, ensure_unicode, is_affirmative
+from datadog_checks.base.utils.http import should_bypass_proxy
 
 from .config import DEFAULT_EXPECTED_CODE, from_instance
-from .utils import get_ca_certs_path
-
-# Apply thread-safety fix, see https://bugs.python.org/issue7980
-if PY2:
-    import _strptime  # noqa
+from .utils import get_ca_certs_path, parse_proxy_url
 
 DEFAULT_EXPIRE_DAYS_WARNING = 14
 DEFAULT_EXPIRE_DAYS_CRITICAL = 7
@@ -33,10 +30,22 @@ MESSAGE_LENGTH = 2500  # https://docs.datadoghq.com/api/v1/service-checks/
 DATA_METHODS = ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
 
 
+def get_error_http_outcome(error):
+    """Return the `http_outcome` tag value to use when no HTTP response was received."""
+    if isinstance(error, requests.exceptions.SSLError):
+        return "ssl_error"
+    if isinstance(error, (requests.exceptions.Timeout, socket.timeout)):
+        return "timeout"
+    if isinstance(error, requests.exceptions.ConnectionError):
+        return "connection_error"
+    return "socket_error"
+
+
 class HTTPCheck(AgentCheck):
     SOURCE_TYPE_NAME = "system"
     SC_STATUS = "http.can_connect"
     SC_SSL_CERT = "http.ssl_cert"
+    HA_SUPPORTED = True
 
     DEFAULT_HTTP_CONFIG_REMAPPER = {
         "client_cert": {"name": "tls_cert"},
@@ -90,6 +99,7 @@ class HTTPCheck(AgentCheck):
             check_hostname,
             stream,
             use_cert_from_response,
+            enable_http_outcome_tag,
         ) = from_instance(instance, self.ca_certs)
         timeout = self.http.options["timeout"][0]
         start = time.time()
@@ -114,6 +124,7 @@ class HTTPCheck(AgentCheck):
         service_checks_tags = self._get_service_checks_tags(instance)
         r = None  # type: Response
         peer_cert = None  # type: bytes | None
+        http_outcome = None
         try:
             parsed_uri = urlparse(addr)
             self.log.debug("Connecting to %s", addr)
@@ -132,7 +143,7 @@ class HTTPCheck(AgentCheck):
                 persist=True,
                 stream=stream,
                 json=data if method.upper() in DATA_METHODS and isinstance(data, dict) else None,
-                data=data if method.upper() in DATA_METHODS and isinstance(data, string_types) else None,
+                data=data if method.upper() in DATA_METHODS and isinstance(data, str) else None,
             )
         except (
             socket.timeout,
@@ -141,6 +152,7 @@ class HTTPCheck(AgentCheck):
         ) as e:
             length = int((time.time() - start) * 1000)
             self.log.info("%s is DOWN, error: %s. Connection failed after %s ms", addr, e, length)
+            http_outcome = get_error_http_outcome(e)
             service_checks.append(
                 (
                     self.SC_STATUS,
@@ -157,21 +169,7 @@ class HTTPCheck(AgentCheck):
                 repr(e),
                 length,
             )
-            service_checks.append(
-                (
-                    self.SC_STATUS,
-                    AgentCheck.CRITICAL,
-                    "Socket error: {}. Connection failed after {} ms".format(repr(e), length),
-                )
-            )
-        except IOError as e:  # Py2 throws IOError on invalid cert path while py3 throws a socket.error
-            length = int((time.time() - start) * 1000)
-            self.log.info(
-                "Host %s could not be reached: %s. Connection failed after %s ms",
-                addr,
-                repr(e),
-                length,
-            )
+            http_outcome = get_error_http_outcome(e)
             service_checks.append(
                 (
                     self.SC_STATUS,
@@ -185,20 +183,14 @@ class HTTPCheck(AgentCheck):
             raise
 
         else:
+            if r is not None:
+                http_outcome = str(r.status_code)
             if use_cert_from_response:
                 peer_cert = r.raw.connection.sock.getpeercert(binary_form=True)
 
             # Only add the URL tag if it's not already present
             if not any(filter(re.compile("^url:").match, tags_list)):
                 tags_list.append("url:{}".format(addr))
-
-            # Only report this metric if the site is not down
-            if response_time and not service_checks:
-                self.gauge(
-                    "network.http.response_time",
-                    r.elapsed.total_seconds(),
-                    tags=tags_list,
-                )
 
             # Check HTTP response status code
             if not (service_checks or re.match(http_response_status_code, str(r.status_code))):
@@ -254,6 +246,17 @@ class HTTPCheck(AgentCheck):
             # resets the wrapper Session object
             self.http._session.close()
             self.http._session = None
+
+        if enable_http_outcome_tag and http_outcome is not None:
+            tags_list.append("http_outcome:{}".format(http_outcome))
+
+        # Report the response time whenever a response was received, regardless of the status code
+        if response_time and r is not None:
+            self.gauge(
+                "network.http.response_time",
+                r.elapsed.total_seconds(),
+                tags=tags_list,
+            )
 
         # Report status metrics as well
         if service_checks:
@@ -356,13 +359,13 @@ class HTTPCheck(AgentCheck):
 
         try:
             cert = x509.load_der_x509_certificate(binary_cert)
-            exp_date = cert.not_valid_after
+            exp_date = cert.not_valid_after_utc
         except Exception as e:
             msg = repr(e)
             self.log.debug('Unable to parse the certificate to get expiration: %s', e)
             return AgentCheck.UNKNOWN, None, None, msg
 
-        time_left = exp_date - datetime.utcnow()
+        time_left = exp_date - datetime.now(timezone.utc)
         days_left = time_left.days
         seconds_left = time_left.total_seconds()
 
@@ -401,7 +404,16 @@ class HTTPCheck(AgentCheck):
         server_name = instance.get('ssl_server_name', o.hostname)
         port = o.port or 443
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock = socks.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+        proxies = self.http.options.get('proxies', {})
+        if (
+            proxies
+            and (proxy_url := proxies.get("https"))
+            and not should_bypass_proxy(url, self.http.no_proxy_uris or [])
+        ):
+            proxy = parse_proxy_url(proxy_url)
+            sock.set_proxy(**proxy)
+
         sock.settimeout(float(timeout))
         sock.connect((host, port))
 

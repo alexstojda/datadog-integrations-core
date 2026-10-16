@@ -1,4 +1,4 @@
-global_config_source = "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0RhdGFEb2cvZ2l0aHViLW1ldGFkYXRhL21hc3Rlci9qaXJhLnRvbWw="
+datastore_id = "7f3990d4-3670-4d78-b9d2-ea94d2f20ee9"
 qa_statuses = [
   "To Do",
   "In Progress",
@@ -30,21 +30,6 @@ exclude_members = [
   "hithwen",
 ]
 
-[teams."Platform Integrations"]
-jira_project = "PLINT"
-jira_issue_type = "Task"
-jira_statuses = [
-  "To Do",
-  "In Progress",
-  "Done",
-]
-github_team = "platform-integrations"
-exclude_members = [
-  "hithwen",
-  "shanelhuang",
-]
-github_labels = ["team/platform-integrations"]
-
 [teams."Container Integrations"]
 jira_project = "CONTINT"
 jira_issue_type = "Task"
@@ -54,7 +39,26 @@ jira_statuses = [
   "Done",
 ]
 github_team = "container-integrations"
+exclude_members = [
+  "clamoriniere",
+  "hkaj",
+]
 github_labels = ["team/container-integrations"]
+
+[teams."Container Platform"]
+jira_project = "CONTP"
+jira_issue_type = "Task"
+jira_statuses = [
+  "To Do",
+  "In Progress",
+  "Done",
+]
+github_team = "container-platform"
+exclude_members = [
+  "clamoriniere",
+  "hkaj",
+]
+github_labels = ["team/container-platform"]
 
 [teams."Database Monitoring"]
 jira_project = "DBMON"
@@ -67,16 +71,34 @@ jira_statuses = [
 github_team = "database-monitoring"
 github_labels = ["team/database-monitoring", "team/database-monitoring-agent"]
 
-[teams."Network Device Monitoring"]
-jira_project = "NDMII"
+[teams."Network Device Monitoring Core"]
+jira_project = "NDMC"
+jira_issue_type = "Bug"
+jira_statuses = [
+  "To Do",
+  "In Progress",
+  "Done",
+]
+github_team = "network-device-monitoring-core"
+github_labels = ["team/network-device-monitoring-core"]
+
+[teams."Network Device Monitoring Integrations"]
+jira_project = "NDINT"
 jira_issue_type = "Task"
 jira_statuses = [
   "To Do",
   "In Progress",
   "Done",
 ]
-github_team = "network-device-monitoring"
-github_labels = ["team/network-device-monitoring"]
+github_team = "ndm-integrations"
+github_labels = ["team/ndm-integrations"]
+
+[teams."Network Path"]
+jira_project = "NETPATH"
+jira_issue_type = "Task"
+jira_statuses = ["To Do", "In Progress", "Done"]
+github_team = "network-path"
+github_labels = ["team/network-path"]
 
 [teams."Windows Agent"]
 jira_project = "WINA"
@@ -86,5 +108,12 @@ jira_statuses = [
   "In Progress",
   "Done",
 ]
-github_team = "windows-agent"
-github_labels = ["team/windows-agent"]
+github_team = "windows-products"
+github_labels = ["team/windows-products"]
+
+[teams."Agent Build"]
+jira_project = "ABLD"
+jira_issue_type = "Task"
+jira_statuses = ["To Do", "In Progress", "Done"]
+github_team = "agent-build"
+github_labels = ["team/agent-build"]

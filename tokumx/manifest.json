@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "8169c714-555c-4e00-9be0-c6604cf1e858",
   "app_id": "tokumx",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,14 @@
       "Category::Data Stores",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-key-tokumx-metrics-mongodb-applications"
+      }
     ]
   },
   "author": {
@@ -28,9 +36,7 @@
   "assets": {
     "integration": {
       "source_type_name": "TokuMX",
-      "configuration": {
-        "spec": "assets/configuration/spec.yaml"
-      },
+      "configuration": {},
       "events": {
         "creates_events": true
       },
@@ -42,7 +48,6 @@
       "service_checks": {
         "metadata_path": "assets/service_checks.json"
       },
-      "process_signatures": [],
       "source_type_id": 74,
       "auto_install": true
     },

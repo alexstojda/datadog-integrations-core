@@ -15,7 +15,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile__hp_compaq_health(dd_agent_check):
@@ -27,8 +27,12 @@ def test_e2e_profile__hp_compaq_health(dd_agent_check):
     common_tags = [
         'snmp_profile:hp-compaq-health',
         'snmp_host:_hp-compaq-health.device.name',
+        'device_hostname:_hp-compaq-health.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + []
 
     # --- TEST EXTENDED METRICS ---
@@ -54,8 +58,8 @@ def test_e2e_profile__hp_compaq_health(dd_agent_check):
     aggregator.assert_metric('snmp.cpqHeThermalSystemFanStatus', metric_type=aggregator.GAUGE, tags=common_tags)
     aggregator.assert_metric('snmp.cpqHeThermalTempStatus', metric_type=aggregator.GAUGE, tags=common_tags)
     tag_rows = [
-        ['temperature_index:11'],
         ['temperature_index:13'],
+        ['temperature_index:23'],
     ]
     for tag_row in tag_rows:
         aggregator.assert_metric(
@@ -94,8 +98,8 @@ def test_e2e_profile__hp_compaq_health(dd_agent_check):
         )
 
     tag_rows = [
-        ['chassis_num:22', 'power_supply_status:nvram_invalid'],
-        ['chassis_num:8', 'power_supply_status:general_failure'],
+        ['chassis_num:22', 'bay_num:14', 'power_supply_status:nvram_invalid'],
+        ['chassis_num:8', 'bay_num:22', 'power_supply_status:general_failure'],
     ]
     for tag_row in tag_rows:
         aggregator.assert_metric(
@@ -119,6 +123,7 @@ def test_e2e_profile__hp_compaq_health(dd_agent_check):
         'status': 1,
         'sys_object_id': '1.2.3.1004',
         'device_type': 'other',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

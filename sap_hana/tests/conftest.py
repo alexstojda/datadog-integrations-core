@@ -10,6 +10,7 @@ from hdbcli.dbapi import Connection as HanaConnection
 from datadog_checks.dev import WaitFor, docker_run
 from datadog_checks.dev.conditions import CheckDockerLogs
 from datadog_checks.sap_hana.queries import (
+    AuditLog,
     GlobalSystemBackupProgress,
     GlobalSystemConnectionsStatus,
     GlobalSystemDiskUsage,
@@ -23,7 +24,7 @@ from datadog_checks.sap_hana.queries import (
     SystemDatabases,
 )
 
-from .common import ADMIN_CONFIG, COMPOSE_FILE, CONFIG, E2E_METADATA, TIMEOUT
+from .common import ADMIN_CONFIG, AUDIT_APPLICATION_NAME, COMPOSE_FILE, CONFIG, E2E_METADATA, TIMEOUT
 
 
 class DbManager(object):
@@ -33,6 +34,10 @@ class DbManager(object):
             'port': connection_config['port'],
             'user': connection_config['username'],
             'password': connection_config['password'],
+            # Keeps AUDIT_LOG.APPLICATION_NAME deterministic for the statements audited below.
+            # APPLICATION is a session variable rather than a connect property, so it has to go
+            # through `sessionvariables`; hdbcli silently ignores unrecognised bare kwargs.
+            'sessionvariables': {'APPLICATION': AUDIT_APPLICATION_NAME},
         }
         self.schema = schema
         self.conn = None
@@ -40,6 +45,27 @@ class DbManager(object):
     def initialize(self):
         with closing(self.conn) as conn:
             with closing(conn.cursor()) as cursor:
+                # Enable audit logging
+                # https://help.sap.com/docs/SAP_HANA_PLATFORM/4fe29514fd584807ac9f2a04f6754767/20d3d56075191014af43d6487fcaa603.html
+                # https://help.sap.com/docs/SAP_HANA_PLATFORM/b3ee5778bc2e4a089d3299b82ec762a7/71f75e298af4497abed7ce54e12c81d4.html
+                # https://help.sap.com/docs/SAP_HANA_PLATFORM/b3ee5778bc2e4a089d3299b82ec762a7/35eb4e567d53456088755b8131b7ed1d.html
+                # https://github.com/SAP-samples/s4hana-hana-audit-policies
+                cursor.execute(
+                    "ALTER SYSTEM ALTER CONFIGURATION ('nameserver.ini', 'SYSTEM')"
+                    "SET ('auditing configuration', 'global_auditing_state') = 'true'"
+                    "WITH RECONFIGURE"
+                )
+                for policy, actions in [
+                    ('user_management', 'ALTER USER, CREATE USER, DROP USER'),
+                    # Uncomment when manually testing to get many more non-deterministic audit logs
+                    # ('user_connect_policy', 'CONNECT'),
+                ]:
+                    cursor.execute(
+                        'CREATE AUDIT POLICY {} AUDITING ALL {} LEVEL INFO TRAIL TYPE TABLE'.format(policy, actions)
+                    )
+                    cursor.execute('ALTER AUDIT POLICY {} ENABLE'.format(policy))
+
+                # Create a new user for monitoring
                 cursor.execute('CREATE RESTRICTED USER datadog PASSWORD "{}"'.format(CONFIG['password']))
                 cursor.execute('ALTER USER datadog ENABLE CLIENT CONNECT')
                 cursor.execute('ALTER USER datadog DISABLE PASSWORD LIFETIME')
@@ -47,8 +73,9 @@ class DbManager(object):
                 # Create a role with the necessary monitoring privileges
                 cursor.execute('CREATE ROLE DD_MONITOR')
                 cursor.execute('GRANT CATALOG READ TO DD_MONITOR')
+                cursor.execute('GRANT AUDIT READ TO DD_MONITOR')
 
-                for cls in (MasterDatabase, SystemDatabases):
+                for cls in (AuditLog, MasterDatabase, SystemDatabases):
                     instance = cls()
                     cursor.execute('GRANT SELECT ON {}.{} TO DD_MONITOR'.format(instance.schema, instance.view))
 
@@ -91,7 +118,10 @@ def dd_environment(schema="SYS_DATABASES"):
             db.initialize,
         ],
         env_vars={'PASSWORD': ADMIN_CONFIG['password']},
+        mount_logs=True,
         sleep=10,
+        attempts=5,
+        attempts_wait=10,
     ):
         yield CONFIG, E2E_METADATA
 

@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Union  # noqa: F401
 
 from datadog_checks.base import AgentCheck, ConfigurationError
 from datadog_checks.base.log import get_check_logger
+from datadog_checks.postgres.config_models.instance import Relations
 
 ALL_SCHEMAS = object()
 RELATION_NAME = 'relation_name'
@@ -29,15 +30,7 @@ RELKIND = 'relkind'
 
 # The view pg_locks provides access to information about the locks held by active processes within the database server.
 LOCK_METRICS = {
-    'descriptors': [
-        ('mode', 'lock_mode'),
-        ('locktype', 'lock_type'),
-        ('nspname', 'schema'),
-        ('datname', 'db'),
-        ('relname', 'table'),
-        ('granted', 'granted'),
-    ],
-    'metrics': {'lock_count': ('postgresql.locks', AgentCheck.gauge)},
+    'name': 'pg_locks',
     'query': """
 SELECT mode,
        locktype,
@@ -45,79 +38,77 @@ SELECT mode,
        pd.datname,
        pc.relname,
        granted,
-       count(*) AS {metrics_columns}
+       fastpath,
+       count(*)
   FROM pg_locks l
-  JOIN pg_database pd ON (l.database = pd.oid)
-  JOIN pg_class pc ON (l.relation = pc.oid)
+  LEFT JOIN pg_database pd ON (l.database = pd.oid)
+  LEFT JOIN pg_class pc ON (l.relation = pc.oid)
   LEFT JOIN pg_namespace pn ON (pn.oid = pc.relnamespace)
- WHERE {relations}
+ WHERE (pc IS NULL OR ({relations} AND pc.relname NOT LIKE 'pg^_%%' ESCAPE '^'))
    AND l.mode IS NOT NULL
-   AND pc.relname NOT LIKE 'pg^_%%' ESCAPE '^'
- GROUP BY pd.datname, pc.relname, pn.nspname, locktype, mode, granted""",
-    'relation': True,
-    'name': 'lock_metrics',
-}
-
-# The pg_stat_all_tables contain one row for each table in the current database,
-# showing statistics about accesses to that specific table.
-# pg_stat_user_tables contains the same as pg_stat_all_tables, except that only user tables are shown.
-REL_METRICS = {
-    'descriptors': [('relname', 'table'), ('schemaname', 'schema')],
-    'metrics': {
-        'seq_scan': ('postgresql.seq_scans', AgentCheck.rate),
-        'seq_tup_read': ('postgresql.seq_rows_read', AgentCheck.rate),
-        'idx_scan': ('postgresql.index_rel_scans', AgentCheck.rate),
-        'idx_tup_fetch': ('postgresql.index_rel_rows_fetched', AgentCheck.rate),
-        'n_tup_ins': ('postgresql.rows_inserted', AgentCheck.rate),
-        'n_tup_upd': ('postgresql.rows_updated', AgentCheck.rate),
-        'n_tup_del': ('postgresql.rows_deleted', AgentCheck.rate),
-        'n_tup_hot_upd': ('postgresql.rows_hot_updated', AgentCheck.rate),
-        'n_live_tup': ('postgresql.live_rows', AgentCheck.gauge),
-        'n_dead_tup': ('postgresql.dead_rows', AgentCheck.gauge),
-        'vacuum_count': ('postgresql.vacuumed', AgentCheck.monotonic_count),
-        'autovacuum_count': ('postgresql.autovacuumed', AgentCheck.monotonic_count),
-        'analyze_count': ('postgresql.analyzed', AgentCheck.monotonic_count),
-        'autoanalyze_count': ('postgresql.autoanalyzed', AgentCheck.monotonic_count),
-        'EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, last_vacuum))': ('postgresql.last_vacuum_age', AgentCheck.gauge),
-        'EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, last_autovacuum))': (
-            'postgresql.last_autovacuum_age',
-            AgentCheck.gauge,
-        ),
-        'EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, last_analyze))': ('postgresql.last_analyze_age', AgentCheck.gauge),
-        'EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, last_autoanalyze))': (
-            'postgresql.last_autoanalyze_age',
-            AgentCheck.gauge,
-        ),
-    },
-    'query': """
-SELECT relname,schemaname,{metrics_columns}
-  FROM pg_stat_user_tables
- WHERE {relations}""",
-    'relation': True,
-    'name': 'rel_metrics',
+ GROUP BY pd.datname, pc.relname, pn.nspname, locktype, mode, granted, fastpath
+""",
+    'columns': [
+        {'name': 'lock_mode', 'type': 'tag'},
+        {'name': 'lock_type', 'type': 'tag'},
+        {'name': 'schema', 'type': 'tag_not_null'},
+        {'name': 'db', 'type': 'tag_not_null'},
+        {'name': 'table', 'type': 'tag_not_null'},
+        {'name': 'granted', 'type': 'tag'},
+        {'name': 'fastpath', 'type': 'tag'},
+        {'name': 'locks', 'type': 'gauge'},
+    ],
 }
 
 
-# The pg_stat_all_indexes view will contain one row for each index in the current database,
-# showing statistics about accesses to that specific index.
-# The pg_stat_user_indexes view contain the same information, but filtered to only show user indexes.
+# This is similar to pg_stat_user_indexes view
 IDX_METRICS = {
-    'descriptors': [('relname', 'table'), ('schemaname', 'schema'), ('indexrelname', 'index')],
-    'metrics': {
-        'idx_scan': ('postgresql.index_scans', AgentCheck.rate),
-        'idx_tup_read': ('postgresql.index_rows_read', AgentCheck.rate),
-        'idx_tup_fetch': ('postgresql.index_rows_fetched', AgentCheck.rate),
-        'pg_relation_size(indexrelid) as index_size': ('postgresql.individual_index_size', AgentCheck.gauge),
-    },
+    'name': 'pg_index',
     'query': """
-SELECT relname,
-       schemaname,
-       indexrelname,
-       {metrics_columns}
-  FROM pg_stat_user_indexes
- WHERE {relations}""",
-    'relation': True,
-    'name': 'idx_metrics',
+SELECT
+  current_database(),
+  nspname,
+  relname,
+  indexrelname,
+  is_valid,
+  idx_scan,
+  idx_tup_read,
+  idx_tup_fetch,
+  idx_blks_read,
+  idx_blks_hit,
+  index_size
+FROM (SELECT
+      N.nspname AS nspname,
+      C.relname AS relname,
+      I.relname AS indexrelname,
+      X.indisvalid::text AS is_valid,
+      pg_stat_get_numscans(I.oid) AS idx_scan,
+      pg_stat_get_tuples_returned(I.oid) AS idx_tup_read,
+      pg_stat_get_tuples_fetched(I.oid) AS idx_tup_fetch,
+      pg_stat_get_blocks_fetched(I.oid) - pg_stat_get_blocks_hit(I.oid) AS idx_blks_read,
+      pg_stat_get_blocks_hit(I.oid) AS idx_blks_hit,
+      pg_relation_size(indexrelid) as index_size
+    FROM pg_class C JOIN
+      pg_index X ON C.oid = X.indrelid JOIN
+      pg_class I ON I.oid = X.indexrelid
+      LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+    WHERE C.relkind IN ('r', 'm')
+      AND N.nspname NOT IN ('pg_catalog', 'information_schema')
+) s WHERE {relations}
+    """.strip(),
+    'columns': [
+        {'name': 'db', 'type': 'tag'},
+        {'name': 'schema', 'type': 'tag'},
+        {'name': 'table', 'type': 'tag'},
+        {'name': 'index', 'type': 'tag'},
+        {'name': 'valid', 'type': 'tag'},
+        {'name': 'index_scans', 'type': 'rate'},
+        {'name': 'index_rows_read', 'type': 'rate'},
+        {'name': 'index_rows_fetched', 'type': 'rate'},
+        {'name': 'index.index_blocks_read', 'type': 'rate'},
+        {'name': 'index.index_blocks_hit', 'type': 'rate'},
+        {'name': 'individual_index_size', 'type': 'gauge'},
+    ],
 }
 
 
@@ -140,12 +131,18 @@ SELECT relname,
 #
 # Previous version filtered on nspname !~ '^pg_toast'. Since pg_toast namespace only
 # contains index and toast table, the filter was redundant with relkind = 'r'
-QUERY_PG_CLASS = {
-    'name': 'pg_class',
+#
+# We also filter out tables with an AccessExclusiveLock to avoid query timeouts.
+QUERY_PG_CLASS_SIZE = {
+    'name': 'pg_class_size',
     'query': """
 SELECT current_database(),
-       s.schemaname, s.table, s.partition_of,
-       s.relpages, s.reltuples, s.relallvisible,
+       s.nspname,
+       s.table,
+       s.partition_of,
+       s.relpages,
+       s.reltuples,
+       s.relallvisible,
        s.relation_size + s.toast_size,
        s.relation_size,
        s.index_size,
@@ -153,7 +150,7 @@ SELECT current_database(),
        s.relation_size + s.index_size + s.toast_size
 FROM
     (SELECT
-      N.nspname as schemaname,
+      N.nspname as nspname,
       relname as table,
       I.inhparent::regclass AS partition_of,
       C.relpages, C.reltuples, C.relallvisible,
@@ -164,6 +161,14 @@ FROM
     LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
     LEFT JOIN pg_inherits I ON (I.inhrelid = C.oid)
     WHERE NOT (nspname = ANY('{{pg_catalog,information_schema}}')) AND
+        NOT EXISTS (
+            SELECT 1
+            from pg_locks
+            WHERE locktype = 'relation'
+            AND mode = 'AccessExclusiveLock'
+            AND granted = true
+            AND relation = C.oid
+      ) AND
       relkind = 'r' AND
       {relations} {limits}) as s""",
     'columns': [
@@ -171,14 +176,110 @@ FROM
         {'name': 'schema', 'type': 'tag'},
         {'name': 'table', 'type': 'tag'},
         {'name': 'partition_of', 'type': 'tag_not_null'},
-        {'name': 'postgresql.relation.pages', 'type': 'gauge'},
-        {'name': 'postgresql.relation.tuples', 'type': 'gauge'},
-        {'name': 'postgresql.relation.all_visible', 'type': 'gauge'},
-        {'name': 'postgresql.table_size', 'type': 'gauge'},
-        {'name': 'postgresql.relation_size', 'type': 'gauge'},
-        {'name': 'postgresql.index_size', 'type': 'gauge'},
-        {'name': 'postgresql.toast_size', 'type': 'gauge'},
-        {'name': 'postgresql.total_size', 'type': 'gauge'},
+        {'name': 'relation.pages', 'type': 'gauge'},
+        {'name': 'relation.tuples', 'type': 'gauge'},
+        {'name': 'relation.all_visible', 'type': 'gauge'},
+        {'name': 'table_size', 'type': 'gauge'},
+        {'name': 'relation_size', 'type': 'gauge'},
+        {'name': 'index_size', 'type': 'gauge'},
+        {'name': 'toast_size', 'type': 'gauge'},
+        {'name': 'total_size', 'type': 'gauge'},
+    ],
+}
+
+# We used to rely on pg_stat_user_tables to get tuples and scan metrics
+# However, using this view is inefficient as it groups by aggregation on oid and schema
+# behind the hood, leading to possible temporary bytes being written to handle the sort.
+# To avoid this, we need to directly call the pg_stat_* functions
+QUERY_PG_CLASS = {
+    'name': 'pg_class',
+    'query': """
+SELECT
+  current_database(),
+  N.nspname,
+  C.relname,
+  pg_stat_get_numscans(C.oid),
+  pg_stat_get_tuples_returned(C.oid),
+  I.idx_scan,
+  I.idx_tup_fetch,
+  pg_stat_get_tuples_inserted(C.oid),
+  pg_stat_get_tuples_updated(C.oid),
+  pg_stat_get_tuples_deleted(C.oid),
+  pg_stat_get_tuples_hot_updated(C.oid),
+  pg_stat_get_live_tuples(C.oid),
+  pg_stat_get_dead_tuples(C.oid),
+  pg_stat_get_vacuum_count(C.oid),
+  pg_stat_get_autovacuum_count(C.oid),
+  pg_stat_get_analyze_count(C.oid),
+  pg_stat_get_autoanalyze_count(C.oid),
+  EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, pg_stat_get_last_vacuum_time(C.oid))),
+  EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, pg_stat_get_last_autovacuum_time(C.oid))),
+  EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, pg_stat_get_last_analyze_time(C.oid))),
+  EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, pg_stat_get_last_autoanalyze_time(C.oid))),
+  pg_stat_get_numscans(idx_toast.indexrelid),
+  pg_stat_get_tuples_fetched(idx_toast.indexrelid),
+  pg_stat_get_tuples_inserted(C.reltoastrelid),
+  pg_stat_get_tuples_deleted(C.reltoastrelid),
+  pg_stat_get_live_tuples(C.reltoastrelid),
+  pg_stat_get_dead_tuples(C.reltoastrelid),
+  pg_stat_get_vacuum_count(C.reltoastrelid),
+  pg_stat_get_autovacuum_count(C.reltoastrelid),
+  EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, pg_stat_get_last_vacuum_time(C.reltoastrelid))),
+  EXTRACT(EPOCH FROM age(CURRENT_TIMESTAMP, pg_stat_get_last_autovacuum_time(C.reltoastrelid))),
+  C.xmin
+FROM pg_class C
+LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+LEFT JOIN pg_index idx_toast ON (idx_toast.indrelid = C.reltoastrelid)
+LEFT JOIN LATERAL (
+    SELECT sum(pg_stat_get_numscans(indexrelid))::bigint AS idx_scan,
+           sum(pg_stat_get_tuples_fetched(indexrelid))::bigint AS idx_tup_fetch
+      FROM pg_index
+     WHERE pg_index.indrelid = C.oid) I ON true
+WHERE C.relkind = 'r'
+    AND NOT (nspname = ANY('{{pg_catalog,information_schema}}'))
+    AND NOT EXISTS (
+        SELECT 1
+        from pg_locks
+        WHERE locktype = 'relation'
+        AND mode = 'AccessExclusiveLock'
+        AND granted = true
+        AND relation = C.oid
+    )
+    AND {relations} {limits}
+""",
+    'columns': [
+        {'name': 'db', 'type': 'tag'},
+        {'name': 'schema', 'type': 'tag'},
+        {'name': 'table', 'type': 'tag'},
+        {'name': 'seq_scans', 'type': 'rate'},
+        {'name': 'seq_rows_read', 'type': 'rate'},
+        {'name': 'index_rel_scans', 'type': 'rate'},
+        {'name': 'index_rel_rows_fetched', 'type': 'rate'},
+        {'name': 'rows_inserted', 'type': 'rate'},
+        {'name': 'rows_updated', 'type': 'rate'},
+        {'name': 'rows_deleted', 'type': 'rate'},
+        {'name': 'rows_hot_updated', 'type': 'rate'},
+        {'name': 'live_rows', 'type': 'gauge'},
+        {'name': 'dead_rows', 'type': 'gauge'},
+        {'name': 'vacuumed', 'type': 'monotonic_count'},
+        {'name': 'autovacuumed', 'type': 'monotonic_count'},
+        {'name': 'analyzed', 'type': 'monotonic_count'},
+        {'name': 'autoanalyzed', 'type': 'monotonic_count'},
+        {'name': 'last_vacuum_age', 'type': 'gauge'},
+        {'name': 'last_autovacuum_age', 'type': 'gauge'},
+        {'name': 'last_analyze_age', 'type': 'gauge'},
+        {'name': 'last_autoanalyze_age', 'type': 'gauge'},
+        {'name': 'toast.index_scans', 'type': 'monotonic_count'},
+        {'name': 'toast.rows_fetched', 'type': 'monotonic_count'},
+        {'name': 'toast.rows_inserted', 'type': 'monotonic_count'},
+        {'name': 'toast.rows_deleted', 'type': 'monotonic_count'},
+        {'name': 'toast.live_rows', 'type': 'gauge'},
+        {'name': 'toast.dead_rows', 'type': 'gauge'},
+        {'name': 'toast.vacuumed', 'type': 'monotonic_count'},
+        {'name': 'toast.autovacuumed', 'type': 'monotonic_count'},
+        {'name': 'toast.last_vacuum_age', 'type': 'gauge'},
+        {'name': 'toast.last_autovacuum_age', 'type': 'gauge'},
+        {'name': 'relation.xmin', 'type': 'gauge'},
     ],
 }
 
@@ -189,14 +290,14 @@ FROM
 STATIO_METRICS = {
     'descriptors': [('relname', 'table'), ('schemaname', 'schema')],
     'metrics': {
-        'heap_blks_read': ('postgresql.heap_blocks_read', AgentCheck.rate),
-        'heap_blks_hit': ('postgresql.heap_blocks_hit', AgentCheck.rate),
-        'idx_blks_read': ('postgresql.index_blocks_read', AgentCheck.rate),
-        'idx_blks_hit': ('postgresql.index_blocks_hit', AgentCheck.rate),
-        'toast_blks_read': ('postgresql.toast_blocks_read', AgentCheck.rate),
-        'toast_blks_hit': ('postgresql.toast_blocks_hit', AgentCheck.rate),
-        'tidx_blks_read': ('postgresql.toast_index_blocks_read', AgentCheck.rate),
-        'tidx_blks_hit': ('postgresql.toast_index_blocks_hit', AgentCheck.rate),
+        'heap_blks_read': ('heap_blocks_read', AgentCheck.rate),
+        'heap_blks_hit': ('heap_blocks_hit', AgentCheck.rate),
+        'idx_blks_read': ('index_blocks_read', AgentCheck.rate),
+        'idx_blks_hit': ('index_blocks_hit', AgentCheck.rate),
+        'toast_blks_read': ('toast_blocks_read', AgentCheck.rate),
+        'toast_blks_hit': ('toast_blocks_hit', AgentCheck.rate),
+        'tidx_blks_read': ('toast_index_blocks_read', AgentCheck.rate),
+        'tidx_blks_hit': ('toast_index_blocks_hit', AgentCheck.rate),
     },
     'query': """
 SELECT relname,
@@ -254,7 +355,7 @@ FROM (
 TABLE_BLOAT = {
     'descriptors': [('schemaname', 'schema'), ('relname', 'table')],
     'metrics': {
-        'tbloat': ('postgresql.table_bloat', AgentCheck.gauge),
+        'tbloat': ('table_bloat', AgentCheck.gauge),
     },
     'query': TABLE_BLOAT_QUERY,
     'relation': True,
@@ -310,15 +411,15 @@ FROM (
 INDEX_BLOAT = {
     'descriptors': [('schemaname', 'schema'), ('relname', 'table'), ('iname', 'index')],
     'metrics': {
-        'ibloat': ('postgresql.index_bloat', AgentCheck.gauge),
+        'ibloat': ('index_bloat', AgentCheck.gauge),
     },
     'query': INDEX_BLOAT_QUERY,
     'relation': True,
     'name': 'index_bloat_metrics',
 }
 
-RELATION_METRICS = [LOCK_METRICS, REL_METRICS, IDX_METRICS, STATIO_METRICS]
-DYNAMIC_RELATION_QUERIES = [QUERY_PG_CLASS]
+RELATION_METRICS = [STATIO_METRICS]
+DYNAMIC_RELATION_QUERIES = [QUERY_PG_CLASS, QUERY_PG_CLASS_SIZE, IDX_METRICS, LOCK_METRICS]
 
 
 class RelationsManager(object):
@@ -330,25 +431,39 @@ class RelationsManager(object):
         self.config = self._build_relations_config(yamlconfig)
         self.max_relations = max_relations
         self.has_relations = len(self.config) > 0
+        self._filtered_queries_cache: dict[tuple[str, str], str] = {}
 
-    def filter_relation_query(self, query, schema_field):
-        # type (str, str) -> str
+    def filter_relation_query(self, query: str, schema_field: str) -> str:
+        """
+        Get a filtered query from cache, building it if not already cached. The filter comes from the
+        relations configuration, which is fixed for the lifetime of the check, so a query only has to
+        be built once no matter how many databases it is later run against.
+        """
+        cache_key = (query, schema_field)
+        if cache_key not in self._filtered_queries_cache:
+            self._filtered_queries_cache[cache_key] = self._build_filtered_query(query, schema_field)
+        return self._filtered_queries_cache[cache_key]
+
+    def _build_filtered_query(self, query: str, schema_field: str) -> str:
         """Build a WHERE clause filtering relations based on relations_config and applies it to the given query"""
         relations_filter = []
         for r in self.config:
             relation_filter = []
             if r.get(RELATION_NAME):
                 relation_filter.append("( relname = '{}'".format(r[RELATION_NAME]))
-            elif r.get(RELATION_REGEX):
+            elif r.get(RELATION_REGEX) and r.get(RELATION_REGEX) != ".*":
                 relation_filter.append("( relname ~ '{}'".format(r[RELATION_REGEX]))
+            else:
+                # Stub filter to allow for appending
+                relation_filter.append("( 1=1")
 
-            if ALL_SCHEMAS not in r[SCHEMAS]:
-                schema_filter = ','.join("'{}'".format(s) for s in r[SCHEMAS])
+            if ALL_SCHEMAS not in r.get(SCHEMAS, []):
+                schema_filter = ','.join("'{}'".format(s) for s in r.get(SCHEMAS, []))
                 relation_filter.append('AND {} = ANY(array[{}]::text[])'.format(schema_field, schema_filter))
 
             # TODO: explicitly declare `relkind` compatiblity in the query rather than implicitly checking query text
             if r.get(RELKIND) and 'FROM pg_locks' in query:
-                relkind_filter = ','.join("'{}'".format(s) for s in r[RELKIND])
+                relkind_filter = ','.join("'{}'".format(s) for s in r.get(RELKIND, []))
                 relation_filter.append('AND relkind = ANY(array[{}])'.format(relkind_filter))
 
             relation_filter.append(')')
@@ -357,7 +472,7 @@ class RelationsManager(object):
         relations_filter = '(' + ' OR '.join(relations_filter) + ')'
         limits_filter = 'LIMIT {}'.format(self.max_relations)
         self.log.debug(
-            "Running query: %s with relations matching: %s, limits %s", str(query), relations_filter, self.max_relations
+            "Built query: %s with relations matching: %s, limits %s", str(query), relations_filter, self.max_relations
         )
         return query.format(relations=relations_filter, limits=limits_filter)
 
@@ -365,40 +480,44 @@ class RelationsManager(object):
     def validate_relations_config(yamlconfig):
         # type: (List[Union[str, Dict]]) -> None
         for element in yamlconfig:
+            if isinstance(element, Relations):
+                element = element.model_dump()
             if isinstance(element, dict):
-                if not (RELATION_NAME in element or RELATION_REGEX in element):
+                if not (element.get(RELATION_NAME) or element.get(RELATION_REGEX)):
                     raise ConfigurationError(
                         "Parameter '%s' or '%s' is required for relation element %s",
                         RELATION_NAME,
                         RELATION_REGEX,
                         element,
                     )
-                if RELATION_NAME in element and RELATION_REGEX in element:
+                if element.get(RELATION_NAME) and element.get(RELATION_REGEX):
                     raise ConfigurationError(
                         "Expecting only of parameters '%s', '%s' for relation element %s",
                         RELATION_NAME,
                         RELATION_REGEX,
                         element,
                     )
-                if not isinstance(element.get(SCHEMAS, []), list):
-                    raise ConfigurationError("Expected '%s' to be a list for %s", SCHEMAS, element)
-                if not isinstance(element.get(RELKIND, []), list):
-                    raise ConfigurationError("Expected '%s' to be a list for %s", RELKIND, element)
+                if element.get(SCHEMAS) and not isinstance(element.get(SCHEMAS), (list, tuple)):
+                    raise ConfigurationError("Expected '%s' to be a list or tuple for %s", SCHEMAS, element)
+                if element.get(RELKIND) and not isinstance(element.get(RELKIND), (list, tuple)):
+                    raise ConfigurationError("Expected '%s' to be a list or tuple for %s", RELKIND, element)
             elif not isinstance(element, str):
                 raise ConfigurationError('Unhandled relations config type: %s', element)
 
     @staticmethod
-    def _build_relations_config(yamlconfig):
-        # type:  (List[Union[str, Dict]]) -> List[Dict[str, Any]]
+    def _build_relations_config(yamlconfig: list[str | Relations]) -> List[Dict[str, Any]]:
         """Builds a list from relations configuration while maintaining compatibility"""
         relations = []
         for element in yamlconfig:
             config = {}
+            if isinstance(element, Relations):
+                element = element.model_dump()
+
             if isinstance(element, str):
                 config = {RELATION_NAME: element, SCHEMAS: [ALL_SCHEMAS]}
             elif isinstance(element, dict):
                 config = element.copy()
-                if len(config.get(SCHEMAS, [])) == 0:
+                if len(config.get(SCHEMAS) or []) == 0:
                     config[SCHEMAS] = [ALL_SCHEMAS]
             relations.append(config)
         return relations

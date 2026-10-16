@@ -32,8 +32,20 @@ def instance_disable_legacy_cluster_tag():
     return False
 
 
+def instance_disable_spark_job_stage_tags():
+    return False
+
+
+def instance_disable_spark_stage_metrics():
+    return False
+
+
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
 
 
 def instance_enable_query_name_tag():
@@ -90,6 +102,10 @@ def instance_spark_pre_20_mode():
 
 def instance_spark_proxy_enabled():
     return False
+
+
+def instance_startup_wait_retries():
+    return 3
 
 
 def instance_streaming_metrics():

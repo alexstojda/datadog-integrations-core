@@ -37,32 +37,29 @@ def test_not_map():
 
 
 def test_no_name():
+    """
+    We used to have a top-level "name" field that we enforced.
+
+    We no longer need this field, we keep this test as proof.
+    """
+
     spec = get_spec(
         """
-        foo:
-        - bar
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          options: []
         """
     )
     spec.load()
 
-    assert 'test: Configuration specifications must contain a top-level `name` attribute' in spec.errors
-
-
-def test_name_not_string():
-    spec = get_spec(
-        """
-        name: 123
-        """
-    )
-    spec.load()
-
-    assert 'test: The top-level `name` attribute must be a string' in spec.errors
+    assert not spec.errors
 
 
 def test_no_version():
     spec = get_spec(
         """
-        name: foo
+        files: []
         """
     )
     spec.load()
@@ -73,7 +70,6 @@ def test_no_version():
 def test_version_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 123
         """
     )
@@ -85,7 +81,7 @@ def test_version_not_string():
 def test_version_loaded():
     spec = get_spec(
         """
-        name: foo
+        {}
         """,
         version='0.0.0',
     )
@@ -97,7 +93,6 @@ def test_version_loaded():
 def test_no_files():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         """
     )
@@ -109,7 +104,6 @@ def test_no_files():
 def test_files_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
           foo: bar
@@ -123,7 +117,6 @@ def test_files_not_array():
 def test_file_not_map():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - 5
@@ -139,7 +132,6 @@ def test_file_not_map():
 def test_file_no_name():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - foo: bar
@@ -155,7 +147,6 @@ def test_file_no_name():
 def test_file_name_duplicate():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -170,7 +161,6 @@ def test_file_name_duplicate():
 def test_example_file_name_duplicate():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -187,7 +177,6 @@ def test_example_file_name_duplicate():
 def test_file_name_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: 123
@@ -202,7 +191,6 @@ def test_file_name_not_string():
 def test_example_file_name_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -217,7 +205,6 @@ def test_example_file_name_not_string():
 def test_file_name_standard_incorrect():
     spec = get_spec(
         """
-        name: IBM Db2
         version: 0.0.0
         files:
         - name: foo.yaml
@@ -232,7 +219,6 @@ def test_file_name_standard_incorrect():
 def test_example_file_name_autodiscovery_incorrect():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: auto_conf.yaml
@@ -247,7 +233,6 @@ def test_example_file_name_autodiscovery_incorrect():
 def test_example_file_name_core_check_incorrect():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: conf.yaml.default
@@ -262,7 +247,6 @@ def test_example_file_name_core_check_incorrect():
 def test_example_file_name_standard_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -276,7 +260,6 @@ def test_example_file_name_standard_default():
 def test_example_file_name_autodiscovery_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: auto_conf.yaml
@@ -290,7 +273,6 @@ def test_example_file_name_autodiscovery_default():
 def test_example_file_name_core_check_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: conf.yaml.default
@@ -304,7 +286,6 @@ def test_example_file_name_core_check_default():
 def test_no_options():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -319,7 +300,6 @@ def test_no_options():
 def test_sections_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -333,10 +313,599 @@ def test_sections_not_array():
     assert 'test, test.yaml: The `options` attribute must be an array' in spec.errors
 
 
+def test_discovery_valid():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert not spec.errors
+
+
+def test_discovery_rejects_boolean_port_hints():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - true
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, discovery, strategy #1: Attribute `port_hints` must be an array of integers' in spec.errors
+
+
+def test_discovery_named_ports_valid():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_named_ports
+              port_names:
+              - metrics
+              - http-monitoring
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert not spec.errors
+
+
+def test_discovery_rejects_non_string_port_names():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_named_ports
+              port_names:
+              - metrics
+              - 8080
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert (
+        'test, test.yaml, discovery, strategy #1: Attribute `port_names` must be a non-empty array of non-empty strings'
+        in spec.errors
+    )
+
+
+def test_discovery_rejects_empty_port_names():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_named_ports
+              port_names: []
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert (
+        'test, test.yaml, discovery, strategy #1: Attribute `port_names` must be a non-empty array of non-empty strings'
+        in spec.errors
+    )
+
+
+def test_discovery_rejects_blank_port_names():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_named_ports
+              port_names:
+              - ''
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert (
+        'test, test.yaml, discovery, strategy #1: Attribute `port_names` must be a non-empty array of non-empty strings'
+        in spec.errors
+    )
+
+
+def test_discovery_rejects_non_boolean_fallback():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              fallback: nope
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, discovery, strategy #1: Attribute `fallback` must be true or false' in spec.errors
+
+
+def test_discovery_unsupported_strategy():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_services
+              port_hints:
+              - 9090
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, discovery, strategy #1: Unsupported strategy `from_services`' in spec.errors
+
+
+def test_discovery_unknown_placeholder():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - openmetrics_endpoint: http://{service.hostname}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert (
+        'test, test.yaml, discovery, strategy #1, candidate #1, openmetrics_endpoint: '
+        'Unknown placeholder `service.hostname`'
+    ) in spec.errors
+
+
+def test_discovery_rejects_unknown_conversion() -> None:
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - server: "{service.host!x}"
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, discovery, strategy #1, candidate #1, server: Unknown conversion `!x`' in spec.errors
+
+
+def test_discovery_accepts_str_conversion() -> None:
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - server: "{service.host!s}"
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert spec.errors == []
+
+
+def test_discovery_rejects_malformed_template() -> None:
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - server: "{service.host"
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert (
+        "test, test.yaml, discovery, strategy #1, candidate #1, server: Invalid candidate template: "
+        "expected '}' before end of string"
+    ) in spec.errors
+
+
+def test_discovery_rejects_ad_identifiers_field():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            ad_identifiers:
+            - test
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, discovery: Unknown field(s): ad_identifiers' in spec.errors
+
+
+def test_discovery_enabled_false_skips_validation():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            enabled: false
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - true
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert not spec.errors
+
+
+def test_discovery_unknown_port_attr_placeholder():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.portnum}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert (
+        'test, test.yaml, discovery, strategy #1, candidate #1, openmetrics_endpoint: '
+        'Unknown placeholder `port.portnum`'
+    ) in spec.errors
+
+
+def test_discovery_port_hints_optional():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert not spec.errors
+
+
+def test_discovery_candidate_field_cross_check():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - unknown_field: http://{service.host}:{port.number}/metrics
+          options:
+          - template: init_config
+          - template: instances
+            options:
+            - name: openmetrics_endpoint
+              description: endpoint
+              required: true
+              value:
+                type: string
+        """
+    )
+    spec.load()
+
+    assert (
+        'test, test.yaml, discovery, strategy #1, candidate #1, unknown_field: Not a recognized instance option'
+    ) in spec.errors
+
+
+def test_discovery_candidate_accepts_literal_values():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: from_ports
+              port_hints:
+              - 9090
+              candidates:
+              - endpoint: http://{service.host}:{port.number}/metrics
+                metric_patterns:
+                  include:
+                  - test.metric.{2}
+          options:
+          - template: init_config
+          - template: instances
+            options:
+            - name: endpoint
+              description: endpoint
+              required: true
+              value:
+                type: string
+            - name: metric_patterns
+              description: metric patterns
+              value:
+                type: object
+                additionalProperties: true
+        """
+    )
+    spec.load()
+
+    assert not spec.errors
+
+
+def test_discovery_local_strategy_accepted():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: local:my_strategy
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:9090/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert not any('Unsupported strategy' in e for e in spec.errors)
+
+
+def test_discovery_local_strategy_requires_contract():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: local:my_strategy
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:9090/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, discovery, strategy #1: Attribute `provides` must be an array of strings' in spec.errors
+    assert 'test, test.yaml, discovery, strategy #1: Attribute `inputs` must be a mapping object' in spec.errors
+
+
+def test_discovery_local_strategy_validates_declared_inputs():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - strategy: local:my_strategy
+              provides: [svc]
+              inputs:
+                config_path: string
+                retries: integer
+              config_path: /etc/app.conf
+              retries: true
+              ignored: value
+              candidates:
+              - openmetrics_endpoint: http://{service.host}:{svc.port}/metrics
+          options:
+          - template: init_config
+          - template: instances
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, discovery, strategy #1: Attribute `retries` must be an integer' in spec.errors
+    assert 'test, test.yaml, discovery, strategy #1: Unknown field(s): ignored' in spec.errors
+
+
+def test_discovery_strategy_template_overrides_are_scoped_to_each_item(tmp_path):
+    discovery_templates = tmp_path / 'discovery'
+    discovery_templates.mkdir()
+    (discovery_templates / 'test_ports.yaml').write_text(
+        """
+        strategy: from_ports
+        port_hints: []
+        candidates:
+        - openmetrics_endpoint: http://{service.host}:{port.number}/metrics
+        """
+    )
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          discovery:
+            strategies:
+            - template: discovery/test_ports
+              overrides:
+                port_hints: [9090]
+            - template: discovery/test_ports
+          options:
+          - template: init_config
+          - template: instances
+            options:
+            - name: openmetrics_endpoint
+              description: endpoint
+              required: true
+              value:
+                type: string
+        """,
+        template_paths=[str(tmp_path)],
+    )
+    spec.load()
+
+    assert not spec.errors
+    assert spec.data['files'][0]['discovery']['strategies'][0]['port_hints'] == [9090]
+    assert spec.data['files'][0]['discovery']['strategies'][1]['port_hints'] == []
+
+
 def test_section_not_map():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -355,7 +924,6 @@ def test_section_not_map():
 def test_section_no_name():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -372,7 +940,6 @@ def test_section_no_name():
 def test_section_name_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -389,7 +956,6 @@ def test_section_name_not_string():
 def test_section_name_duplicate():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -407,7 +973,6 @@ def test_section_name_duplicate():
 def test_options_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -427,7 +992,6 @@ def test_options_not_array():
 def test_option_not_map():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -449,7 +1013,6 @@ def test_option_not_map():
 def test_option_no_name():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -469,7 +1032,6 @@ def test_option_no_name():
 def test_option_name_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -489,7 +1051,6 @@ def test_option_name_not_string():
 def test_option_name_duplicate():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -510,7 +1071,6 @@ def test_option_name_duplicate():
 def test_option_no_description():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -530,7 +1090,6 @@ def test_option_no_description():
 def test_option_description_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -551,7 +1110,6 @@ def test_option_description_not_string():
 def test_option_required_not_boolean():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -573,7 +1131,6 @@ def test_option_required_not_boolean():
 def test_option_required_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -594,7 +1151,6 @@ def test_option_required_default():
 def test_option_hidden_not_boolean():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -616,7 +1172,6 @@ def test_option_hidden_not_boolean():
 def test_option_hidden_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -637,7 +1192,6 @@ def test_option_hidden_default():
 def test_option_display_priority_not_integer():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -659,7 +1213,6 @@ def test_option_display_priority_not_integer():
 def test_option_display_priority_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -680,7 +1233,6 @@ def test_option_display_priority_default():
 def test_option_deprecation_not_mapping():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -702,7 +1254,6 @@ def test_option_deprecation_not_mapping():
 def test_option_deprecation_value_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -725,7 +1276,6 @@ def test_option_deprecation_value_not_string():
 def test_option_deprecation_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -746,7 +1296,6 @@ def test_option_deprecation_default():
 def test_option_deprecation_ok():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -769,7 +1318,6 @@ def test_option_deprecation_ok():
 def test_option_metadata_tags_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -791,7 +1339,6 @@ def test_option_metadata_tags_not_array():
 def test_option_metadata_tags_value_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -814,7 +1361,6 @@ def test_option_metadata_tags_value_not_string():
 def test_option_metadata_tags_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -835,7 +1381,6 @@ def test_option_metadata_tags_default():
 def test_option_metadata_tags_ok():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -855,10 +1400,214 @@ def test_option_metadata_tags_ok():
     assert spec.data['files'][0]['options'][0]['options'][0]['metadata_tags'] == ['test:foo']
 
 
+def test_option_formats_not_array():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - name: instances
+            description: words
+            options:
+            - name: foo
+              description: words
+              formats: nope
+              value:
+                type: string
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, instances, foo: Attribute `formats` must be an array' in spec.errors
+
+
+def test_option_formats_entry_not_string():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - name: instances
+            description: words
+            options:
+            - name: foo
+              description: words
+              formats:
+              - url
+              - 123
+              value:
+                type: string
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, instances, foo: Attribute `formats` must only contain strings' in spec.errors
+
+
+def test_option_formats_empty_array():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - name: instances
+            description: words
+            options:
+            - name: foo
+              description: words
+              formats: []
+              value:
+                type: string
+        """
+    )
+    spec.load()
+
+    assert 'test, test.yaml, instances, foo: Attribute `formats` must contain at least one entry' in spec.errors
+
+
+def test_option_formats_unknown_value():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - name: instances
+            description: words
+            options:
+            - name: foo
+              description: words
+              formats:
+              - url
+              - made_up_format
+              value:
+                type: string
+        """
+    )
+    spec.load()
+
+    assert (
+        'test, test.yaml, instances, foo: Attribute `formats` contains unknown value(s): '
+        'made_up_format, valid values are java_jvm_options | path | port | url'
+    ) in spec.errors
+
+
+def test_option_formats_duplicate_values():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - name: instances
+            description: words
+            options:
+            - name: foo
+              description: words
+              formats:
+              - url
+              - url
+              value:
+                type: string
+        """
+    )
+    spec.load()
+
+    assert ('test, test.yaml, instances, foo: Attribute `formats` contains duplicate entries: url') in spec.errors
+
+
+def test_option_formats_valid():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - name: instances
+            description: words
+            options:
+            - name: foo
+              description: words
+              formats:
+              - url
+              value:
+                type: string
+        """
+    )
+    spec.load()
+
+    assert not spec.errors
+
+
+def test_value_type_object_property_formats_invalid():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - name: instances
+            description: words
+            options:
+            - name: foo
+              description: words
+              value:
+                type: object
+                properties:
+                - name: bar
+                  type: string
+                  formats:
+                  - unknown
+        """
+    )
+    spec.load()
+
+    assert (
+        'test, test.yaml, instances, foo: Attribute `formats` for property `bar` contains unknown value(s): '
+        'unknown, valid values are java_jvm_options | path | port | url'
+    ) in spec.errors
+
+
+def test_value_type_object_property_formats_valid():
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - name: instances
+            description: words
+            options:
+            - name: foo
+              description: words
+              value:
+                type: object
+                properties:
+                - name: bar
+                  type: string
+                  formats:
+                  - path
+        """
+    )
+    spec.load()
+
+    assert not spec.errors
+
+
 def test_option_no_value_nor_options():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -876,7 +1625,6 @@ def test_option_no_value_nor_options():
 def test_option_value_and_options():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -901,7 +1649,6 @@ def test_option_value_and_options():
 def test_option_value_not_map():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -924,7 +1671,6 @@ def test_option_value_not_map():
 def test_option_secret_not_boolean():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -948,7 +1694,6 @@ def test_option_secret_not_boolean():
 def test_option_secret_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -971,7 +1716,6 @@ def test_option_secret_default():
 def test_value_no_type():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -994,7 +1738,6 @@ def test_value_no_type():
 def test_value_type_string_valid_basic():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1017,7 +1760,6 @@ def test_value_type_string_valid_basic():
 def test_value_type_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1040,7 +1782,6 @@ def test_value_type_not_string():
 def test_value_type_string_example_default_no_depth():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1063,7 +1804,6 @@ def test_value_type_string_example_default_no_depth():
 def test_value_type_string_example_default_nested():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1089,7 +1829,6 @@ def test_value_type_string_example_default_nested():
 def test_value_type_string_example_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1113,7 +1852,6 @@ def test_value_type_string_example_not_string():
 def test_value_type_string_example_valid():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1137,7 +1875,6 @@ def test_value_type_string_example_valid():
 def test_value_type_string_pattern_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1161,7 +1898,6 @@ def test_value_type_string_pattern_not_string():
 def test_value_type_integer_valid_basic():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1184,7 +1920,6 @@ def test_value_type_integer_valid_basic():
 def test_value_type_integer_example_default_no_depth():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1207,7 +1942,6 @@ def test_value_type_integer_example_default_no_depth():
 def test_value_type_integer_example_default_nested():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1233,7 +1967,6 @@ def test_value_type_integer_example_default_nested():
 def test_value_type_integer_example_not_number():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1257,7 +1990,6 @@ def test_value_type_integer_example_not_number():
 def test_value_type_integer_example_valid():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1281,7 +2013,6 @@ def test_value_type_integer_example_valid():
 def test_value_type_integer_correct_minimum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1305,7 +2036,6 @@ def test_value_type_integer_correct_minimum():
 def test_value_type_integer_incorrect_minimum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1329,7 +2059,6 @@ def test_value_type_integer_incorrect_minimum():
 def test_value_type_integer_correct_maximum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1353,7 +2082,6 @@ def test_value_type_integer_correct_maximum():
 def test_value_type_integer_incorrect_maximum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1377,7 +2105,6 @@ def test_value_type_integer_incorrect_maximum():
 def test_value_type_integer_correct_minimum_maximum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1402,7 +2129,6 @@ def test_value_type_integer_correct_minimum_maximum():
 def test_value_type_integer_incorrect_minimum_maximum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1430,7 +2156,6 @@ def test_value_type_integer_incorrect_minimum_maximum():
 def test_value_type_number_valid_basic():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1453,7 +2178,6 @@ def test_value_type_number_valid_basic():
 def test_value_type_number_example_default_no_depth():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1476,7 +2200,6 @@ def test_value_type_number_example_default_no_depth():
 def test_value_type_number_example_default_nested():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1502,7 +2225,6 @@ def test_value_type_number_example_default_nested():
 def test_value_type_number_example_not_number():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1526,7 +2248,6 @@ def test_value_type_number_example_not_number():
 def test_value_type_number_example_valid():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1550,7 +2271,6 @@ def test_value_type_number_example_valid():
 def test_value_type_number_correct_minimum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1574,7 +2294,6 @@ def test_value_type_number_correct_minimum():
 def test_value_type_number_incorrect_minimum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1598,7 +2317,6 @@ def test_value_type_number_incorrect_minimum():
 def test_value_type_number_correct_maximum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1622,7 +2340,6 @@ def test_value_type_number_correct_maximum():
 def test_value_type_number_incorrect_maximum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1646,7 +2363,6 @@ def test_value_type_number_incorrect_maximum():
 def test_value_type_number_correct_minimum_maximum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1671,7 +2387,6 @@ def test_value_type_number_correct_minimum_maximum():
 def test_value_type_number_incorrect_minimum_maximum():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1699,7 +2414,6 @@ def test_value_type_number_incorrect_minimum_maximum():
 def test_value_type_boolean_example_default_no_depth():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1722,7 +2436,6 @@ def test_value_type_boolean_example_default_no_depth():
 def test_value_type_boolean_example_default_nested():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1748,7 +2461,6 @@ def test_value_type_boolean_example_default_nested():
 def test_value_type_boolean_example_not_boolean():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1774,7 +2486,6 @@ def test_value_type_boolean_example_not_boolean():
 def test_value_type_boolean_example_valid():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1798,7 +2509,6 @@ def test_value_type_boolean_example_valid():
 def test_value_type_array_example_default_no_depth():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1823,7 +2533,6 @@ def test_value_type_array_example_default_no_depth():
 def test_value_type_array_example_default_nested():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1851,7 +2560,6 @@ def test_value_type_array_example_default_nested():
 def test_value_type_array_example_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1877,7 +2585,6 @@ def test_value_type_array_example_not_array():
 def test_value_type_array_example_valid():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1905,7 +2612,6 @@ def test_value_type_array_example_valid():
 def test_value_type_array_no_items():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1928,7 +2634,6 @@ def test_value_type_array_no_items():
 def test_value_type_array_items_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1952,7 +2657,6 @@ def test_value_type_array_items_not_array():
 def test_value_type_array_unique_items_not_boolean():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -1980,7 +2684,6 @@ def test_value_type_array_unique_items_not_boolean():
 def test_value_type_array_correct_min_items():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2006,7 +2709,6 @@ def test_value_type_array_correct_min_items():
 def test_value_type_array_incorrect_min_items():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2032,7 +2734,6 @@ def test_value_type_array_incorrect_min_items():
 def test_value_type_array_correct_max_items():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2058,7 +2759,6 @@ def test_value_type_array_correct_max_items():
 def test_value_type_array_incorrect_max_items():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2084,7 +2784,6 @@ def test_value_type_array_incorrect_max_items():
 def test_value_type_array_correct_min_items_max_items():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2111,7 +2810,6 @@ def test_value_type_array_correct_min_items_max_items():
 def test_value_type_array_incorrect_min_items_max_items():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2143,7 +2841,6 @@ def test_value_type_array_incorrect_min_items_max_items():
 def test_value_type_object_example_default_no_depth():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2167,7 +2864,6 @@ def test_value_type_object_example_default_no_depth():
 def test_value_type_object_example_default_nested():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2193,7 +2889,6 @@ def test_value_type_object_example_default_nested():
 def test_value_type_object_example_not_map():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2219,7 +2914,6 @@ def test_value_type_object_example_not_map():
 def test_value_type_object_example_valid():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2246,7 +2940,6 @@ def test_value_type_object_example_valid():
 def test_value_type_object_required_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2270,7 +2963,6 @@ def test_value_type_object_required_not_array():
 def test_value_type_object_required_empty():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2296,7 +2988,6 @@ def test_value_type_object_required_empty():
 def test_value_type_object_required_not_unique():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2324,7 +3015,6 @@ def test_value_type_object_required_not_unique():
 def test_value_type_object_properties_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2348,7 +3038,6 @@ def test_value_type_object_properties_default():
 def test_value_type_object_properties_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2372,7 +3061,6 @@ def test_value_type_object_properties_not_array():
 def test_value_type_object_properties_entry_not_map():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2399,7 +3087,6 @@ def test_value_type_object_properties_entry_not_map():
 def test_value_type_object_properties_entry_no_name():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2426,7 +3113,6 @@ def test_value_type_object_properties_entry_no_name():
 def test_value_type_object_properties_entry_name_not_string():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2452,7 +3138,6 @@ def test_value_type_object_properties_entry_name_not_string():
 def test_value_type_object_properties_valid():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2478,7 +3163,6 @@ def test_value_type_object_properties_valid():
 def test_value_type_object_properties_entry_name_not_unique():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2509,7 +3193,6 @@ def test_value_type_object_properties_entry_name_not_unique():
 def test_value_type_object_properties_required_not_met():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2541,7 +3224,6 @@ def test_value_type_object_properties_required_not_met():
 def test_value_type_object_additional_properties_invalid_type():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2568,7 +3250,6 @@ def test_value_type_object_additional_properties_invalid_type():
 def test_value_type_object_additional_properties_nested_error():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2602,7 +3283,6 @@ def test_value_type_object_additional_properties_nested_error():
 def test_value_type_object_additional_properties_nested_ok():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2635,7 +3315,6 @@ def test_value_type_object_additional_properties_nested_ok():
 def test_value_type_object_additional_properties_true_ok():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2659,7 +3338,6 @@ def test_value_type_object_additional_properties_true_ok():
 def test_value_type_unknown():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2685,7 +3363,6 @@ def test_value_type_unknown():
 def test_option_no_section():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2707,7 +3384,6 @@ def test_option_no_section():
 def test_multiple_default():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2730,7 +3406,6 @@ def test_multiple_default():
 def test_multiple_not_boolean():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2754,7 +3429,6 @@ def test_multiple_not_boolean():
 def test_template_unknown():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2782,7 +3456,6 @@ def test_template_unknown():
 def test_template_mapping():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2816,6 +3489,7 @@ def test_template_mapping():
             '\n'
             'Learn more about tagging at https://docs.datadoghq.com/tagging\n'
         ),
+        "fleet_configurable": True,
         # Defaults should be post-populated
         'required': False,
         'hidden': False,
@@ -2830,7 +3504,6 @@ def test_template_mapping():
 def test_template_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2883,6 +3556,7 @@ def test_template_array():
         'tls_private_key',
         'tls_ca_cert',
         'tls_protocols_allowed',
+        'tls_ciphers',
         'headers',
         'extra_headers',
         'timeout',
@@ -2904,8 +3578,7 @@ def test_template_array_empty():
 
         spec = get_spec(
             """
-            name: foo
-            version: 0.0.0
+                version: 0.0.0
             files:
             - name: test.yaml
               example_name: test.yaml.example
@@ -2938,8 +3611,7 @@ def test_template_array_primitive():
 
         spec = get_spec(
             """
-            name: foo
-            version: 0.0.0
+                version: 0.0.0
             files:
             - name: test.yaml
               example_name: test.yaml.example
@@ -2961,13 +3633,12 @@ def test_template_array_primitive():
         )
         spec.load()
 
-        assert 'test, test.yaml, instances, option #2: Template option must be a mapping object' in spec.errors
+        assert 'test, test.yaml, instances, option #2: Template item must be a mapping object' in spec.errors
 
 
 def test_template_primitive():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -2995,7 +3666,6 @@ def test_template_primitive():
 def test_template_hide_duplicate():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -3012,10 +3682,97 @@ def test_template_hide_duplicate():
     assert not spec.errors
 
 
+def test_template_override_resolves_against_nested_template():
+    """An override targeting a nested template must defer until that template expands.
+
+    Mirrors the Windows perf-counter integrations (e.g. active_directory): the
+    `extra_metrics` option is itself a `common/perf_counters.metrics` template that
+    is spliced into the instances list, and the `extra_metrics.value.example`
+    override only resolves once that nested template is expanded.
+    """
+    spec = get_spec(
+        """
+        version: 0.0.0
+        files:
+        - name: test.yaml
+          example_name: test.yaml.example
+          options:
+          - template: init_config
+            options:
+            - template: init_config/perf_counters
+            - template: init_config/default
+          - template: instances
+            options:
+            - template: instances/perf_counters
+              overrides:
+                extra_metrics.value.example:
+                  NTDS:
+                    name: ds
+                    counters:
+                      - 'DS % Writes from LDAP': writes_from_ldap
+            - template: instances/default
+        """
+    )
+    spec.load()
+
+    assert not spec.errors
+
+    instances = next(opt for opt in spec.data['files'][0]['options'] if opt['name'] == 'instances')
+    extra_metrics = next(opt for opt in instances['options'] if opt['name'] == 'extra_metrics')
+    assert extra_metrics['value']['example'] == {
+        'NTDS': {'name': 'ds', 'counters': [{'DS % Writes from LDAP': 'writes_from_ldap'}]}
+    }
+
+
+def test_template_array_wrapper_hidden_propagates_to_items():
+    with TempDir() as d:
+        template_file = path_join(d, 'pair.yaml')
+        ensure_parent_dir_exists(template_file)
+        write_file(
+            template_file,
+            """
+            - name: foo
+              description: words
+              value:
+                type: string
+            - name: bar
+              description: words
+              hidden: false
+              value:
+                type: string
+            """,
+        )
+
+        spec = get_spec(
+            """
+            version: 0.0.0
+            files:
+            - name: test.yaml
+              example_name: test.yaml.example
+              options:
+              - name: instances
+                description: words
+                options:
+                - template: pair
+                  hidden: true
+            """,
+            template_paths=[d],
+        )
+        spec.load()
+
+        assert not spec.errors
+
+        options = spec.data['files'][0]['options'][0]['options']
+        hidden_by_name = {option['name']: option['hidden'] for option in options}
+        # The wrapper's `hidden: true` applies to every expanded item...
+        assert hidden_by_name['foo'] is True
+        # ...but an item's own explicit value wins.
+        assert hidden_by_name['bar'] is False
+
+
 def test_value_one_of_with_type():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -3042,7 +3799,6 @@ def test_value_one_of_with_type():
 def test_value_one_of_not_array():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -3065,7 +3821,6 @@ def test_value_one_of_not_array():
 def test_value_one_of_single_type():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -3092,7 +3847,6 @@ def test_value_one_of_single_type():
 def test_value_one_of_type_not_mapping():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -3117,7 +3871,6 @@ def test_value_one_of_type_not_mapping():
 def test_value_one_of_type_recursive_validation_error():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -3147,7 +3900,6 @@ def test_value_one_of_type_recursive_validation_error():
 def test_value_one_of_type_super_recursive_validation_error():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml
@@ -3181,7 +3933,6 @@ def test_value_one_of_type_super_recursive_validation_error():
 def test_value_one_of_type_recursive_validation_success():
     spec = get_spec(
         """
-        name: foo
         version: 0.0.0
         files:
         - name: test.yaml

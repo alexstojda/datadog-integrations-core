@@ -43,12 +43,10 @@ def test_freeze(ddev, fake_repo):
 
     result = ddev('dep', 'freeze')
 
-    agent_requirements_path = (
-        fake_repo / 'datadog_checks_base' / 'datadog_checks' / 'base' / 'data' / 'agent_requirements.in'
-    )
+    agent_requirements_path = fake_repo / 'agent_requirements.in'
 
     assert result.exit_code == 0
-    assert result.output == f'Static file: {agent_requirements_path}\n'
+    assert result.output == f'Writing combined requirements to: {agent_requirements_path}\n'
 
     requirements = agent_requirements_path.read_text()
 
@@ -70,9 +68,7 @@ def test_sync(ddev, fake_repo):
 dep-a==1.1.1
 dep-b==3.1.4
 """
-    (fake_repo / 'datadog_checks_base' / 'datadog_checks' / 'base' / 'data' / 'agent_requirements.in').write_text(
-        requirements.strip('\n')
-    )
+    (fake_repo / 'agent_requirements.in').write_text(requirements.strip('\n'))
 
     result = ddev('dep', 'sync')
 
@@ -110,7 +106,7 @@ class TestUpdates:
 
     @property
     def requirements_path(self):
-        return self.repo / 'datadog_checks_base' / 'datadog_checks' / 'base' / 'data' / 'agent_requirements.in'
+        return self.repo / 'agent_requirements.in'
 
     def test_show_updates(self, ddev):
         self.add_integration('foo', ['dep-a==1.0.0', 'dep-b==3.1.4'])
@@ -131,7 +127,7 @@ class TestUpdates:
         assert (
             result.output
             == '''1 dependencies are out of sync:
-dep-a can be updated to version 1.2.3 on py2 and py3
+dep-a can be updated to version 1.2.3 on py3
 '''
         )
         assert result.exit_code != 0
@@ -258,6 +254,135 @@ exclude = [
         assert result.exit_code != 0
 
 
+def test_report_json(ddev, fake_repo, mock_async_http_get_json, tmp_path):
+    create_integration(fake_repo, 'foo', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    create_integration(fake_repo, 'datadog_checks_base', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    create_integration(fake_repo, 'datadog_checks_downloader', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    (fake_repo / 'agent_requirements.in').write_text('dep-a==1.0.0\ndep-b==3.1.4')
+
+    mock_async_http_get_json(
+        'https://pypi.org/pypi/dep-a/json',
+        {
+            'info': {'name': 'dep-a'},
+            'releases': {v: [{'python_version': 'py2.py3', 'requires_python': '>=2.7'}] for v in ['1.0.0', '1.2.3']},
+        },
+    )
+    mock_async_http_get_json(
+        'https://pypi.org/pypi/dep-b/json',
+        {
+            'info': {'name': 'dep-b'},
+            'releases': {v: [{'python_version': 'py2.py3', 'requires_python': '>=2.7'}] for v in ['3.1.0', '3.1.4']},
+        },
+    )
+
+    report_path = tmp_path / 'report.json'
+    result = ddev('dep', 'updates', '--sync', '--report', str(report_path), '--report-type', 'json')
+
+    assert result.exit_code == 0
+    data = json.loads(report_path.read_text())
+    assert len(data) == 1
+    assert data[0]['package'] == 'dep-a'
+    assert data[0]['old_version'] == '1.0.0'
+    assert data[0]['new_version'] == '1.2.3'
+
+
+def test_report_markdown(ddev, fake_repo, mock_async_http_get_json, tmp_path):
+    create_integration(fake_repo, 'foo', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    create_integration(fake_repo, 'datadog_checks_base', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    create_integration(fake_repo, 'datadog_checks_downloader', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    (fake_repo / 'agent_requirements.in').write_text('dep-a==1.0.0\ndep-b==3.1.4')
+
+    mock_async_http_get_json(
+        'https://pypi.org/pypi/dep-a/json',
+        {
+            'info': {'name': 'dep-a'},
+            'releases': {v: [{'python_version': 'py2.py3', 'requires_python': '>=2.7'}] for v in ['1.0.0', '1.2.3']},
+        },
+    )
+    mock_async_http_get_json(
+        'https://pypi.org/pypi/dep-b/json',
+        {
+            'info': {'name': 'dep-b'},
+            'releases': {v: [{'python_version': 'py2.py3', 'requires_python': '>=2.7'}] for v in ['3.1.0', '3.1.4']},
+        },
+    )
+
+    report_path = tmp_path / 'report.md'
+    result = ddev('dep', 'updates', '--sync', '--report', str(report_path), '--report-type', 'markdown')
+
+    assert result.exit_code == 0
+    content = report_path.read_text()
+    assert '### Dependency Bumps' in content
+    assert '| Package | Old Version | New Version |' in content
+    assert '| dep-a | 1.0.0 | 1.2.3 |' in content
+
+
+def test_report_screen(ddev, fake_repo, mock_async_http_get_json):
+    create_integration(fake_repo, 'foo', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    create_integration(fake_repo, 'datadog_checks_base', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    create_integration(fake_repo, 'datadog_checks_downloader', ['dep-a==1.0.0', 'dep-b==3.1.4'])
+    (fake_repo / 'agent_requirements.in').write_text('dep-a==1.0.0\ndep-b==3.1.4')
+
+    mock_async_http_get_json(
+        'https://pypi.org/pypi/dep-a/json',
+        {
+            'info': {'name': 'dep-a'},
+            'releases': {v: [{'python_version': 'py2.py3', 'requires_python': '>=2.7'}] for v in ['1.0.0', '1.2.3']},
+        },
+    )
+    mock_async_http_get_json(
+        'https://pypi.org/pypi/dep-b/json',
+        {
+            'info': {'name': 'dep-b'},
+            'releases': {v: [{'python_version': 'py2.py3', 'requires_python': '>=2.7'}] for v in ['3.1.0', '3.1.4']},
+        },
+    )
+
+    result = ddev('dep', 'updates', '--sync', '--report')
+
+    assert result.exit_code == 0
+    assert 'dep-a' in result.output
+    assert '1.0.0' in result.output
+    assert '1.2.3' in result.output
+
+
+def test_report_screen_no_updates(ddev, fake_repo, mock_async_http_get_json):
+    create_integration(fake_repo, 'foo', ['dep-a==1.2.3'])
+    (fake_repo / 'agent_requirements.in').write_text('dep-a==1.2.3')
+
+    mock_async_http_get_json(
+        'https://pypi.org/pypi/dep-a/json',
+        {
+            'info': {'name': 'dep-a'},
+            'releases': {v: [{'python_version': 'py2.py3', 'requires_python': '>=2.7'}] for v in ['1.0.0', '1.2.3']},
+        },
+    )
+
+    result = ddev('dep', 'updates', '--sync', '--report')
+
+    assert result.exit_code == 0
+    assert 'No dependency version changes detected.' in result.output
+
+
+def test_report_no_updates(ddev, fake_repo, mock_async_http_get_json, tmp_path):
+    create_integration(fake_repo, 'foo', ['dep-a==1.2.3'])
+    (fake_repo / 'agent_requirements.in').write_text('dep-a==1.2.3')
+
+    mock_async_http_get_json(
+        'https://pypi.org/pypi/dep-a/json',
+        {
+            'info': {'name': 'dep-a'},
+            'releases': {v: [{'python_version': 'py2.py3', 'requires_python': '>=2.7'}] for v in ['1.0.0', '1.2.3']},
+        },
+    )
+
+    report_path = tmp_path / 'report.md'
+    result = ddev('dep', 'updates', '--sync', '--report', str(report_path), '--report-type', 'markdown')
+
+    assert result.exit_code == 0
+    assert report_path.read_text() == '_No dependency version changes detected._'
+
+
 @pytest.fixture
 def mock_async_http_get_json():
     """Mock `get` responses assuming a JSON value is returned in the body.
@@ -295,13 +420,16 @@ def mock_async_http_get_json():
 
 
 @pytest.fixture
-def fake_repo(tmp_path, config_file):
+def fake_repo(tmp_path, config_file, mocker):
     data_folder = tmp_path / 'datadog_checks_base' / 'datadog_checks' / 'base' / 'data'
     data_folder.mkdir(parents=True)
 
     # Set this as core repo in the config
     config_file.model.repos['core'] = str(tmp_path)
     config_file.save()
+
+    # Mock the access to worktrees because this is a fake repo
+    mocker.patch('ddev.utils.git.GitRepository.worktrees', return_value=[])
 
     yield tmp_path
 

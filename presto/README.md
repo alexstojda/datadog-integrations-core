@@ -7,6 +7,8 @@ This check collects [Presto][1] metrics, for example:
 - Overall activity metrics: completed/failed queries, data input/output size, execution time.
 - Performance metrics: cluster memory, input CPU, execution CPU time.
 
+**Minimum Agent version:** 6.11.0
+
 ## Setup
 
 Follow the instructions below to install and configure this check for an Agent running on a host. For containerized environments, see the [Autodiscovery Integration Templates][2] for guidance on applying these instructions.
@@ -20,7 +22,7 @@ No additional installation is needed on your server. Install the Agent on each C
 
 1. Edit the `presto.d/conf.yaml` file, in the `conf.d/` folder at the root of your Agent's configuration directory to start collecting your Presto performance data. See the [sample presto.d/conf.yaml][4] for all available configuration options.
 
-    This check has a limit of 350 metrics per instance. The number of returned metrics is indicated in the info page. You can specify the metrics you are interested in by editing the configuration below. To learn how to customize the metrics to collect, see the [JMX Checks documentation][5] for more detailed instructions. If you need to monitor more metrics, contact [Datadog support][6].
+    This check has a limit of 350 metrics per instance. The number of returned metrics is indicated in [the status page][8]. You can specify the metrics you are interested in by editing the configuration below. To learn how to customize the metrics to collect, see the [JMX Checks documentation][5] for more detailed instructions. If you need to monitor more metrics, contact [Datadog support][6].
 
 2. [Restart the Agent][7].
 
@@ -77,7 +79,7 @@ Need help? Contact [Datadog support][6].
 
 [1]: https://docs.datadoghq.com/integrations/presto/
 [2]: https://docs.datadoghq.com/agent/kubernetes/integrations/
-[3]: https://app.datadoghq.com/account/settings/agent/latest
+[3]: /account/settings/agent/latest
 [4]: https://github.com/DataDog/integrations-core/blob/master/presto/datadog_checks/presto/data/conf.yaml.example
 [5]: https://docs.datadoghq.com/integrations/java/
 [6]: https://docs.datadoghq.com/help/

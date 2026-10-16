@@ -8,12 +8,32 @@
 #     ddev -x validate models -s <INTEGRATION_NAME>
 
 
+def shared_propagate_agent_tags():
+    return False
+
+
+def instance_add_node_tag_to_events():
+    return True
+
+
 def instance_collections_indexes_stats():
     return False
 
 
 def instance_connection_scheme():
     return 'mongodb'
+
+
+def instance_database_instance_collection_interval():
+    return False
+
+
+def instance_dbm():
+    return False
+
+
+def instance_dbstats_tag_dbname():
+    return True
 
 
 def instance_disable_generic_tags():
@@ -24,11 +44,27 @@ def instance_empty_default_hostname():
     return False
 
 
+def instance_enable_legacy_tags_normalization():
+    return True
+
+
+def instance_free_storage_metrics():
+    return True
+
+
 def instance_min_collection_interval():
     return 15
 
 
+def instance_propagate_agent_tags():
+    return False
+
+
 def instance_replica_check():
+    return True
+
+
+def instance_system_database_stats():
     return True
 
 

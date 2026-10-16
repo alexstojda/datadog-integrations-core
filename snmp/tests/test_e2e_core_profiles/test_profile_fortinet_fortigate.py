@@ -18,7 +18,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_fortinet_fortigate(dd_agent_check):
@@ -30,8 +30,12 @@ def test_e2e_profile_fortinet_fortigate(dd_agent_check):
     common_tags = [
         'snmp_profile:fortinet-fortigate',
         'snmp_host:fortinet-fortigate.device.name',
+        'device_hostname:fortinet-fortigate.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
         'device_vendor:fortinet',
     ] + []
 
@@ -157,6 +161,7 @@ def test_e2e_profile_fortinet_fortigate(dd_agent_check):
         'vendor': 'fortinet',
         'version': 'v5.6.4,build1575b1575,180425 (GA)',
         'device_type': 'other',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

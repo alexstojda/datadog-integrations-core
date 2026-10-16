@@ -5,15 +5,20 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 import json
 import logging
+import os
+import re
+import types
+from pathlib import Path
 from typing import Any  # noqa: F401
+from unittest.mock import patch
 
 import mock
 import pytest
-from six import PY3
 
 from datadog_checks.base import AgentCheck, to_native_string
 from datadog_checks.base import __version__ as base_package_version
-from datadog_checks.dev.testing import requires_py3
+
+from .utils import BaseModelTest
 
 
 def test_instance():
@@ -39,17 +44,245 @@ def test_check_version():
     assert check.check_version == base_package_version
 
 
-def test_load_config():
-    assert AgentCheck.load_config("raw_foo: bar") == {'raw_foo': 'bar'}
+def test_discover_config_accepts_successful_candidate_only():
+    class DiscoveryCheck(AgentCheck):
+        calls = []
+
+        @classmethod
+        def generate_configs(cls, service):
+            assert service.id == 'svc'
+            assert service.host == '10.0.0.1'
+            for port in service.ports:
+                yield {
+                    'init_config': {'selected_port': port.number},
+                    'instances': [{'port': port.number, 'accept': port.number == 9090}],
+                }
+
+        def check(self, instance):
+            self.calls.append(instance['port'])
+            assert self.init_config == {'selected_port': instance['port']}
+            self.gauge('trial_metric', 1)
+            self.service_check('trial_service', AgentCheck.OK)
+            self.set_metadata('version', '1')
+            if not instance['accept']:
+                raise Exception('candidate failed')
+
+    payload = json.dumps(
+        {
+            'id': 'svc',
+            'host': '10.0.0.1',
+            'ports': [
+                {'number': 8080, 'name': 'http'},
+                {'number': 9090, 'name': 'metrics'},
+                {'number': 9443, 'name': 'metrics-tls'},
+            ],
+        }
+    )
+
+    with mock.patch('datadog_checks.base.checks.base.aggregator.submit_metric') as submit_metric:
+        configs = json.loads(DiscoveryCheck.discover_config(payload))
+
+    assert configs == [
+        {
+            'init_config': {'selected_port': 9090},
+            'instances': [{'port': 9090, 'accept': True}],
+        }
+    ]
+    assert DiscoveryCheck.calls == [8080, 9090]
+    submit_metric.assert_not_called()
+
+
+def test_discover_config_accepts_histogram_bucket_candidate():
+    class DiscoveryCheck(AgentCheck):
+        @classmethod
+        def generate_configs(cls, service):
+            yield {'init_config': {}, 'instances': [{'host': service.host}]}
+
+        def check(self, instance):
+            self.submit_histogram_bucket('histogram.bucket', 3, 0, 1, True, instance['host'], [])
+
+    payload = json.dumps({'id': 'svc', 'host': '10.0.0.1', 'ports': []})
+
+    with patch('datadog_checks.base.checks.base.aggregator.submit_histogram_bucket') as submit_histogram_bucket:
+        configs = json.loads(DiscoveryCheck.discover_config(payload))
+
+    assert configs == [{'init_config': {}, 'instances': [{'host': '10.0.0.1'}]}]
+    submit_histogram_bucket.assert_not_called()
+
+
+def test_discover_config_rejects_candidate_with_no_metrics():
+    class DiscoveryCheck(AgentCheck):
+        @classmethod
+        def generate_configs(cls, service):
+            yield {'init_config': {}, 'instances': [{}]}
+
+        def check(self, instance):
+            pass  # successful run, but submits no metric
+
+    payload = json.dumps({'id': 'svc', 'host': '10.0.0.1', 'ports': []})
+
+    assert json.loads(DiscoveryCheck.discover_config(payload)) == []
+
+
+def test_discover_config_rejects_candidate_with_none_metric():
+    class DiscoveryCheck(AgentCheck):
+        @classmethod
+        def generate_configs(cls, service):
+            yield {'init_config': {}, 'instances': [{}]}
+
+        def check(self, instance):
+            self.gauge('trial_metric', None)
+
+    payload = json.dumps({'id': 'svc', 'host': '10.0.0.1', 'ports': []})
+
+    with mock.patch('datadog_checks.base.checks.base.aggregator.submit_metric') as submit_metric:
+        assert json.loads(DiscoveryCheck.discover_config(payload)) == []
+
+    submit_metric.assert_not_called()
+
+
+def test_discover_config_rejects_candidate_with_only_service_check():
+    class DiscoveryCheck(AgentCheck):
+        @classmethod
+        def generate_configs(cls, service):
+            yield {'init_config': {}, 'instances': [{}]}
+
+        def check(self, instance):
+            self.service_check('health', AgentCheck.OK)  # service check, no metric
+
+    payload = json.dumps({'id': 'svc', 'host': '10.0.0.1', 'ports': []})
+
+    assert json.loads(DiscoveryCheck.discover_config(payload)) == []
+
+
+def test_discover_config_rejects_multi_instance_candidate():
+    class DiscoveryCheck(AgentCheck):
+        @classmethod
+        def generate_configs(cls, service):
+            yield {'init_config': {}, 'instances': [{}, {}]}
+
+        def check(self, instance):
+            self.gauge('my.metric', 1.0)
+
+    payload = json.dumps({'id': 'svc', 'host': '10.0.0.1', 'ports': []})
+    assert json.loads(DiscoveryCheck.discover_config(payload)) == []
+
+
+@pytest.mark.parametrize(
+    'init_config,instance',
+    [
+        pytest.param({'process_isolation': True}, {}, id='init_config'),
+        pytest.param({}, {'process_isolation': True}, id='instance'),
+    ],
+)
+def test_discover_config_rejects_process_isolation(init_config, instance):
+    class DiscoveryCheck(AgentCheck):
+        @classmethod
+        def generate_configs(cls, service):
+            yield {'init_config': init_config, 'instances': [instance]}
+
+        def check(self, _instance):
+            self.gauge('my.metric', 1.0)
+
+    payload = json.dumps({'id': 'svc', 'host': '10.0.0.1', 'ports': []})
+    assert json.loads(DiscoveryCheck.discover_config(payload)) == []
+
+
+def test_discover_config_returns_empty_for_base_check():
+    payload = json.dumps({'id': 'svc', 'host': '10.0.0.1', 'ports': []})
+
+    assert json.loads(AgentCheck.discover_config(payload)) == []
+
+
+def test_discover_config_returns_empty_for_malformed_payload():
+    assert json.loads(AgentCheck.discover_config('not-json')) == []
+    assert json.loads(AgentCheck.discover_config('null')) == []
+
+
+def test_discover_config_returns_empty_when_generate_configs_raises():
+    class DiscoveryCheck(AgentCheck):
+        @classmethod
+        def generate_configs(cls, service):
+            raise RuntimeError('generate failed')
+
+    payload = json.dumps({'id': 'svc', 'host': '10.0.0.1', 'ports': []})
+    assert json.loads(DiscoveryCheck.discover_config(payload)) == []
+
+
+def test_generate_configs_loads_generated_discovery_module():
+    from datadog_checks.base.utils.discovery import Port, Service
+
+    discovery_module = types.SimpleNamespace()
+
+    def candidates(service):
+        yield {'init_config': {}, 'instances': [{'host': service.host}]}
+
+    discovery_module.candidates = candidates
+
+    class GeneratedDiscoveryCheck(AgentCheck):
+        __module__ = 'datadog_checks.generated.check'
+
+    service = Service(id='svc', host='10.0.0.1', ports=(Port(number=9090),))
+
+    with patch(
+        'datadog_checks.base.utils.discovery.probe.importlib.import_module', return_value=discovery_module
+    ) as import_module:
+        assert list(GeneratedDiscoveryCheck.generate_configs(service)) == [
+            {'init_config': {}, 'instances': [{'host': '10.0.0.1'}]},
+        ]
+
+    import_module.assert_called_once_with('datadog_checks.generated.config_models.discovery')
+
+
+@pytest.fixture
+def fresh_check():
+    """Return an AgentCheck with no cached _package_dir."""
+    check = AgentCheck()
+    if hasattr(check, '_package_dir'):
+        del check._package_dir
+    return check
+
+
+def test_get_package_dir_returns_existing_directory(fresh_check):
+    result = fresh_check._get_package_dir()
+    assert isinstance(result, Path)
+    assert result.is_dir()
+
+
+def test_get_package_dir_is_cached(fresh_check):
+    first = fresh_check._get_package_dir()
+    second = fresh_check._get_package_dir()
+    assert first is second
+
+
+def test_get_package_dir_namespace_package_fallback(fresh_check, tmp_path):
+    namespace_pkg = types.ModuleType('datadog_checks.fake_ns')
+    namespace_pkg.__file__ = None
+    namespace_pkg.__path__ = [str(tmp_path)]
+
+    with patch('importlib.import_module', return_value=namespace_pkg):
+        result = fresh_check._get_package_dir()
+
+    assert result == tmp_path
+
+
+def test_get_package_dir_raises_when_no_file_or_path(fresh_check):
+    broken_pkg = types.ModuleType('datadog_checks.broken')
+    broken_pkg.__file__ = None
+
+    with patch('importlib.import_module', return_value=broken_pkg):
+        with pytest.raises(RuntimeError, match="Cannot determine package directory"):
+            fresh_check._get_package_dir()
 
 
 def test_persistent_cache(datadog_agent):
-    check = AgentCheck()
-    check.check_id = 'test'
+    check = AgentCheck(init_config={}, instances=[{}])
+    check.check_id = 'test:123'
+    check.run_check_initializations()
 
     check.write_persistent_cache('foo', 'bar')
 
-    assert datadog_agent.read_persistent_cache('test_foo') == 'bar'
+    assert datadog_agent.read_persistent_cache('test:123_foo') == 'bar'
     assert check.read_persistent_cache('foo') == 'bar'
 
 
@@ -110,7 +343,7 @@ class TestSecretsSanitization:
         secret = 'p@$$w0rd'
         check = AgentCheck()
         check.register_secret(secret)
-        sanitized = check.sanitize(secret)
+        sanitized = re.escape(check.sanitize(secret))
 
         check.service_check('test.can_check', status=AgentCheck.CRITICAL, message=secret)
 
@@ -339,29 +572,29 @@ def test_agent_signature(case_name, check, expected_attributes):
 class TestMetricNormalization:
     def test_default(self):
         check = AgentCheck()
-        metric_name = u'Klüft inför på fédéral'
+        metric_name = 'Klüft inför på fédéral'
         normalized_metric_name = 'Kluft_infor_pa_federal'
 
         assert check.normalize(metric_name) == normalized_metric_name
 
     def test_fix_case(self):
         check = AgentCheck()
-        metric_name = u'Klüft inför på fédéral'
+        metric_name = 'Klüft inför på fédéral'
         normalized_metric_name = 'kluft_infor_pa_federal'
 
         assert check.normalize(metric_name, fix_case=True) == normalized_metric_name
 
     def test_prefix(self):
         check = AgentCheck()
-        metric_name = u'metric'
-        prefix = u'somePrefix'
+        metric_name = 'metric'
+        prefix = 'somePrefix'
         normalized_metric_name = 'somePrefix.metric'
 
         assert check.normalize(metric_name, prefix=prefix) == normalized_metric_name
 
     def test_prefix_bytes(self):
         check = AgentCheck()
-        metric_name = u'metric'
+        metric_name = 'metric'
         prefix = b'some'
         normalized_metric_name = 'some.metric'
 
@@ -370,7 +603,7 @@ class TestMetricNormalization:
     def test_prefix_unicode_metric_bytes(self):
         check = AgentCheck()
         metric_name = b'metric'
-        prefix = u'some'
+        prefix = 'some'
         normalized_metric_name = 'some.metric'
 
         assert check.normalize(metric_name, prefix=prefix) == normalized_metric_name
@@ -378,35 +611,35 @@ class TestMetricNormalization:
     def test_prefix_fix_case(self):
         check = AgentCheck()
         metric_name = b'metric'
-        prefix = u'somePrefix'
+        prefix = 'somePrefix'
         normalized_metric_name = 'some_prefix.metric'
 
         assert check.normalize(metric_name, fix_case=True, prefix=prefix) == normalized_metric_name
 
     def test_underscores_redundant(self):
         check = AgentCheck()
-        metric_name = u'a_few__redundant___underscores'
+        metric_name = 'a_few__redundant___underscores'
         normalized_metric_name = 'a_few_redundant_underscores'
 
         assert check.normalize(metric_name) == normalized_metric_name
 
     def test_underscores_at_ends(self):
         check = AgentCheck()
-        metric_name = u'_some_underscores_'
+        metric_name = '_some_underscores_'
         normalized_metric_name = 'some_underscores'
 
         assert check.normalize(metric_name) == normalized_metric_name
 
     def test_underscores_and_dots(self):
         check = AgentCheck()
-        metric_name = u'some_.dots._and_._underscores'
+        metric_name = 'some_.dots._and_._underscores'
         normalized_metric_name = 'some.dots.and.underscores'
 
         assert check.normalize(metric_name) == normalized_metric_name
 
     def test_invalid_chars_and_underscore(self):
         check = AgentCheck()
-        metric_name = u'metric.hello++aaa$$_bbb'
+        metric_name = 'metric.hello++aaa$$_bbb'
         normalized_metric_name = 'metric.hello_aaa_bbb'
 
         assert check.normalize(metric_name) == normalized_metric_name
@@ -416,7 +649,7 @@ class TestMetricNormalization:
     'case, tag, expected_tag',
     [
         ('nothing to normalize', 'abc:123', 'abc:123'),
-        ('unicode', u'Klüft inför på fédéral', 'Klüft_inför_på_fédéral'),
+        ('unicode', 'Klüft inför på fédéral', 'Klüft_inför_på_fédéral'),
         ('invalid chars', 'foo,+*-/()[]{}-  \t\nbar:123', 'foo_bar:123'),
         ('leading and trailing underscores', '__abc:123__', 'abc:123'),
         ('redundant underscore', 'foo_____bar', 'foo_bar'),
@@ -426,6 +659,22 @@ class TestMetricNormalization:
 def test_normalize_tag(case, tag, expected_tag):
     check = AgentCheck()
     assert check.normalize_tag(tag) == expected_tag, 'Failed case: {}'.format(case)
+
+
+@pytest.mark.parametrize(
+    'tag, legacy_expected, non_legacy_expected',
+    [
+        ('my-service', 'my_service', 'my-service'),
+        ('service:my-app-name', 'service:my_app_name', 'service:my-app-name'),
+    ],
+)
+def test_normalize_tag_legacy_vs_non_legacy(tag, legacy_expected, non_legacy_expected):
+    """Test that legacy normalization replaces hyphens while non-legacy preserves them."""
+    legacy_check = AgentCheck()
+    assert legacy_check.normalize_tag(tag) == legacy_expected
+
+    non_legacy_check = AgentCheck(instances=[{'enable_legacy_tags_normalization': False}])
+    assert non_legacy_check.normalize_tag(tag) == non_legacy_expected
 
 
 class TestMetrics:
@@ -454,6 +703,33 @@ class TestMetrics:
             check.gauge(metric_name, '85k')
         aggregator.assert_metric(metric_name, count=0)
 
+    def test_histogram_bucket_multiple_buckets(self, aggregator):
+        check = AgentCheck()
+        check.__NAMESPACE__ = 'test'
+
+        check.submit_histogram_bucket('histogram', 3, 0, 1, True, 'host', ['foo:bar'])
+        check.submit_histogram_bucket('histogram', 4, 1, 2, True, 'host', ['foo:bar'], multiple_buckets=True)
+
+        aggregator.assert_histogram_bucket(
+            'test.histogram', 3, 0, 1, True, 'host', ['foo:bar'], count=1, multiple_buckets=False
+        )
+        aggregator.assert_histogram_bucket(
+            'test.histogram', 4, 1, 2, True, 'host', ['foo:bar'], count=1, multiple_buckets=True
+        )
+
+    def test_multiple_buckets_support_ignores_discovery_proxy(self, monkeypatch):
+        from datadog_checks.base.stubs.aggregator import AggregatorStub
+        from datadog_checks.base.utils.discovery.probe import _suppress_discovery_side_effects
+
+        monkeypatch.delattr(AggregatorStub, 'submit_histogram_bucket_multi')
+        check = AgentCheck()
+
+        with _suppress_discovery_side_effects(check):
+            assert hasattr(check._aggregator(), 'submit_histogram_bucket_multi')
+            assert check.multiple_histogram_buckets_unsupported_reason() == (
+                'is not supported by this Agent version, upgrade the Agent to use it'
+            )
+
 
 class TestEvents:
     def test_valid_event(self, aggregator):
@@ -469,7 +745,7 @@ class TestEvents:
         check.event(event)
         aggregator.assert_event('test event test event', tags=["foo", "bar"])
 
-    @pytest.mark.parametrize('msg_text', [u'test-π', 'test-π', b'test-\xcf\x80'])
+    @pytest.mark.parametrize('msg_text', ['test-π', 'test-π', b'test-\xcf\x80'])
     def test_encoding(self, aggregator, msg_text):
         check = AgentCheck()
         event = {
@@ -477,7 +753,7 @@ class TestEvents:
             'msg_title': 'new test event',
             'aggregation_key': 'test.event',
             'msg_text': msg_text,
-            'tags': ['∆', u'Ω-bar'],
+            'tags': ['∆', 'Ω-bar'],
             'timestamp': 1,
         }
         check.event(event)
@@ -541,6 +817,150 @@ class TestServiceChecks:
         aggregator.assert_service_check('service_check', status=AgentCheck.OK)
 
 
+class TestLogSubmission:
+    def test_cursor(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo'}, cursor={'data': '1'})
+        check.send_log({'message': 'bar'}, cursor={'data': '2'})
+        check.send_log({'message': 'baz'})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo'},
+                {'message': 'bar'},
+                {'message': 'baz'},
+            ],
+        )
+        assert check.get_log_cursor() == {'data': '2'}
+
+    def custom_persistent_cache_id_check(self) -> AgentCheck:
+        class TestCheck(AgentCheck):
+            def persistent_cache_id(self) -> str:
+                return "always_the_same"
+
+        return TestCheck(name="test", init_config={}, instances=[{}])
+
+    def test_cursor_with_custom_cache_invalidation_strategy_after_restart(self):
+        check = self.custom_persistent_cache_id_check()
+        check.check_id = 'test:bar:123'
+        check.send_log({'message': 'foo'}, cursor={'data': '1'})
+
+        assert check.get_log_cursor() == {'data': '1'}
+
+        new_check = self.custom_persistent_cache_id_check()
+        new_check.check_id = 'test:bar:123456'
+        assert new_check.get_log_cursor() == {'data': '1'}
+
+        check = self.custom_persistent_cache_id_check()
+        check.check_id = 'test:bar:123'
+        check.send_log({'message': 'foo'}, cursor={'data': '1'})
+
+        assert check.get_log_cursor() == {'data': '1'}
+
+        new_check = self.custom_persistent_cache_id_check()
+        new_check.check_id = 'test:bar:123456'
+        assert new_check.get_log_cursor() == {'data': '1'}
+
+    def test_cursor_invalidated_for_different_persistent_check_id_part(self):
+        check = self.custom_persistent_cache_id_check()
+        check.check_id = 'test:bar:123'
+        check.send_log({'message': 'foo'}, cursor={'data': '1'})
+
+        assert check.get_log_cursor() == {'data': '1'}
+
+        new_check = self.custom_persistent_cache_id_check()
+        new_check.check_id = 'test:bar:123456'
+        assert new_check.get_log_cursor() == {'data': '1'}
+
+    def test_no_cursor(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo'})
+        check.send_log({'message': 'bar'})
+        check.send_log({'message': 'baz'})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo'},
+                {'message': 'bar'},
+                {'message': 'baz'},
+            ],
+        )
+        assert check.get_log_cursor() is None
+
+    def test_tags(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{'tags': ['foo:bar', 'baz:qux']}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo'})
+        check.send_log({'message': 'bar', 'ddtags': 'bar:baz'})
+        check.send_log({'message': 'baz'})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo', 'ddtags': 'baz:qux,foo:bar'},
+                {'message': 'bar', 'ddtags': 'bar:baz'},
+                {'message': 'baz', 'ddtags': 'baz:qux,foo:bar'},
+            ],
+        )
+
+    def test_stream(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo'}, cursor={'data': '1'}, stream='stream1')
+        check.send_log({'message': 'bar'}, cursor={'data': '2'}, stream='stream2')
+        check.send_log({'message': 'baz'})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo'},
+                {'message': 'bar'},
+                {'message': 'baz'},
+            ],
+        )
+        assert check.get_log_cursor(stream='stream1') == {'data': '1'}
+        assert check.get_log_cursor(stream='stream2') == {'data': '2'}
+
+    def test_timestamp(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo', 'timestamp': 1722958617.2842212})
+        check.send_log({'message': 'bar', 'timestamp': 1722958619.2358432})
+        check.send_log({'message': 'baz', 'timestamp': 1722958620.5963688})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo', 'timestamp': 1722958617284},
+                {'message': 'bar', 'timestamp': 1722958619235},
+                {'message': 'baz', 'timestamp': 1722958620596},
+            ],
+        )
+        assert check.get_log_cursor() is None
+
+
+class TestLogsEnabledDetection:
+    def test_default(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+
+        assert check.logs_enabled is False
+
+    def test_enabled(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        datadog_agent._config['logs_enabled'] = True
+
+        assert check.logs_enabled is True
+
+
 class TestTags:
     def test_default_string(self):
         check = AgentCheck()
@@ -564,37 +984,28 @@ class TestTags:
 
         assert normalized_tags is not tags
 
-        if PY3:
-            assert normalized_tag == tag.decode('utf-8')
-        else:
-            # Ensure no new allocation occurs
-            assert normalized_tag is tag
+        assert normalized_tag == tag.decode('utf-8')
 
     def test_unicode_string(self):
         check = AgentCheck()
-        tag = u'unicode:string'
+        tag = 'unicode:string'
         tags = [tag]
 
         normalized_tags = check._normalize_tags_type(tags, None)
         normalized_tag = normalized_tags[0]
 
         assert normalized_tags is not tags
-
-        if PY3:
-            # Ensure no new allocation occurs
-            assert normalized_tag is tag
-        else:
-            assert normalized_tag == tag.encode('utf-8')
+        assert normalized_tag is tag
 
     def test_unicode_device_name(self):
         check = AgentCheck()
         tags = []
-        device_name = u'unicode_string'
+        device_name = 'unicode_string'
 
         normalized_tags = check._normalize_tags_type(tags, device_name)
         normalized_device_tag = normalized_tags[0]
 
-        assert isinstance(normalized_device_tag, str if PY3 else bytes)
+        assert isinstance(normalized_device_tag, str)
 
     def test_duplicated_device_name(self):
         check = AgentCheck()
@@ -624,14 +1035,10 @@ class TestTags:
 
     def test_external_hostname(self, datadog_agent):
         check = AgentCheck()
-        external_host_tags = [(u'hostnam\xe9', {'src_name': ['key1:val1']})]
+        external_host_tags = [('hostnam\xe9', {'src_name': ['key1:val1']})]
         check.set_external_tags(external_host_tags)
 
-        if PY3:
-            datadog_agent.assert_external_tags(u'hostnam\xe9', {'src_name': ['key1:val1']})
-        else:
-            datadog_agent.assert_external_tags('hostnam\xc3\xa9', {'src_name': ['key1:val1']})
-
+        datadog_agent.assert_external_tags('hostnam\xe9', {'src_name': ['key1:val1']})
         datadog_agent.assert_external_tags_count(1)
 
     @pytest.mark.parametrize(
@@ -963,7 +1370,6 @@ class TestCheckInitializations:
         assert check.initialize.call_count == 2
 
 
-@requires_py3
 def test_load_configuration_models(dd_run_check, mocker):
     instance = {'endpoint': 'url', 'tags': ['foo:bar'], 'proxy': {'http': 'http://1.2.3.4:9000'}}
     init_config = {'proxy': {'https': 'https://1.2.3.4:4242'}}
@@ -995,18 +1401,6 @@ def test_load_configuration_models(dd_run_check, mocker):
     assert check._config_model_shared is shared_config
 
 
-if PY3:
-
-    from .utils import BaseModelTest
-
-else:
-
-    class BaseModelTest:
-        def __init__(self, **kwargs):
-            pass
-
-
-@requires_py3
 @pytest.mark.parametrize(
     "check_instance_config, default_instance_config, log_lines, unknown_options",
     [
@@ -1214,3 +1608,140 @@ def test_detect_typos_configuration_models(
         assert "Detected potential typo in configuration option" not in caplog.text
 
     assert typos == set(unknown_options)
+
+
+def test_env_var_logic_default():
+    with mock.patch.dict('os.environ', {'GOFIPS': '0'}):
+        AgentCheck()
+        assert os.getenv('OPENSSL_CONF', None) is None
+        assert os.getenv('OPENSSL_MODULES', None) is None
+
+
+def test_env_var_logic_preset():
+    preset_conf = 'path/to/openssl.cnf'
+    preset_modules = 'path/to/ossl-modules'
+    with mock.patch.dict('os.environ', {'GOFIPS': '1', 'OPENSSL_CONF': preset_conf, 'OPENSSL_MODULES': preset_modules}):
+        AgentCheck()
+        assert os.getenv('OPENSSL_CONF', None) == preset_conf
+        assert os.getenv('OPENSSL_MODULES', None) == preset_modules
+
+
+@pytest.mark.parametrize(
+    "should_profile_value, expected_calls",
+    [
+        pytest.param(True, 1, id="enabled"),
+        pytest.param(False, 0, id="disabled"),
+    ],
+)
+def test_profile_memory_when_enabled(should_profile_value, expected_calls):
+    check = AgentCheck('test', {}, [{}])
+    check.should_profile_memory = mock.MagicMock(return_value=should_profile_value)
+    check.profile_memory = mock.MagicMock()
+
+    check.run()
+
+    assert check.should_profile_memory.call_count == 1
+    assert check.profile_memory.call_count == expected_calls
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b"\x08\x96\x01", bytearray(b"\x08\x96\x01"), memoryview(b"\x08\x96\x01")],
+    ids=["bytes", "bytearray", "memoryview"],
+)
+def test_event_platform_event_delivers_byte_like_payloads_as_bytes(aggregator, payload):
+    from datadog_checks.base import AgentCheck
+
+    check = AgentCheck("test", {}, [{}])
+    check.event_platform_event(payload, "genresources")
+
+    [received] = aggregator.get_event_platform_events("genresources", parse_json=False)
+    assert received == b"\x08\x96\x01"
+    assert isinstance(received, bytes)
+
+
+@pytest.fixture
+def issue_check():
+    return AgentCheck("test_check", {}, [{}])
+
+
+def test_report_issue_minimal(datadog_agent, issue_check):
+    issue_check.report_issue(id="issue-1", issue_name="connection_failed", issue_type="connection_failed")
+
+    datadog_agent.assert_reported_issue(
+        "test_check",
+        "issue-1",
+        {
+            'id': 'issue-1',
+            'issue_name': 'connection_failed',
+            'issue_type': 'connection_failed',
+            'title': None,
+            'description': None,
+            'category': None,
+            'location': 'integrations',
+            'severity': 0,
+            'source': 'test_check',
+            'extra': None,
+            'remediation': None,
+            'tags': None,
+        },
+    )
+
+
+def test_report_issue_full(datadog_agent, issue_check):
+    issue_check.report_issue(
+        id="issue-2",
+        issue_name="Permission Denied",
+        issue_type="permission_denied",
+        title="Permission denied",
+        description="The check lacks required permissions.",
+        category="permissions",
+        severity=issue_check.IssueSeverity['HIGH'],
+        extra={'resource': 'users'},
+        remediation={
+            'summary': 'Grant the required permissions.',
+            'steps': [{'order': 1, 'text': 'Run GRANT SELECT ON users TO datadog;'}],
+        },
+        tags=['env:prod'],
+    )
+
+    datadog_agent.assert_reported_issue(
+        "test_check",
+        "issue-2",
+        {
+            'id': 'issue-2',
+            'issue_name': 'Permission Denied',
+            'issue_type': 'permission_denied',
+            'title': 'Permission denied',
+            'description': 'The check lacks required permissions.',
+            'category': 'permissions',
+            'location': 'integrations',
+            'severity': issue_check.IssueSeverity['HIGH'],
+            'source': 'test_check',
+            'extra': {'resource': 'users'},
+            'remediation': {
+                'summary': 'Grant the required permissions.',
+                'steps': [{'order': 1, 'text': 'Run GRANT SELECT ON users TO datadog;'}],
+            },
+            'tags': ['env:prod'],
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    'issue_id, issue_name, issue_type, expected_message',
+    [
+        pytest.param('', 'connection_failed', 'connection_failed', 'Issue ID is required', id='missing id'),
+        pytest.param('issue-1', '', 'connection_failed', 'Issue Name is required', id='missing issue name'),
+        pytest.param('issue-1', 'connection_failed', '', 'Issue Type is required', id='missing issue type'),
+    ],
+)
+def test_report_issue_requires_required_fields(issue_check, issue_id, issue_name, issue_type, expected_message):
+    with pytest.raises(ValueError, match=expected_message):
+        issue_check.report_issue(id=issue_id, issue_name=issue_name, issue_type=issue_type)
+
+
+def test_resolve_issue(datadog_agent, issue_check):
+    issue_check.resolve_issue('issue-1')
+
+    datadog_agent.assert_resolved_issue('issue-1')

@@ -1,0 +1,11 @@
+name: Wazuh
+fleet_configurable: true
+files:
+- name: wazuh.yaml
+  options:
+  - template: logs
+    example:
+    - type: udp
+      port: <PORT>
+      source: wazuh
+      service: wazuh

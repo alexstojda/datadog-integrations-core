@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "15b15f01-b342-4001-89ac-9e92fc4f3234",
   "app_id": "druid",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -17,7 +18,8 @@
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -48,9 +50,6 @@
     },
     "dashboards": {
       "Druid Overview": "assets/dashboards/overview.json"
-    },
-    "logs": {
-      "source": "druid"
     }
   }
 }

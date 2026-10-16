@@ -6,10 +6,9 @@ import time
 from collections import defaultdict, namedtuple
 from copy import deepcopy
 from itertools import product
+from urllib.parse import urljoin, urlparse
 
 import requests
-from six import iteritems, itervalues
-from six.moves.urllib.parse import urljoin, urlparse
 
 from datadog_checks.base import AgentCheck, is_affirmative, to_string
 
@@ -74,6 +73,10 @@ def get_dynamic_tags(columns):
 def get_value_from_path(value, path):
     result = value
 
+    # An empty or missing path targets the root of the response
+    if not path:
+        return result
+
     # Traverse the nested dictionaries
     for key in re.split(REGEX, path):
         if result is not None:
@@ -99,6 +102,7 @@ class ESCheck(AgentCheck):
     SERVICE_CHECK_CONNECT_NAME = 'elasticsearch.can_connect'
     SERVICE_CHECK_CLUSTER_STATUS = 'elasticsearch.cluster_health'
     CAT_ALLOC_PATH = '/_cat/allocation?v=true&format=json&bytes=b'
+    CAT_SHARDS_PATH = '/_cat/shards?format=json&bytes=b'
     SOURCE_TYPE_NAME = 'elasticsearch'
 
     def __init__(self, name, init_config, instances):
@@ -262,18 +266,17 @@ class ESCheck(AgentCheck):
                 index_data['health_reverse'] = dd_health.reverse_status
 
             # Ensure that index_data does not contain None values
-            for key, value in list(iteritems(index_data)):
+            for key, value in list(index_data.items()):
                 if value is None:
                     del index_data[key]
                     self.log.debug("The index %s has no metric data for %s", idx['index'], key)
 
             tags = base_tags + ['index_name:' + idx['index']]
-            for metric, desc in iteritems(index_stats_for_version(version)):
+            for metric, desc in index_stats_for_version(version).items():
                 self._process_metric(index_data, metric, *desc, tags=tags)
         self._get_index_search_stats(admin_forwarder, base_tags)
 
     def _get_template_metrics(self, admin_forwarder, base_tags):
-
         try:
             template_resp = self._get_data(self._join_url('/_cat/templates?format=json', admin_forwarder))
         except requests.exceptions.RequestException as e:
@@ -282,7 +285,7 @@ class ESCheck(AgentCheck):
 
         filtered_templates = [t for t in template_resp if not t['name'].startswith(TEMPLATE_EXCLUSION_LIST)]
 
-        for metric, desc in iteritems(TEMPLATE_METRICS):
+        for metric, desc in TEMPLATE_METRICS.items():
             self._process_metric({'templates': filtered_templates}, metric, *desc, tags=base_tags)
 
     def _get_index_search_stats(self, admin_forwarder, base_tags):
@@ -294,7 +297,7 @@ class ESCheck(AgentCheck):
         # The health we can get from /_cluster/health if we pass level=indices query param. Reference:
         # https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-health.html#cluster-health-api-query-params # noqa: E501
         indices = self._get_data(self._join_url('/_stats/search', admin_forwarder))['indices']
-        for (idx_name, data), (m_name, path) in product(iteritems(indices), INDEX_SEARCH_STATS):
+        for (idx_name, data), (m_name, path) in product(indices.items(), INDEX_SEARCH_STATS):
             tags = base_tags + ['index_name:' + idx_name]
             self._process_metric(data, m_name, 'gauge', path, tags=tags)
 
@@ -362,7 +365,7 @@ class ESCheck(AgentCheck):
             p_tasks[task.get('priority')] += 1
             average_time_in_queue += task.get('time_in_queue_millis', 0)
 
-        total = sum(itervalues(p_tasks))
+        total = sum(p_tasks.values())
         node_data = {
             'pending_task_total': total,
             'pending_tasks_priority_high': p_tasks['high'],
@@ -377,7 +380,7 @@ class ESCheck(AgentCheck):
             self._process_metric(node_data, metric, *desc, tags=base_tags)
 
     def _process_stats_data(self, data, stats_metrics, base_tags):
-        for node_data in itervalues(data.get('nodes', {})):
+        for node_data in data.get('nodes', {}).values():
             metric_hostname = None
             metrics_tags = list(base_tags)
 
@@ -396,18 +399,18 @@ class ESCheck(AgentCheck):
                         metric_hostname = node_data[k]
                         break
 
-            for metric, desc in iteritems(stats_metrics):
+            for metric, desc in stats_metrics.items():
                 self._process_metric(node_data, metric, *desc, tags=metrics_tags, hostname=metric_hostname)
 
     def _process_pshard_stats_data(self, data, pshard_stats_metrics, base_tags):
-        for metric, desc in iteritems(pshard_stats_metrics):
+        for metric, desc in pshard_stats_metrics.items():
             pshard_tags = base_tags
             if desc[1].startswith('_all.'):
                 pshard_tags = pshard_tags + ['index_name:_all']
             self._process_metric(data, metric, *desc, tags=pshard_tags)
         # process index-level metrics
         if self._config.cluster_stats and self._config.detailed_index_stats:
-            for metric, desc in iteritems(pshard_stats_metrics):
+            for metric, desc in pshard_stats_metrics.items():
                 if desc[1].startswith('_all.'):
                     for index in data['indices']:
                         self.log.debug("Processing index %s", index)
@@ -449,7 +452,7 @@ class ESCheck(AgentCheck):
         ):
             self.event(self._create_event(current_status, tags=base_tags))
 
-        for metric, desc in iteritems(health_stats_for_version(version)):
+        for metric, desc in health_stats_for_version(version).items():
             self._process_metric(data, metric, *desc, tags=base_tags)
 
         # Process the service check
@@ -473,12 +476,12 @@ class ESCheck(AgentCheck):
         self.service_check(self.SERVICE_CHECK_CLUSTER_STATUS, dd_health.status, message=msg, tags=service_check_tags)
 
     def _process_policy_data(self, data, version, base_tags):
-        for policy, policy_data in iteritems(data):
+        for policy, policy_data in data.items():
             repo = policy_data.get('policy', {}).get('repository', 'unknown')
             tags = base_tags + ['policy:{}'.format(policy), 'repository:{}'.format(repo)]
 
             slm_stats = slm_stats_for_version(version)
-            for metric, desc in iteritems(slm_stats):
+            for metric, desc in slm_stats.items():
                 self._process_metric(policy_data, metric, *desc, tags=tags)
 
     def _process_cat_allocation_data(self, admin_forwarder, version, base_tags):
@@ -499,15 +502,83 @@ class ESCheck(AgentCheck):
 
         # we need to remap metric names because the ones from elastic
         # contain dots and that would confuse `_process_metric()` (sic)
-        data_to_collect = {'disk.indices', 'disk.used', 'disk.avail', 'disk.total', 'disk.percent', 'shards'}
+        if self._config.detailed_shard_metrics:
+            # when detailed metrics are enabled, only collect disk metrics from _cat/allocation
+            data_to_collect = {'disk.indices', 'disk.used', 'disk.avail', 'disk.total', 'disk.percent'}
+        else:
+            data_to_collect = {'disk.indices', 'disk.used', 'disk.avail', 'disk.total', 'disk.percent', 'shards'}
+
         for dic in cat_allocation_data:
             cat_allocation_dic = {
                 k.replace('.', '_'): v for k, v in dic.items() if k in data_to_collect and v is not None
             }
             tags = base_tags + ['node_name:' + dic.get('node').lower()]
             for metric in CAT_ALLOCATION_METRICS:
+                # skip shards metric if detailed metrics are enabled (we'll get it from _cat/shards)
+                if metric == 'elasticsearch.shards' and self._config.detailed_shard_metrics:
+                    continue
                 desc = CAT_ALLOCATION_METRICS[metric]
                 self._process_metric(cat_allocation_dic, metric, *desc, tags=tags)
+
+        if self._config.detailed_shard_metrics:
+            self.log.debug("Collecting detailed shard placement metrics")
+            cat_shards_url = self._join_url(self.CAT_SHARDS_PATH, admin_forwarder)
+            try:
+                cat_shards_data = self._get_data(cat_shards_url)
+            except requests.ReadTimeout as e:
+                self.log.error("Timed out reading cat shards stats from servers (%s) - stats will be missing", e)
+                return
+
+            from collections import Counter
+
+            shard_counts = Counter()
+
+            for shard in cat_shards_data:
+                node = shard.get('node')
+                index = shard.get('index')
+                prirep_raw = shard.get('prirep')
+                state = shard.get('state')
+
+                # skip unassigned shards (they have no node)
+                if node is None or node == 'UNASSIGNED':
+                    continue
+
+                if index is None or prirep_raw is None:
+                    continue
+
+                # when in RELOCATING state, the reported node is: "source-node -> ip uuid target-node"
+                # try extracting the source node to count the shard towards it until relocation is over
+                if state == 'RELOCATING':
+                    if ' -> ' in node:
+                        source_node = node.split(' -> ')[0].strip()
+                        if source_node and ' ' not in source_node:
+                            node = source_node
+                        else:
+                            self.log.debug(
+                                "invalid source node for RELOCATING shard, got: %s, parsed: %s", node, source_node
+                            )
+                            continue
+                    else:
+                        self.log.debug(
+                            "unexpected format for RELOCATING shard (expected 'source -> target'), got: %s", node
+                        )
+                        continue
+                elif state != 'STARTED':
+                    continue
+
+                # better readability: p->primary and r->replica
+                prirep = 'primary' if prirep_raw == 'p' else 'replica'
+
+                key = (node, index, prirep)
+                shard_counts[key] += 1
+
+            for (node, index, prirep), count in shard_counts.items():
+                tags = base_tags + [
+                    'node_name:{}'.format(node.lower()),
+                    'index_name:{}'.format(index),
+                    'prirep:{}'.format(prirep),
+                ]
+                self.gauge('elasticsearch.shards', count, tags=tags)
 
     def _process_custom_metric(
         self,
@@ -530,7 +601,7 @@ class ESCheck(AgentCheck):
         """
 
         tags_to_submit = deepcopy(tags)
-        path = '{}.{}'.format(data_path, value_path)
+        path = '.'.join(part for part in (data_path, value_path) if part)
 
         # Collect the value of tags first, and then append to tags_to_submit
         for dynamic_tag_path, dynamic_tag_name in dynamic_tags:

@@ -20,11 +20,14 @@ from datadog_checks.sqlserver.const import (
     DATABASE_METRICS,
     DBM_MIGRATED_METRICS,
     INSTANCE_METRICS,
-    INSTANCE_METRICS_DATABASE,
+    INSTANCE_METRICS_DATABASE_AO,
+    INSTANCE_METRICS_DATABASE_SINGLE,
+    TABLE_SIZE_METRICS,
     TASK_SCHEDULER_METRICS,
     TEMPDB_FILE_SPACE_USAGE_METRICS,
 )
-from datadog_checks.sqlserver.queries import get_query_file_stats
+
+from .utils import is_always_on
 
 
 def get_local_driver():
@@ -34,11 +37,14 @@ def get_local_driver():
     we need to define the 'FreeTDS' driver in odbcinst.ini
     """
     if ON_MACOS:
-        return '/usr/local/lib/libtdsodbc.so'
+        return '/opt/homebrew/lib/libtdsodbc.so'
     elif ON_WINDOWS:
         return '{ODBC Driver 18 for SQL Server}'
     else:
-        return '{ODBC Driver 18 for SQL Server}'
+        driver = os.environ.get('LINUX_SQLSERVER_DRIVER')
+        if not driver or driver == 'odbc':
+            return '{ODBC Driver 18 for SQL Server}'
+        return f'{driver}'
 
 
 HOST = get_docker_hostname()
@@ -57,16 +63,22 @@ SERVER_METRICS = [
     'sqlserver.server.virtual_memory',
 ]
 
+SQLSERVER_YEAR = int(os.environ.get('SQLSERVER_YEAR'))
+SQLSERVER_ENGINE_EDITION = os.environ.get('SQLSERVER_ENGINE_EDITION')
 SQLSERVER_MAJOR_VERSION = int(os.environ.get('SQLSERVER_MAJOR_VERSION'))
-SQLSERVER_ENGINE_EDITION = int(os.environ.get('SQLSERVER_ENGINE_EDITION'))
 
-
-def get_expected_file_stats_metrics():
-    query_file_stats = get_query_file_stats(SQLSERVER_MAJOR_VERSION, SQLSERVER_ENGINE_EDITION)
-    return ["sqlserver." + c["name"] for c in query_file_stats["columns"] if c["type"] != "tag"]
-
-
-EXPECTED_FILE_STATS_METRICS = get_expected_file_stats_metrics()
+EXPECTED_FILE_STATS_METRICS = [
+    'sqlserver.files.io_stall',
+    'sqlserver.files.read_io_stall_queued',
+    'sqlserver.files.write_io_stall_queued',
+    'sqlserver.files.read_io_stall',
+    'sqlserver.files.write_io_stall',
+    'sqlserver.files.read_bytes',
+    'sqlserver.files.written_bytes',
+    'sqlserver.files.reads',
+    'sqlserver.files.writes',
+    'sqlserver.files.size_on_disk',
+]
 
 # SQL Server incremental sql fraction metrics require diffs in order to calculate
 # & report the metric, which means this requires a special unit/integration test coverage
@@ -82,10 +94,11 @@ EXPECTED_DEFAULT_METRICS = (
         for m in chain(
             EXPECTED_INSTANCE_METRICS,
             DBM_MIGRATED_METRICS,
-            INSTANCE_METRICS_DATABASE,
+            INSTANCE_METRICS_DATABASE_SINGLE,
             DATABASE_METRICS,
             DATABASE_BACKUP_METRICS,
             TEMPDB_FILE_SPACE_USAGE_METRICS,
+            TABLE_SIZE_METRICS,
         )
     ]
     + DATABASE_INDEX_METRICS
@@ -107,7 +120,8 @@ EXPECTED_METRICS = (
 
 DBM_MIGRATED_METRICS_NAMES = {m[0] for m in DBM_MIGRATED_METRICS}
 EXPECTED_METRICS_DBM_ENABLED = [m for m in EXPECTED_METRICS if m not in DBM_MIGRATED_METRICS_NAMES]
-DB_PERF_COUNT_METRICS_NAMES = {m[0] for m in INSTANCE_METRICS_DATABASE}
+DB_PERF_COUNT_METRICS_NAMES_SINGLE = {m[0] for m in INSTANCE_METRICS_DATABASE_SINGLE}
+DB_PERF_COUNT_METRICS_NAMES_AO = {m[0] for m in INSTANCE_METRICS_DATABASE_AO}
 
 # These AO metrics are collected using the new QueryExecutor API instead of BaseSqlServerMetric.
 EXPECTED_QUERY_EXECUTOR_AO_METRICS_PRIMARY = [
@@ -138,6 +152,12 @@ EXPECTED_QUERY_EXECUTOR_AO_METRICS_COMMON = (
     + EXPECTED_QUERY_EXECUTOR_AO_METRICS_QUORUM_COMMON
     + EXPECTED_QUERY_EXECUTOR_AO_METRICS_MEMBER_COMMON
 )
+
+EXPECTED_AGENT_JOBS_METRICS_COMMON = [
+    'sqlserver.agent.active_jobs.duration',
+    'sqlserver.agent.active_jobs.step_info',
+    'sqlserver.agent.active_session.duration',
+]
 
 # Our test environment does not have failover clustering enabled, so these metrics are not expected.
 # To test them follow this guide:
@@ -234,13 +254,7 @@ INIT_CONFIG_ALT_TABLES = {
 }
 
 OPERATION_TIME_METRICS = [
-    'simple_metrics',
-    'database_stats_metrics',
-    'fraction_metrics',
-    'db_file_space_usage_metrics',
-    'database_backup_metrics',
-    'database_file_stats_metrics',
-    'incr_fraction_metrics',
+    'perf_counter_metrics',
 ]
 
 OPERATION_TIME_METRIC_NAME = 'dd.sqlserver.operation.time'
@@ -274,12 +288,15 @@ def assert_metrics(
     if database_autodiscovery:
         # when autodiscovery is enabled, we should not double emit metrics,
         # so we should assert for these separately with the proper tags
-        expected_metrics = [m for m in expected_metrics if m not in DB_PERF_COUNT_METRICS_NAMES]
+        expected_metrics = [m for m in expected_metrics if m not in DB_PERF_COUNT_METRICS_NAMES_SINGLE]
 
         for dbname in dbs:
             tags = check_tags + ['database:{}'.format(dbname)]
-            for mname in DB_PERF_COUNT_METRICS_NAMES:
+            for mname in DB_PERF_COUNT_METRICS_NAMES_SINGLE:
                 aggregator.assert_metric(mname, hostname=hostname, tags=tags)
+            if dbname == 'datadog_test-1' and is_always_on():
+                for mname in DB_PERF_COUNT_METRICS_NAMES_AO:
+                    aggregator.assert_metric(mname, hostname=hostname, tags=tags)
     else:
         # master does not have indexes so none of these metrics will be emitted
         expected_metrics = [m for m in expected_metrics if m not in DATABASE_INDEX_METRICS]
@@ -306,13 +323,4 @@ def get_operation_time_metrics(instance):
     Return a list of all operation time metrics
     """
     operation_time_metrics = deepcopy(OPERATION_TIME_METRICS)
-    if instance.get('include_task_scheduler_metrics', False):
-        operation_time_metrics.append('os_schedulers_metrics')
-        operation_time_metrics.append('os_tasks_metrics')
-    if instance.get('include_db_fragmentation_metrics', False):
-        operation_time_metrics.append('db_fragmentation_metrics')
-    if instance.get('include_ao_metrics', False):
-        operation_time_metrics.append('availability_groups_metrics')
-    if instance.get('include_master_files_metrics', False):
-        operation_time_metrics.append('master_database_file_stats_metrics')
     return operation_time_metrics

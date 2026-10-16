@@ -1,0 +1,17 @@
+name: Kubeflow
+fleet_configurable: true
+files:
+- name: kubeflow.yaml
+  options:
+    - template: init_config
+      options:
+        - template: init_config/openmetrics
+    - template: instances
+      options:
+        - template: instances/openmetrics
+          overrides:
+            openmetrics_endpoint.required: true
+            openmetrics_endpoint.value.example: http://<prometheus-service>:9090/metrics
+            openmetrics_endpoint.description: |
+              Endpoint exposing the Kubeflow's Prometheus metrics.
+              

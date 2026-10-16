@@ -1,5 +1,3 @@
-version: '3'
-
 # https://pulsar.apache.org/docs/en/next/standalone-docker/
 services:
   pulsar:
@@ -18,7 +16,7 @@ services:
     - '6650:6650'
     - '8080:8080'
     volumes:
-    - ${DD_LOG_1}:/var/log/pulsar.log
+    - ${DD_LOG_1:-/dev/null}:/var/log/pulsar.log
     # Not everything is documented:
     # https://pulsar.apache.org/docs/en/reference-configuration/
     environment:

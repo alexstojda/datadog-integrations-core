@@ -10,7 +10,6 @@ from time import sleep
 import mock
 import pytest
 import requests
-from six import PY2
 
 from datadog_checks.dev import EnvVars, TempDir, docker_run
 from datadog_checks.dev._env import get_state, save_state
@@ -20,17 +19,22 @@ from datadog_checks.gitlab import GitlabCheck
 from .common import (
     ALLOWED_METRICS,
     CUSTOM_TAGS,
+    EXPORTERS_ENABLED,
     GITLAB_GITALY_PROMETHEUS_ENDPOINT,
     GITLAB_HEALTH_ENDPOINT,
     GITLAB_LIVENESS_ENDPOINT,
     GITLAB_LOCAL_GITALY_PROMETHEUS_PORT,
     GITLAB_LOCAL_PORT,
     GITLAB_LOCAL_PROMETHEUS_PORT,
+    GITLAB_LOCAL_SIDEKIQ_PROMETHEUS_PORT,
+    GITLAB_LOCAL_WORKHORSE_PROMETHEUS_PORT,
     GITLAB_PROMETHEUS_ENDPOINT,
     GITLAB_READINESS_ENDPOINT,
+    GITLAB_SIDEKIQ_PROMETHEUS_ENDPOINT,
     GITLAB_TEST_API_TOKEN,
     GITLAB_TEST_PASSWORD,
     GITLAB_URL,
+    GITLAB_WORKHORSE_PROMETHEUS_ENDPOINT,
     HERE,
     HOST,
     PROMETHEUS_ENDPOINT,
@@ -60,6 +64,8 @@ def dd_environment():
         'GITLAB_LOCAL_PORT': str(GITLAB_LOCAL_PORT),
         'GITLAB_LOCAL_PROMETHEUS_PORT': str(GITLAB_LOCAL_PROMETHEUS_PORT),
         'GITLAB_LOCAL_GITALY_PROMETHEUS_PORT': str(GITLAB_LOCAL_GITALY_PROMETHEUS_PORT),
+        'GITLAB_LOCAL_WORKHORSE_PROMETHEUS_PORT': str(GITLAB_LOCAL_WORKHORSE_PROMETHEUS_PORT),
+        'GITLAB_LOCAL_SIDEKIQ_PROMETHEUS_PORT': str(GITLAB_LOCAL_SIDEKIQ_PROMETHEUS_PORT),
     }
 
     conditions = []
@@ -76,6 +82,14 @@ def dd_environment():
                 CheckEndpoints(GITLAB_HEALTH_ENDPOINT, attempts=100, wait=10),
             ]
         )
+
+        if EXPORTERS_ENABLED:
+            conditions.extend(
+                [
+                    CheckEndpoints(GITLAB_WORKHORSE_PROMETHEUS_ENDPOINT, attempts=100, wait=10),
+                    CheckEndpoints(GITLAB_SIDEKIQ_PROMETHEUS_ENDPOINT, attempts=100, wait=10),
+                ]
+            )
 
     with docker_run(
         compose_file=os.path.join(HERE, 'compose', 'docker-compose.yml'),
@@ -94,6 +108,14 @@ def dd_environment():
                 {
                     'openmetrics_endpoint': GITLAB_PROMETHEUS_ENDPOINT,
                     'gitaly_server_endpoint': GITLAB_GITALY_PROMETHEUS_ENDPOINT,
+                    **(
+                        {
+                            'workhorse_endpoint': GITLAB_WORKHORSE_PROMETHEUS_ENDPOINT,
+                            'sidekiq_endpoint': GITLAB_SIDEKIQ_PROMETHEUS_ENDPOINT,
+                        }
+                        if EXPORTERS_ENABLED
+                        else {}
+                    ),
                     'gitlab_url': GITLAB_URL,
                     'disable_ssl_validation': True,
                     'tags': CUSTOM_TAGS,
@@ -105,7 +127,7 @@ def dd_environment():
 @pytest.fixture()
 def mock_data():
     with mock.patch(
-        'requests.get',
+        'requests.Session.get',
         side_effect=mocked_requests_get,
     ):
         yield
@@ -149,15 +171,33 @@ def mocked_requests_get(*args, **kwargs):
                 iter_lines=lambda **kwargs: text_data.split("\n"),
                 headers={'Content-Type': "text/plain"},
             )
-    elif url == "http://{}:{}/api/v4/version".format(HOST, GITLAB_LOCAL_PORT) or url == "http://{}:{}/-/health".format(
-        HOST, GITLAB_LOCAL_PORT
-    ):
+    elif url == "http://{}:{}/metrics".format(HOST, GITLAB_LOCAL_WORKHORSE_PROMETHEUS_PORT):
+        f_name = os.path.join(os.path.dirname(__file__), 'fixtures', 'workhorse.txt')
+
+        with open(f_name, 'r') as f:
+            text_data = f.read()
+            return mock.MagicMock(
+                status_code=200,
+                iter_lines=lambda **kwargs: text_data.split("\n"),
+                headers={'Content-Type': "text/plain"},
+            )
+    elif url == "http://{}:{}/metrics".format(HOST, GITLAB_LOCAL_SIDEKIQ_PROMETHEUS_PORT):
+        f_name = os.path.join(os.path.dirname(__file__), 'fixtures', 'sidekiq.txt')
+
+        with open(f_name, 'r') as f:
+            text_data = f.read()
+            return mock.MagicMock(
+                status_code=200,
+                iter_lines=lambda **kwargs: text_data.split("\n"),
+                headers={'Content-Type': "text/plain"},
+            )
+    elif url == "http://{}:{}/api/v4/version".format(HOST, GITLAB_LOCAL_PORT):
         f_name = os.path.join(os.path.dirname(__file__), 'fixtures', 'version.json')
         with open(f_name, 'r') as f:
             text_data = f.read()
             response = mock.MagicMock()
             response.status_code = 200
-            response.json.return_value = text_data
+            response.json.return_value = json.loads(text_data)
             return response
 
     pytest.fail("url `{}` not registered".format(args[0]))
@@ -256,9 +296,6 @@ def to_omv2_config(config):
 
 @pytest.fixture
 def use_openmetrics(request):
-    if request.param and PY2:
-        pytest.skip('This version of the integration is only available when using Python 3.')
-
     return request.param
 
 

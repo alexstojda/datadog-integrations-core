@@ -3,62 +3,34 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 from __future__ import annotations
 
-import os
 import random
-from contextlib import ExitStack
-from typing import Generator
+from collections.abc import AsyncIterator
+from contextlib import ExitStack, asynccontextmanager
+from typing import Any, Generator
 
 import pytest
 import vcr
-from click.testing import CliRunner as __CliRunner
 from datadog_checks.dev.tooling.utils import set_root
+from pytest_mock import MockerFixture
 
+from ddev.cli.application import Application
 from ddev.cli.terminal import Terminal
 from ddev.config.constants import AppEnvVars, ConfigEnvVars
-from ddev.config.file import ConfigFile
+from ddev.config.file import DDEV_TOML, ConfigFileWithOverrides
 from ddev.e2e.constants import E2EEnvVars
 from ddev.repo.core import Repository
 from ddev.utils.ci import running_in_ci
 from ddev.utils.fs import Path, temp_directory
+from ddev.utils.github import GitHubManager
 from ddev.utils.platform import Platform
 
-PLATFORM = Platform()
+from .helpers import APPLICATION, LOCAL_REPO_BRANCH, PLATFORM
+from .helpers.git import ClonedRepo
+from .helpers.github_async import FakeAsyncGitHubClient
+from .helpers.runner import CliRunner
 
-
-class ClonedRepo:
-    def __init__(self, path: Path, original_branch: str, testing_branch: str):
-        self.path = path
-        self.original_branch = original_branch
-        self.testing_branch = testing_branch
-
-    def reset_branch(self):
-        with self.path.as_cwd():
-            # Hard reset
-            PLATFORM.check_command_output(['git', 'checkout', '-fB', self.testing_branch, self.original_branch])
-
-            # Remove untracked files
-            PLATFORM.check_command_output(['git', 'clean', '-fd'])
-
-            # Remove all tags
-            tags_dir = self.path / '.git' / 'refs' / 'tags'
-            if tags_dir.is_dir():
-                tags_dir.remove()
-
-    @staticmethod
-    def new_branch():
-        return os.urandom(10).hex()
-
-
-class CliRunner(__CliRunner):
-    def __init__(self, command):
-        super().__init__()
-        self._command = command
-
-    def __call__(self, *args, **kwargs):
-        # Exceptions should always be handled
-        kwargs.setdefault('catch_exceptions', False)
-
-        return self.invoke(self._command, args, **kwargs)
+# Rewrite assertions on the assertions helper module
+pytest.register_assert_rewrite('tests.helpers.assertions')
 
 
 @pytest.fixture(scope='session')
@@ -71,6 +43,11 @@ def ddev():
 @pytest.fixture(scope='session')
 def platform() -> Platform:
     return PLATFORM
+
+
+@pytest.fixture(scope='session')
+def app() -> Application:
+    return APPLICATION
 
 
 @pytest.fixture(scope='session')
@@ -95,18 +72,53 @@ def valid_integrations(local_repo) -> list[str]:
 
 
 @pytest.fixture
+def github_manager(local_repo, config_file, terminal) -> GitHubManager:
+    return GitHubManager(
+        Repository(local_repo.name, str(local_repo)),
+        user=config_file.model.github.user,
+        token=config_file.model.github.token,
+        status=terminal.status,
+    )
+
+
+@pytest.fixture
+def fake_async_github(mocker: MockerFixture) -> FakeAsyncGitHubClient:
+    """Patch `async_github_client` to yield a `FakeAsyncGitHubClient` and stub the token."""
+    fake = FakeAsyncGitHubClient()
+
+    @asynccontextmanager
+    async def fake_context(
+        token: str,
+        default_timeout: float = 30.0,
+        transport: Any = None,
+        logger: Any = None,
+        observer: Any = None,
+        rate_limiter: Any = None,
+    ) -> AsyncIterator[FakeAsyncGitHubClient]:
+        yield fake
+
+    # Patch both import sites: the deep module name (for `from ...client import async_github_client`)
+    # and the package-level name (for `from ddev.utils.github_async import async_github_client`,
+    # which production code uses inside method bodies). Removing either leaves one import style unmocked.
+    mocker.patch('ddev.utils.github_async.client.async_github_client', fake_context)
+    mocker.patch('ddev.utils.github_async.async_github_client', fake_context)
+    mocker.patch.dict('os.environ', {'DD_GITHUB_TOKEN': 'ghp_test'})
+    return fake
+
+
+@pytest.fixture
 def valid_integration(valid_integrations) -> str:
     return random.choice(valid_integrations)
 
 
 @pytest.fixture(autouse=True)
-def config_file(tmp_path, monkeypatch, local_repo) -> ConfigFile:
+def config_file(tmp_path, monkeypatch, local_repo, mocker) -> ConfigFileWithOverrides:
     for env_var in (
         'FORCE_COLOR',
         'DD_ENV',
         'DD_SERVICE',
         'DD_SITE',
-        'DD_LOGS_CONFIG_DD_URL',
+        'DD_LOGS_CONFIG_LOGS_DD_URL',
         'DD_DD_URL',
         'DD_API_KEY',
         'DD_APP_KEY',
@@ -123,14 +135,25 @@ def config_file(tmp_path, monkeypatch, local_repo) -> ConfigFile:
     path = Path(tmp_path, 'config.toml')
     monkeypatch.setenv(ConfigEnvVars.CONFIG, str(path))
 
-    config = ConfigFile(path)
+    config = ConfigFileWithOverrides(path)
     config.reset()
 
+    # Disable upgrade check in tests to avoid messages spam.
+    config.global_model.upgrade_check = False
     # Provide a real default for times when tests have no need to modify the repo
-    config.model.repos['core'] = str(local_repo)
+    config.global_model.repos['core'] = str(local_repo)
     config.save()
 
     return config
+
+
+@pytest.fixture
+def overrides_config(temp_dir) -> Generator[Path]:
+    """Creates a temporary overrides config file in the temp current directory."""
+    with temp_dir.as_cwd():
+        ddev_toml = temp_dir / DDEV_TOML
+        ddev_toml.touch()
+        yield ddev_toml
 
 
 @pytest.fixture
@@ -140,8 +163,29 @@ def temp_dir(tmp_path) -> Path:
     return path
 
 
+@pytest.fixture
+def step_summary(tmp_path, monkeypatch) -> Path:
+    """Redirect the GitHub Actions job summary to a temporary file and return it.
+
+    Request this in any test that reaches code calling `write_step_summary`. Without it, such a test
+    inherits the real `GITHUB_STEP_SUMMARY` when the suite runs inside a workflow and appends its
+    output to the job's own summary panel.
+    """
+    summary_file = Path(tmp_path, 'step-summary.md')
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary_file))
+    return summary_file
+
+
+@pytest.fixture
+def without_step_summary(monkeypatch) -> None:
+    """Unset `GITHUB_STEP_SUMMARY`, for tests covering the no-summary-available path."""
+    monkeypatch.delenv('GITHUB_STEP_SUMMARY', raising=False)
+
+
 @pytest.fixture(scope='session', autouse=True)
 def isolation() -> Generator[Path, None, None]:
+    from unittest.mock import patch
+
     with temp_directory() as d:
         data_dir = d / 'data'
         data_dir.mkdir()
@@ -154,12 +198,18 @@ def isolation() -> Generator[Path, None, None]:
             'LINES': '24',
         }
         with d.as_cwd(default_env_vars):
-            yield d
+            # Prevent upgrade check from registering atexit handlers during tests
+            with patch('ddev.cli.upgrade_check.atexit.register'):
+                yield d
 
 
 @pytest.fixture(scope='session')
 def local_clone(isolation, local_repo) -> Generator[ClonedRepo, None, None]:
     cloned_repo_path = isolation / local_repo.name
+
+    # Get the current origin remote url
+    with local_repo.as_cwd():
+        origin_url = PLATFORM.check_command_output(['git', 'remote', 'get-url', 'origin']).strip()
 
     PLATFORM.check_command_output(
         ['git', 'clone', '--local', '--shared', '--no-tags', str(local_repo), str(cloned_repo_path)]
@@ -168,8 +218,19 @@ def local_clone(isolation, local_repo) -> Generator[ClonedRepo, None, None]:
         PLATFORM.check_command_output(['git', 'config', 'user.name', 'Foo Bar'])
         PLATFORM.check_command_output(['git', 'config', 'user.email', 'foo@bar.baz'])
         PLATFORM.check_command_output(['git', 'config', 'commit.gpgsign', 'false'])
+        PLATFORM.check_command_output(['git', 'config', 'tag.gpgsign', 'false'])
 
-    cloned_repo = ClonedRepo(cloned_repo_path, 'origin/master', 'ddev-testing')
+        # Set url to point to the origin of the local source and not to the local repo
+        PLATFORM.check_command_output(['git', 'remote', 'set-url', 'origin', origin_url])
+        # Now fetch latest updates
+        PLATFORM.check_command_output(['git', 'fetch', 'origin'])
+
+        # Add a worktree within the repo and one outside of it that should be ignored by ddev
+        # It is not a fast operation so lets do it once per session
+        PLATFORM.check_command_output(['git', 'worktree', 'add', 'wt', 'HEAD'])
+        PLATFORM.check_command_output(['git', 'worktree', 'add', '../wt2', 'HEAD'])
+
+    cloned_repo = ClonedRepo(cloned_repo_path, 'origin/master', LOCAL_REPO_BRANCH)
     cloned_repo.reset_branch()
 
     yield cloned_repo
@@ -185,6 +246,12 @@ def repository(local_clone, config_file) -> Generator[ClonedRepo, None, None]:
     finally:
         set_root('')
         local_clone.reset_branch()
+
+
+@pytest.fixture
+def repository_as_cwd(repository: ClonedRepo) -> Generator[ClonedRepo, None, None]:
+    with repository.path.as_cwd():
+        yield repository
 
 
 @pytest.fixture(scope='session')
@@ -235,19 +302,19 @@ def helpers():
 def pytest_runtest_setup(item):
     for marker in item.iter_markers():
         if marker.name == 'requires_ci' and not running_in_ci():  # no cov
-            pytest.skip('Not running in CI')
+            pytest.skip('Only running in CI')
 
         if marker.name == 'requires_windows' and not PLATFORM.windows:
-            pytest.skip('Not running on Windows')
+            pytest.skip('Only running on Windows')
 
         if marker.name == 'requires_macos' and not PLATFORM.macos:
-            pytest.skip('Not running on macOS')
+            pytest.skip('Only running on macOS')
 
         if marker.name == 'requires_linux' and not PLATFORM.linux:
-            pytest.skip('Not running on Linux')
+            pytest.skip('Only running on Linux')
 
         if marker.name == 'requires_unix' and PLATFORM.windows:
-            pytest.skip('Not running on a Linux-based platform')
+            pytest.skip('Only running on a Linux-based platform')
 
 
 def pytest_configure(config):

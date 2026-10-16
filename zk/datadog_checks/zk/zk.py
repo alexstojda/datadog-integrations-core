@@ -56,19 +56,17 @@ zk_max_file_descriptor_count    4096
 ```
 
 """
+
 import re
 import socket
 import struct
 from collections import defaultdict
 from contextlib import closing
+from io import StringIO
 
 from packaging.version import Version
-from six import PY3, StringIO, iteritems
 
 from datadog_checks.base import AgentCheck, ensure_bytes, ensure_unicode, is_affirmative
-
-if PY3:
-    long = int
 
 
 class ZKConnectionFailure(Exception):
@@ -149,7 +147,7 @@ class ZookeeperCheck(AgentCheck):
                 message = None
             else:
                 status = AgentCheck.WARNING
-                message = u'Response from the server: %s' % ruok
+                message = 'Response from the server: %s' % ruok
         finally:
             self.service_check('zookeeper.ruok', status, message=message, tags=self.sc_tags)
 
@@ -186,7 +184,7 @@ class ZookeeperCheck(AgentCheck):
                     message = None
                 else:
                     status = AgentCheck.CRITICAL
-                    message = u"Server is in %s mode but check expects %s mode" % (
+                    message = "Server is in %s mode but check expects %s mode" % (
                         mode,
                         ' or '.join(self.expected_mode),
                     )
@@ -226,7 +224,7 @@ class ZookeeperCheck(AgentCheck):
         tags = self.base_tags + ['mode:%s' % mode]
         self.gauge('zookeeper.instances', 1, tags=tags)
         gauges[mode] = 1
-        for k, v in iteritems(gauges):
+        for k, v in gauges.items():
             gauge_name = 'zookeeper.instances.%s' % k
             self.gauge(gauge_name, v, tags=self.base_tags)
 
@@ -309,15 +307,15 @@ class ZookeeperCheck(AgentCheck):
         _, value = buf.readline().split(':')
         # Fixme: This metric name is wrong. It should be removed in a major version of the agent
         # See https://github.com/DataDog/integrations-core/issues/816
-        metrics.append(ZKMetric('zookeeper.bytes_received', long(value.strip())))
-        metrics.append(ZKMetric('zookeeper.packets.received', long(value.strip()), "rate"))
+        metrics.append(ZKMetric('zookeeper.bytes_received', int(value.strip())))
+        metrics.append(ZKMetric('zookeeper.packets.received', int(value.strip()), "rate"))
 
         # Sent: 1324
         _, value = buf.readline().split(':')
         # Fixme: This metric name is wrong. It should be removed in a major version of the agent
         # See https://github.com/DataDog/integrations-core/issues/816
-        metrics.append(ZKMetric('zookeeper.bytes_sent', long(value.strip())))
-        metrics.append(ZKMetric('zookeeper.packets.sent', long(value.strip()), "rate"))
+        metrics.append(ZKMetric('zookeeper.bytes_sent', int(value.strip())))
+        metrics.append(ZKMetric('zookeeper.packets.sent', int(value.strip()), "rate"))
 
         if has_connections_val:
             # Connections: 1
@@ -330,12 +328,12 @@ class ZookeeperCheck(AgentCheck):
 
         # Outstanding: 0
         _, value = buf.readline().split(':')
-        metrics.append(ZKMetric('zookeeper.outstanding_requests', long(value.strip())))
+        metrics.append(ZKMetric('zookeeper.outstanding_requests', int(value.strip())))
 
         # Zxid: 0x1034799c7
         _, value = buf.readline().split(':')
         # Parse as a 64 bit hex int
-        zxid = long(value.strip(), 16)
+        zxid = int(value.strip(), 16)
         # convert to bytes
         zxid_bytes = struct.pack('>q', zxid)
         # the higher order 4 bytes is the epoch
@@ -349,11 +347,11 @@ class ZookeeperCheck(AgentCheck):
         # Mode: leader
         _, value = buf.readline().split(':')
         mode = value.strip().lower()
-        tags = [u'mode:' + mode]
+        tags = ['mode:' + mode]
 
         # Node count: 487
         _, value = buf.readline().split(':')
-        metrics.append(ZKMetric('zookeeper.nodes', long(value.strip())))
+        metrics.append(ZKMetric('zookeeper.nodes', int(value.strip())))
 
         return metrics, tags, mode, version
 

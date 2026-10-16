@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "9f45bc5b-ef21-4336-a44d-7891a7a35cec",
   "app_id": "riak",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,8 @@
       "Supported OS::macOS",
       "Supported OS::Windows",
       "Category::Data Stores",
-      "Category::Log Collection"
+      "Category::Log Collection",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -47,9 +49,6 @@
     },
     "dashboards": {
       "riak": "assets/dashboards/riak_dashboard.json"
-    },
-    "logs": {
-      "source": "riak"
     }
   }
 }

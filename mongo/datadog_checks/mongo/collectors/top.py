@@ -1,9 +1,6 @@
 # (C) Datadog, Inc. 2020-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
-
-from six import iteritems
-
 from datadog_checks.mongo.collectors.base import MongoCollector
 from datadog_checks.mongo.common import MongosDeployment, ReplicaSetDeployment
 from datadog_checks.mongo.metrics import TOP_METRICS
@@ -25,8 +22,8 @@ class TopCollector(MongoCollector):
         return True
 
     def collect(self, api):
-        dbtop = api["admin"].command('top')
-        for ns, ns_metrics in iteritems(dbtop['totals']):
+        dbtop = api["admin"].command('top', maxTimeMS=api._timeout)
+        for ns, ns_metrics in dbtop['totals'].items():
             if "." not in ns:
                 continue
 

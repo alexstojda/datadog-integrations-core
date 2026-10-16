@@ -921,6 +921,17 @@
             "fastmod": 12,
             "idhack": 13
         },
+        "query": {
+            "planCache": {
+              "classic": { "hits": 13041302, "misses": 1023350 },
+              "sbe": { "hits": 444, "misses": 878 }
+            },
+            "sort": {
+              "spillToDisk": 18,
+              "totalBytesSorted": 4808797953,
+              "totalKeysSorted": 14394599
+            }
+        },
         "queryExecutor": {
             "scanned": 46,
             "scannedObjects": 97
@@ -1039,6 +1050,15 @@
              "bytes read into cache": 12,
              "bytes written from cache": 12,
              "pages evicted by application threads": 12,
+             "application thread time evicting (usecs)": 12,
+             "page evict attempts by application threads": 12,
+             "page evict failures by application threads": 12,
+             "modified page evict attempts by application threads": 12,
+             "modified page evict failures by application threads": 12,
+             "evict page attempts by eviction server": 12,
+             "evict page failures by eviction server": 12,
+             "evict page attempts by eviction worker threads": 12,
+             "evict page failures by eviction worker threads": 12,
              "checkpoint blocked page eviction": 12,
              "unmodified pages evicted": 12,
              "page split during eviction deepened the tree": 12,
@@ -1068,6 +1088,7 @@
              "pages currently held in the cache": 12,
              "pages read into cache": 12,
              "pages read into cache requiring lookaside entries": 12,
+             "pages requested from the cache": 12,
              "pages written from cache": 12,
              "page written requiring lookaside records": 12,
              "pages written requiring in-memory restoration": 12

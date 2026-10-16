@@ -4,14 +4,28 @@
 import os
 import subprocess
 import sys
+import threading
+from contextlib import contextmanager, nullcontext
 
-from ..common import ensure_bytes, to_native_string
-from ..platform import Platform
-from ..serialization import json
+from datadog_checks.base.utils.common import ensure_bytes, to_native_string
+from datadog_checks.base.utils.format import json
+from datadog_checks.base.utils.platform import Platform
+
 from .constants import KNOWN_DATADOG_AGENT_SETTER_METHODS, EnvVars
 
 
+@contextmanager
+def _timer(timeout, callback):
+    timer = threading.Timer(timeout, callback)
+    timer.start()
+    try:
+        yield
+    finally:
+        timer.cancel()
+
+
 def run_with_isolation(check, aggregator, datadog_agent):
+    """Run the check in a separate process and return its error report, or an empty string if it succeeded."""
     message_indicator = os.urandom(8).hex()
     instance = dict(check.instance)
     init_config = dict(check.init_config)
@@ -20,12 +34,16 @@ def run_with_isolation(check, aggregator, datadog_agent):
     instance.pop('process_isolation', None)
     init_config.pop('process_isolation', None)
 
+    timeout = instance.pop('process_isolation_timeout', init_config.pop('process_isolation_timeout', None))
+    if timeout is not None:
+        timeout = float(timeout)
+
     env_vars = dict(os.environ)
     env_vars[EnvVars.MESSAGE_INDICATOR] = message_indicator
     env_vars[EnvVars.CHECK_NAME] = check.name
     env_vars[EnvVars.CHECK_ID] = check.check_id
-    env_vars[EnvVars.INIT_CONFIG] = to_native_string(json.dumps(init_config))
-    env_vars[EnvVars.INSTANCE] = to_native_string(json.dumps(instance))
+    env_vars[EnvVars.INIT_CONFIG] = to_native_string(json.encode(init_config))
+    env_vars[EnvVars.INSTANCE] = to_native_string(json.encode(instance))
 
     if Platform.is_windows():
         env_vars[EnvVars.DDTRACE] = "false"
@@ -43,40 +61,65 @@ def run_with_isolation(check, aggregator, datadog_agent):
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         env=env_vars,
     )
+    timed_out = False
+    error_report = ''
+
+    def _kill_on_timeout():
+        nonlocal timed_out
+        timed_out = True
+        # currently this only kills the parent process; does not support checks that spawn sub-processes
+        process.kill()
+
+    timer = _timer(timeout, _kill_on_timeout) if timeout is not None else nullcontext()
+
     with process:
         check.log.info('Running check in a separate process')
+        with timer:
+            # To avoid blocking never use a pipe's file descriptor iterator. See https://bugs.python.org/issue3907
+            for line in iter(process.stdout.readline, b''):
+                line = line.rstrip().decode('utf-8')
+                indicator, _, procedure = line.partition(':')
+                if indicator != message_indicator:
+                    check.log.debug(line)
+                    continue
 
-        # To avoid blocking never use a pipe's file descriptor iterator. See https://bugs.python.org/issue3907
-        for line in iter(process.stdout.readline, b''):
-            line = line.rstrip().decode('utf-8')
-            indicator, _, procedure = line.partition(':')
-            if indicator != message_indicator:
-                check.log.debug(line)
-                continue
+                check.log.trace(line)
 
-            check.log.trace(line)
+                message_type, _, message = procedure.partition(':')
+                message = json.decode(message)
+                if message_type == 'aggregator':
+                    getattr(aggregator, message['method'])(check, *message['args'], **message['kwargs'])
+                elif message_type == 'log':
+                    args = message.get('args', [])
+                    if args:
+                        getattr(check.log, message['method'])(args[0])
+                elif message_type == 'datadog_agent':
+                    method = message['method']
+                    args = message['args']
+                    if method == 'set_external_tags':
+                        args = [[tuple(item) for item in args[0]]]
+                    value = getattr(datadog_agent, method)(*args, **message['kwargs'])
+                    if method not in KNOWN_DATADOG_AGENT_SETTER_METHODS:
+                        try:
+                            process.stdin.write(b'%s\n' % ensure_bytes(json.encode({'value': value})))
+                            process.stdin.flush()
+                        except BrokenPipeError:
+                            break
+                elif message_type == 'error':
+                    check.log.error(message[0]['traceback'])
+                    error_report = json.encode(message)
+                    break
+                else:
+                    check.log.error(
+                        'Unknown message type encountered during communication with the isolated process: %s',
+                        message_type,
+                    )
+                    break
+    if timed_out:
+        check.log.error('Check timed out after %s seconds', timeout)
+        check.warning('Check timed out and possibly reported incomplete data.')
 
-            message_type, _, message = procedure.partition(':')
-            message = json.loads(message)
-            if message_type == 'aggregator':
-                getattr(aggregator, message['method'])(check, *message['args'], **message['kwargs'])
-            elif message_type == 'log':
-                getattr(check.log, message['method'])(*message['args'])
-            elif message_type == 'datadog_agent':
-                method = message['method']
-                value = getattr(datadog_agent, method)(*message['args'], **message['kwargs'])
-                if method not in KNOWN_DATADOG_AGENT_SETTER_METHODS:
-                    process.stdin.write(b'%s\n' % ensure_bytes(json.dumps({'value': value})))
-                    process.stdin.flush()
-            elif message_type == 'error':
-                check.log.error(message[0]['traceback'])
-                break
-            else:
-                check.log.error(
-                    'Unknown message type encountered during communication with the isolated process: %s',
-                    message_type,
-                )
-                break
+    return error_report

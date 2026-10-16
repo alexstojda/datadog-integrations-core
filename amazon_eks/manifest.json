@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "abb8b86b-eeb7-4e38-b436-f4cbb09b4398",
   "app_id": "amazon-eks",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -9,7 +10,7 @@
     "support": "README.md#Support",
     "changelog": "CHANGELOG.md",
     "description": "Amazon EKS is a managed service that makes it easy to run Kubernetes on AWS",
-    "title": "Amazon EKS",
+    "title": "Amazon EKS (Agent)",
     "media": [],
     "classifier_tags": [
       "Category::AWS",
@@ -21,7 +22,22 @@
       "Category::Orchestration",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/announcing-eks"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/eks-cluster-metrics"
+      },
+      {
+        "resource_type": "documentation",
+        "url": "https://docs.datadoghq.com/integrations/eks_fargate/"
+      }
     ]
   },
   "author": {

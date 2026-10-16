@@ -4,7 +4,6 @@
 from collections import defaultdict
 
 import mock
-from six import iteritems
 
 from datadog_checks.base.utils.platform import Platform
 from datadog_checks.system_core import SystemCore
@@ -37,9 +36,10 @@ class TestSystemCore:
         We force the 'is_unix' check to be false to make sure no per-CPU tags are attached to the frequency metric.
         """
         c = SystemCore('system_core', {}, {}, [{}])
-        with mock.patch('datadog_checks.system_core.system_core.psutil') as psutil_mock, mock.patch.object(
-            Platform, 'is_unix'
-        ) as is_unix_mock:
+        with (
+            mock.patch('datadog_checks.system_core.system_core.psutil') as psutil_mock,
+            mock.patch.object(Platform, 'is_unix') as is_unix_mock,
+        ):
             psutil_mock.cpu_times.side_effect = fake_cpu_times
             psutil_mock.cpu_count.return_value = common.MOCK_PSUTIL_CPU_COUNT
             psutil_mock.cpu_freq.return_value = common.MOCK_PSUTIL_CPU_FREQ
@@ -57,7 +57,7 @@ def fake_cpu_times(percpu=False):
         sum_dict = defaultdict(float)
 
         for cputimes in common.MOCK_PSUTIL_CPU_TIMES:
-            for key, value in iteritems(cputimes._asdict()):
+            for key, value in cputimes._asdict().items():
                 sum_dict[key] += value / len(common.MOCK_PSUTIL_CPU_TIMES)
 
         return common.MOCK_PSUTIL_CPU_TIMES[0].__class__(**sum_dict)

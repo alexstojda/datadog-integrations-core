@@ -9,21 +9,23 @@ except ImportError:
     from simplejson import JSONDecodeError
 
 import os
-import shlex
+import subprocess
 from typing import Dict, List  # noqa: F401
-
-from six import iteritems
 
 from datadog_checks.base import AgentCheck, ConfigurationError
 from datadog_checks.base.config import is_affirmative
-from datadog_checks.base.utils.subprocess_output import get_subprocess_output
 
-from .metrics import BRICK_STATS, CLUSTER_STATS, PARSE_METRICS, VOL_SUBVOL_STATS, VOLUME_STATS
+try:
+    import datadog_agent
+except ImportError:
+    from datadog_checks.base.stubs import datadog_agent
+
+from .metrics import BRICK_STATS, CLUSTER_STATS, HEAL_INFO_STATS, PARSE_METRICS, VOL_SUBVOL_STATS, VOLUME_STATS
 
 GLUSTER_VERSION = 'glfs_version'
 CLUSTER_STATUS = 'cluster_status'
 
-GSTATUS_PATH = '/opt/datadog-agent/embedded/sbin/gstatus'
+GSTATUS_PATH_SUFFIX = '/embedded/sbin/gstatus'
 
 
 class GlusterfsCheck(AgentCheck):
@@ -42,8 +44,12 @@ class GlusterfsCheck(AgentCheck):
         if init_config.get('gstatus_path'):
             self.gstatus_cmd = init_config.get('gstatus_path')
         else:
-            if os.path.exists(GSTATUS_PATH):
-                self.gstatus_cmd = GSTATUS_PATH
+            path = datadog_agent.get_config('run_path')
+            if path.endswith('/run'):
+                path = path[:-4]
+            path = path + GSTATUS_PATH_SUFFIX
+            if os.path.exists(path):
+                self.gstatus_cmd = path
             else:
                 raise ConfigurationError(
                     'Glusterfs check requires `gstatus` to be installed or set the path to the installed version.'
@@ -51,23 +57,32 @@ class GlusterfsCheck(AgentCheck):
         self.log.debug("Using gstatus path `%s`", self.gstatus_cmd)
         self.use_sudo = is_affirmative(self.instance.get('use_sudo', True))
 
+    def get_gstatus_output(self, cmd):
+        res = subprocess.run(cmd.split(), capture_output=True, text=True)
+        return res.stdout, res.stderr, res.returncode
+
     def check(self, _):
         if self.use_sudo:
-            test_sudo, err, rcode = get_subprocess_output(
-                ['sudo', '-ln', self.gstatus_cmd], self.log, raise_on_empty_output=False
-            )
-            if rcode != 0 or not test_sudo:
-                raise Exception('The dd-agent user does not have sudo access: {!r}'.format(err or test_sudo))
-            gluster_args = 'sudo {}'.format(self.gstatus_cmd)
+            cmd = f'sudo -ln {self.gstatus_cmd}'
+            stdout, stderr, returncode = self.get_gstatus_output(cmd)
+            if returncode != 0 or not stdout:
+                raise Exception('The dd-agent user does not have sudo access: {!r}'.format(stderr or stdout))
+            gluster_cmd = f'sudo {self.gstatus_cmd}'
         else:
-            gluster_args = self.gstatus_cmd
+            gluster_cmd = self.gstatus_cmd
         # Ensures units are universally the same by specifying the --units flag
-        gluster_args += ' -a -o json -u g'
-        gluster_args = shlex.split(gluster_args)
-        self.log.debug("gstatus command: %s", gluster_args)
+        gluster_cmd += ' -a -o json -u g'
+        self.log.debug("gstatus command: %s", gluster_cmd)
         try:
-            output, _, _ = get_subprocess_output(gluster_args, self.log)
-            gstatus = json.loads(output)
+            # In testing I saw that even though we request the json, sometimes there's a line that appears at the top
+            # and thus will break the json loading. A line like:
+            # 'Note: Unable to get self-heal status for one or more volumes \n'
+            stdout, stderr, returncode = self.get_gstatus_output(gluster_cmd)
+            if stdout.lstrip().startswith('{'):
+                json_data = stdout
+            else:
+                json_data = stdout.split('\n', 1)[-1]
+            gstatus = json.loads(json_data)
         except JSONDecodeError as e:
             self.log.warning("Unable to decode gstatus output: %s", str(e))
             raise
@@ -141,13 +156,19 @@ class GlusterfsCheck(AgentCheck):
             if 'subvols' in volume:
                 self.parse_subvols_stats(volume.get('subvols', []), volume_tags)
 
-            self.submit_service_check(self.VOLUME_SC, volume.get('health'), volume_tags)
+            if 'healinfo' in volume:
+                self.parse_healinfo_stats(volume.get('healinfo', []), volume_tags)
+
+            if 'health' in volume:
+                self.submit_service_check(self.VOLUME_SC, volume['health'], volume_tags)
 
     def parse_subvols_stats(self, subvols, volume_tags):
         for subvol in subvols:
             subvol_tags = volume_tags + ['subvol_name:{}'.format(subvol.get('name'))]
             self.submit_metrics(subvol, 'subvol', VOL_SUBVOL_STATS, subvol_tags)
-            self.submit_service_check(self.BRICK_SC, subvol['health'], subvol_tags)
+
+            if 'health' in subvol:
+                self.submit_service_check(self.BRICK_SC, subvol['health'], subvol_tags)
 
             for brick in subvol.get('bricks', []):
                 brick_name = brick['name'].split(":")
@@ -166,14 +187,32 @@ class GlusterfsCheck(AgentCheck):
                 tags.extend(subvol_tags)
                 self.submit_metrics(brick, 'brick', BRICK_STATS, tags)
 
+    def parse_healinfo_stats(self, healinfo, volume_tags):
+        for info in healinfo:
+            if info['status'].lower() != 'connected':
+                continue
+
+            brick_name = info['name'].split(":")
+            brick_server = brick_name[0]
+            brick_export = brick_name[1]
+            tags = [
+                'brick_server:{}'.format(brick_server),
+                'brick_export:{}'.format(brick_export),
+            ]
+            tags.extend(volume_tags)
+            self.submit_metrics(info, 'heal_info', HEAL_INFO_STATS, tags)
+
     def submit_metrics(self, payload, prefix, metric_mapping, tags):
         """
         Parse a payload with a given metric_mapping and submit metric for valid values.
         Some values contain measurements like `GiB` which should be removed and only submitted if consistent
         """
-        for key, metric in iteritems(metric_mapping):
+        for key, metric in metric_mapping.items():
             if key in payload:
                 value = payload[key]
+
+                if isinstance(value, str) and value.lower() == 'n/a':
+                    continue
 
                 if key in PARSE_METRICS:
                     try:

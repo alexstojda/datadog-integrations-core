@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "1e4b89ef-f66e-4c78-8cb3-70a222a1fcb4",
   "app_id": "pan-firewall",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,9 +17,21 @@
       "Category::Network",
       "Category::OS & System",
       "Category::Security",
+      "Category::SIEM",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "documentation",
+        "url": "https://docs.paloaltonetworks.com/pan-os/9-1/pan-os-admin/monitoring/use-syslog-for-monitoring/syslog-field-descriptions"
+      },
+      {
+        "resource_type": "documentation",
+        "url": "https://docs.datadoghq.com/logs/log_collection/?tab=tailexistingfiles#getting-started-with-the-agent"
+      }
     ]
   },
   "author": {
@@ -39,7 +52,6 @@
       "service_checks": {
         "metadata_path": "assets/service_checks.json"
       },
-      "process_signatures": [],
       "source_type_id": 10155,
       "auto_install": true
     },
@@ -49,9 +61,6 @@
     "saved_views": {
       "High Severity Issues": "assets/saved_views/all_high_severity_issues.json",
       "Authentication Protocol": "assets/saved_views/top_ips_flagged_in_high_severity_threats.json"
-    },
-    "logs": {
-      "source": "pan.firewall"
     }
   }
 }

@@ -4,8 +4,7 @@
 # Licensed under Simplified BSD License (see LICENSE)
 
 import re
-
-from six.moves.urllib.parse import urlparse
+from urllib.parse import urlparse
 
 from datadog_checks.base import AgentCheck, ConfigurationError
 from datadog_checks.base.utils.subprocess_output import get_subprocess_output
@@ -28,6 +27,7 @@ class Fluentd(AgentCheck):
         'buffer_stage_byte_size',
         'buffer_queue_byte_size',
         'buffer_available_buffer_space_ratios',
+        'tracked_file_count',
     ]
     _AVAILABLE_TAGS = frozenset(['plugin_id', 'type'])
     VERSION_PATTERN = r'.* (?P<version>[0-9\.]+)'

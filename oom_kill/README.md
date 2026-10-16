@@ -23,7 +23,7 @@ yum install -y kernel-headers-$(uname -r)
 yum install -y kernel-devel-$(uname -r)
 ```
 
-**Note**: Kernel version 4.11 or later is required for the OOM Kill check to work.
+**Note**: Kernel version 4.9 or later is required for the OOM Kill check to work.
 In addition, Windows and CentOS/RHEL versions earlier than 8 are not supported.
 
 ### Configuration
@@ -46,8 +46,8 @@ In addition to mounting `system-probe.yaml` and `oom_kill.d/conf.yaml` as descri
 1. Mount the following volumes to the Agent container:
 
     ```
-    -v /sys/kernel/debug:/sys/kernel/debug 
-    -v /lib/modules:/lib/modules 
+    -v /sys/kernel/debug:/sys/kernel/debug
+    -v /lib/modules:/lib/modules
     -v /usr/src:/usr/src
     ```
 
@@ -56,15 +56,15 @@ In addition to mounting `system-probe.yaml` and `oom_kill.d/conf.yaml` as descri
     ```
     --privileged
     ```
-    
-    From kernel version 5.8, the `--privileged` parameter can be replaces by `--cap-add CAP_BPF`. 
+
+    From kernel version 5.8, the `--privileged` parameter can be replaces by `--cap-add CAP_BPF`.
 
 **Note**: `--privileged` mode is not supported in Docker swarm.
 
 
 ### Configuration with Helm
 
-With the [Datadog Helm chart][4], ensure that the `datadog.systemProbe` and `datadog.systemProbe.enableOOMKill` parameters are enabled in the `values.yaml` file.
+With the [Datadog Helm chart][4], set the `datadog.systemProbe.enableOOMKill` parameter to `true` in the `values.yaml` file. The `system-probe` is deployed automatically.
 
 ### Configuration with the Operator (v1.0.0+)
 
@@ -92,7 +92,7 @@ spec:
       enabled: true
   override:
     nodeAgent:
-      volumes: 
+      volumes:
       - emptyDir: {}
         name: src
 ```
@@ -119,7 +119,7 @@ The OOM Kill check submits an event for each OOM Kill that includes the killed p
 
 Need help? Contact [Datadog support][7].
 
-[1]: https://app.datadoghq.com/account/settings/agent/latest
+[1]: /account/settings/agent/latest
 [2]: https://github.com/DataDog/datadog-agent/blob/master/cmd/agent/dist/conf.d/oom_kill.d/conf.yaml.example
 [3]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
 [4]: https://github.com/DataDog/helm-charts

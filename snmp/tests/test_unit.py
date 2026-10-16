@@ -31,7 +31,7 @@ from datadog_checks.snmp.utils import (
 from . import common
 from .utils import mkdir_p, mock_profiles_confd_default_root, mock_profiles_confd_user_root
 
-pytestmark = [pytest.mark.unit, common.snmp_integration_only]
+pytestmark = [pytest.mark.unit, common.python_suite_only]
 
 
 @mock.patch("datadog_checks.snmp.pysnmp_types.lcd")
@@ -298,6 +298,7 @@ def test_removing_host():
     discovered_instance = instance.copy()
     discovered_instance['ip_address'] = '1.1.1.1'
     discovered_instance['retries'] = 0
+    discovered_instance['timeout'] = 1
     instance.pop('ip_address')
     instance['network_address'] = '192.168.0.0/24'
     check = SnmpCheck('snmp', {}, [instance])
@@ -346,6 +347,8 @@ def test_invalid_discovery_interval():
 @mock.patch("datadog_checks.snmp.snmp.read_persistent_cache")
 def test_cache_discovered_host(read_mock):
     instance = common.generate_instance_config(common.SUPPORTED_METRIC_TYPES)
+    instance['timeout'] = 1
+    instance['retries'] = 0
     instance.pop('ip_address')
     instance['network_address'] = '192.168.0.0/24'
 
@@ -377,6 +380,7 @@ def test_cache_corrupted(write_mock, read_mock):
 def test_cache_building(write_mock, read_mock):
     instance = common.generate_instance_config(common.SUPPORTED_METRIC_TYPES)
     instance['timeout'] = 1
+    instance['retries'] = 0
     instance.pop('ip_address')
 
     read_mock.return_value = '[]'
@@ -448,10 +452,10 @@ def test_profile_extends():
 
     with temp_dir() as tmp:
         with mock_profiles_confd_default_root(tmp):
-            with open(os.path.join(tmp, 'base.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'base.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(base))
 
-            with open(os.path.join(tmp, 'profile1.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'profile1.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(profile1))
 
             definition = {'extends': ['profile1.yaml']}
@@ -477,7 +481,7 @@ def test_default_profiles():
     with temp_dir() as tmp:
         with mock_profiles_confd_default_root(tmp):
             profile_file = os.path.join(tmp, 'profile.yaml')
-            with open(profile_file, 'wb') as f:
+            with open(profile_file, 'w') as f:
                 f.write(yaml.safe_dump(profile))
 
             profiles = _load_default_profiles()
@@ -492,7 +496,7 @@ def test_profile_override():
     with temp_dir() as tmp:
         with mock_profiles_confd_default_root(tmp):
             profile_file = os.path.join(tmp, 'generic-device.yaml')
-            with open(profile_file, 'wb') as f:
+            with open(profile_file, 'w') as f:
                 f.write(yaml.safe_dump(profile))
 
             profiles = _load_default_profiles()
@@ -509,15 +513,16 @@ def test_user_profile_override():
     }
 
     with temp_dir() as tmp:
-        with mock_profiles_confd_default_root(os.path.join(tmp, 'default_profiles')), mock_profiles_confd_user_root(
-            os.path.join(tmp, 'profiles')
+        with (
+            mock_profiles_confd_default_root(os.path.join(tmp, 'default_profiles')),
+            mock_profiles_confd_user_root(os.path.join(tmp, 'profiles')),
         ):
             mkdir_p(os.path.join(tmp, 'default_profiles'))
             mkdir_p(os.path.join(tmp, 'profiles'))
 
-            with open(os.path.join(tmp, 'default_profiles', 'generic-device.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'default_profiles', 'generic-device.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(default_profile))
-            with open(os.path.join(tmp, 'profiles', 'generic-device.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'profiles', 'generic-device.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(user_profile))
 
             profiles = _load_default_profiles()
@@ -552,21 +557,22 @@ def test_profile_extends_with_user_profiles():
     }
 
     with temp_dir() as tmp:
-        with mock_profiles_confd_default_root(os.path.join(tmp, 'default_profiles')), mock_profiles_confd_user_root(
-            os.path.join(tmp, 'profiles')
+        with (
+            mock_profiles_confd_default_root(os.path.join(tmp, 'default_profiles')),
+            mock_profiles_confd_user_root(os.path.join(tmp, 'profiles')),
         ):
             mkdir_p(os.path.join(tmp, 'default_profiles'))
             mkdir_p(os.path.join(tmp, 'profiles'))
 
-            with open(os.path.join(tmp, 'default_profiles', 'base.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'default_profiles', 'base.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(default_base))
-            with open(os.path.join(tmp, 'default_profiles', 'profile1.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'default_profiles', 'profile1.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(default_profile1))
-            with open(os.path.join(tmp, 'default_profiles', '_abstract.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'default_profiles', '_abstract.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(default_abstract))
-            with open(os.path.join(tmp, 'profiles', 'profile1.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'profiles', 'profile1.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(user_profile1))
-            with open(os.path.join(tmp, 'profiles', '_abstract.yaml'), 'wb') as f:
+            with open(os.path.join(tmp, 'profiles', '_abstract.yaml'), 'w') as f:
                 f.write(yaml.safe_dump(user_abstract))
 
             definition = {'extends': ['profile1.yaml']}

@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "61898266-9c80-442d-89d3-22e7aeeafb94",
   "app_id": "boundary",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,8 @@
       "Supported OS::Windows",
       "Supported OS::macOS",
       "Category::Configuration & Deployment",
-      "Category::Log Collection"
+      "Category::Log Collection",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -46,13 +48,10 @@
       "auto_install": true
     },
     "monitors": {
-      "[Boundary] High active connections": "assets/monitors/active_connections.json"
+      "Number of active connections is too high": "assets/monitors/active_connections.json"
     },
     "dashboards": {
       "Boundary Overview": "assets/dashboards/boundary_overview.json"
-    },
-    "logs": {
-      "source": "boundary"
     }
   }
 }

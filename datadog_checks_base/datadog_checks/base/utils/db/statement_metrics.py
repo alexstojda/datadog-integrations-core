@@ -13,9 +13,7 @@ class StatementMetrics:
 
         - Postgres: pg_stat_statements
         - MySQL: performance_schema.events_statements_summary_by_digest
-        - Oracle: V$SQLAREA
         - SQL Server: sys.dm_exec_query_stats
-        - DB2: mon_db_summary
 
     These tables are monotonically increasing, so the metrics are computed from the difference
     in values between check runs.
@@ -24,7 +22,7 @@ class StatementMetrics:
     def __init__(self):
         self._previous_statements = {}
 
-    def compute_derivative_rows(self, rows, metrics, key):
+    def compute_derivative_rows(self, rows, metrics, key, execution_indicators=None):
         """
         Compute the first derivative of column-based metrics for a given set of rows. This function
         takes the difference of the previous check run's values and the current check run's values
@@ -41,10 +39,20 @@ class StatementMetrics:
         :params rows (_List[dict]_): rows from current check run
         :params metrics (_List[str]_): the metrics to compute for each row
         :params key (_callable_): function for an ID which uniquely identifies a row across runs
+        :params execution_indicators (_List[str]_): list of metrics that must change to consider a query as executed.
+            These are typically metrics that increment only when a query actually executes, such as:
+            - PostgreSQL: 'calls' from pg_stat_statements
+            - MySQL: 'exec_count' from performance_schema.events_statements_summary_by_digest
+            - SQL Server: 'execution_count' from sys.dm_exec_query_stats
+            This helps filter out cases where a normalized query was evicted then re-inserted with same call count
+            (usually 1) and slight duration change. In this case, the new normalized query entry should be treated
+            as the baseline for future diffs.
         :return (_List[dict]_): a list of rows with the first derivative of the metrics
         """
         result = []
         metrics = set(metrics)
+        if execution_indicators:
+            execution_indicators = set(execution_indicators)
 
         merged_rows, dropped_metrics = _merge_duplicate_rows(rows, metrics, key)
         if dropped_metrics:
@@ -52,41 +60,65 @@ class StatementMetrics:
                 'Some statement metrics are not available from the table: %s', ','.join(m for m in dropped_metrics)
             )
 
+        # All rows within a call share the same schema, so metric_columns only
+        # needs to be computed once from the first (row, prev) pair.
+        metric_columns = None
+        indicator_cols = None
+
         for row_key, row in merged_rows.items():
             prev = self._previous_statements.get(row_key)
             if prev is None:
                 continue
 
-            metric_columns = metrics & set(row.keys())
+            if metric_columns is None:
+                metric_columns = metrics & row.keys() & prev.keys()
+                if execution_indicators:
+                    indicator_cols = execution_indicators & metric_columns
 
-            # Take the diff of all metric values between the current row and the previous run's row.
-            # There are a couple of edge cases to be aware of:
-            #
-            # 1. Table truncation or stats reset: Because the table values are always increasing, a negative value
-            #    suggests truncation or a stats reset. In this case, the row difference is discarded and the row should.
-            #    be tracked from this run forward.
-            #
-            # 2. No changes since the previous run: There is no need to store metrics of 0, since that is implied by
-            #    the absence of metrics. On any given check run, most rows will have no difference so this optimization
-            #    avoids having to send a lot of unnecessary metrics.
+            # Check diffs before allocating an output dict: skip rows with
+            # negative diffs (stats reset), zero change, or no execution indicator change.
+            has_negative = False
+            has_change = False
+            for k in metric_columns:
+                diff = row[k] - prev[k]
+                if diff < 0:
+                    has_negative = True
+                    break
+                if diff != 0:
+                    has_change = True
 
-            diffed_row = {k: row[k] - prev[k] if k in metric_columns else row[k] for k in row.keys()}
-
-            # Check for negative values, but only in the columns used for metrics
-            if any(diffed_row[k] < 0 for k in metric_columns):
-                # A "break" might be expected here instead of "continue," but there are cases where a subset of rows
-                # are removed. To avoid situations where all results are discarded every check run, we err on the side
-                # of potentially including truncated rows that exceed previous run counts.
+            if has_negative or not has_change:
                 continue
 
-            # No changes to the query; no metric needed
-            if all(diffed_row[k] == 0 for k in metric_columns):
-                continue
+            if execution_indicators and indicator_cols:
+                has_indicator_change = False
+                for k in indicator_cols:
+                    if row[k] - prev[k] > 0:
+                        has_indicator_change = True
+                        break
+                if not has_indicator_change:
+                    continue
 
-            result.append(diffed_row)
+            result.append({k: row[k] - prev[k] if k in metric_columns else row[k] for k in row})
 
-        self._previous_statements.clear()
-        self._previous_statements = merged_rows
+        # Update cache in-place: remove stale keys, update existing entries,
+        # and only allocate new dicts for rows seen for the first time.
+        new_keys = merged_rows.keys()
+        stale_keys = self._previous_statements.keys() - new_keys
+        for k in stale_keys:
+            del self._previous_statements[k]
+
+        for row_key, row in merged_rows.items():
+            prev = self._previous_statements.get(row_key)
+            if prev is not None:
+                # Sync columns to handle schema changes between calls.
+                for col in metrics:
+                    if col in row:
+                        prev[col] = row[col]
+                    elif col in prev:
+                        del prev[col]
+            else:
+                self._previous_statements[row_key] = {col: row[col] for col in metrics if col in row}
 
         return result
 

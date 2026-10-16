@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "8dd65d36-9cb4-4295-bb0c-68d67c0cdd4b",
   "app_id": "teamcity",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -17,7 +18,14 @@
       "Category::Notifications",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/track-performance-impact-of-code-changes-with-teamcity-and-datadog"
+      }
     ]
   },
   "author": {
@@ -57,13 +65,10 @@
       "TeamCity Overview": "assets/dashboards/overview.json"
     },
     "monitors": {
-      "Build Status": "assets/monitors/build_status.json"
+      "Builds are failing": "assets/monitors/build_status.json"
     },
     "saved_views": {
       "teamcity_processes": "assets/saved_views/teamcity_processes.json"
-    },
-    "logs": {
-      "source": "teamcity"
     }
   }
 }

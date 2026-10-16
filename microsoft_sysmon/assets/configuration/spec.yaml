@@ -1,0 +1,12 @@
+name: Microsoft Sysmon
+fleet_configurable: true
+files:
+- name: microsoft_sysmon.yaml
+  options:
+  - template: logs
+    example:
+    - type: windows_event
+      channel_path: "Microsoft-Windows-Sysmon/Operational"
+      source: microsoft-sysmon
+      service: microsoft-sysmon
+      sourcecategory: windowsevent

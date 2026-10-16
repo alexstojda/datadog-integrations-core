@@ -1,0 +1,4 @@
+provides:
+  - id: versa-network-device-metrics
+    data_type: metrics
+    always_on: false

@@ -16,7 +16,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_sophos_xgs_firewall(dd_agent_check):
@@ -28,8 +28,12 @@ def test_e2e_profile_sophos_xgs_firewall(dd_agent_check):
     common_tags = [
         'snmp_profile:sophos-xgs-firewall',
         'snmp_host:sophos-xgs-firewall.device.name',
+        'device_hostname:sophos-xgs-firewall.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + [
         'sfos_device_fw_version:forward zombies zombies oxen their',
         'sfos_device_type:Jaded forward kept acted but quaintly but',
@@ -63,6 +67,8 @@ def test_e2e_profile_sophos_xgs_firewall(dd_agent_check):
             'sfos_ip_sec_vpn_conn_type:site-to-site',
             'sfos_ip_sec_vpn_localgw_port:quaintly driving forward forward kept their forward',
             'sfos_ip_sec_vpn_policy_name:driving oxen forward quaintly quaintly but but',
+            'sfos_ip_sec_vpn_conn_status:partially-active',
+            'sfos_ip_sec_vpn_active_status:inactive',
         ],
         [
             'sfos_ip_sec_vpn_conn_des:oxen zombies acted forward kept',
@@ -71,6 +77,8 @@ def test_e2e_profile_sophos_xgs_firewall(dd_agent_check):
             'sfos_ip_sec_vpn_conn_type:host-to-host',
             'sfos_ip_sec_vpn_localgw_port:acted kept zombies Jaded Jaded but Jaded',
             'sfos_ip_sec_vpn_policy_name:oxen forward',
+            'sfos_ip_sec_vpn_conn_status:active',
+            'sfos_ip_sec_vpn_active_status:active',
         ],
     ]
     for tag_row in tag_rows:
@@ -91,6 +99,7 @@ def test_e2e_profile_sophos_xgs_firewall(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.2604.5',
         'vendor': 'sophos',
         'device_type': 'firewall',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

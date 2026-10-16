@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 from contextlib import contextmanager
 from itertools import chain
 from pathlib import Path
@@ -14,7 +16,7 @@ from typing import Generator
 from packaging.requirements import InvalidRequirement, Requirement
 
 HERE = Path(__file__).parent
-REQUIREMENTS_FILE = HERE.parent / 'datadog_checks_base' / 'datadog_checks' / 'base' / 'data' / 'agent_requirements.in'
+REQUIREMENTS_FILE = HERE.parent / 'agent_requirements.in'
 
 if sys.platform == 'win32':
 
@@ -45,6 +47,36 @@ def check_process(*args, **kwargs) -> subprocess.CompletedProcess:
     return process
 
 
+def pull_image_with_retry(image_name: str, *, attempts: int = 5, backoff_seconds: int = 15) -> None:
+    """Pull the builder image, retrying transient ghcr.io throttling.
+
+    When a dependency or builder change forces a full resolution, every build
+    target pulls its image at once and ghcr.io burst-throttles the pull with an
+    HTTP 429 (``toomanyrequests``). A single un-retried pull otherwise fails the
+    whole target. The registry's retry-after is sub-second, so a short backoff
+    clears it. Non-throttle failures (bad digest, auth) still fail fast.
+    """
+    command = ['docker', 'pull', image_name]
+    for attempt in range(1, attempts + 1):
+        print(f'Running: {join_command_args(command)}', file=sys.stderr)
+        process = subprocess.run(command, capture_output=True, text=True)
+        sys.stderr.write(process.stdout)
+        if process.returncode == 0:
+            return
+
+        if 'toomanyrequests' in process.stderr.lower() and attempt < attempts:
+            print(
+                f'Registry throttled the pull (attempt {attempt}/{attempts}); '
+                f'retrying in {backoff_seconds}s',
+                file=sys.stderr,
+            )
+            time.sleep(backoff_seconds)
+            continue
+
+        sys.stderr.write(process.stderr)
+        sys.exit(process.returncode)
+
+
 @contextmanager
 def temporary_directory() -> Generator[Path, None, None]:
     with TemporaryDirectory() as directory:
@@ -70,15 +102,19 @@ def read_dependencies() -> dict[str, list[str]]:
 
 def build_macos():
     parser = argparse.ArgumentParser(prog='builder', allow_abbrev=False)
+    parser.add_argument('image')
     parser.add_argument('output_dir')
     parser.add_argument('--python', default='3')
     parser.add_argument('--builder-root', required=True,
                         help='Path to a folder where things will be installed during builder setup.')
     parser.add_argument('--skip-setup', default=False, action='store_true',
                         help='Skip builder setup, assuming it has already been set up.')
+    parser.add_argument('--constraints',
+                        help='Path to a pip constraints file for pinning transitive dependency versions.')
     args = parser.parse_args()
 
-    context_path = HERE / 'images' / 'macos'
+    image: str = args.image
+    context_path = HERE / 'images' / image
     builder_root = Path(args.builder_root).absolute()
     builder_root.mkdir(exist_ok=True)
 
@@ -106,6 +142,11 @@ def build_macos():
         shutil.copytree(HERE / 'scripts', mount_dir / 'scripts')
         shutil.copytree(HERE / 'patches', mount_dir / 'patches')
 
+        if args.constraints:
+            constraints_path = Path(args.constraints)
+            if constraints_path.is_file():
+                shutil.copy(constraints_path, mount_dir / 'constraints.txt')
+
         prefix_path = builder_root / 'prefix'
         env = {
             **os.environ,
@@ -116,16 +157,18 @@ def build_macos():
             'DD_PY2_BUILDENV_PATH': builder_root / 'py2' / 'bin' / 'python',
             # Path where we'll install libraries that we build
             'DD_PREFIX_PATH': prefix_path,
+            'PATH': f'{prefix_path}/bin:{os.environ["PATH"]}',
             # Common compilation flags
             'LDFLAGS': f'-L{prefix_path}/lib',
             'CFLAGS': f'-I{prefix_path}/include -O2',
+            'CXXFLAGS': f'-I{prefix_path}/include -O2',
             # Build command for extra platform-specific build steps
             'DD_BUILD_COMMAND': f'bash {build_context_dir}/extra_build.sh'
         }
 
         if not args.skip_setup:
             check_process(
-                ['bash', str(HERE / 'images' / 'macos' / 'builder_setup.sh')],
+                ['bash', str(HERE / 'images' / image / 'builder_setup.sh')],
                 env=env,
                 cwd=builder_root,
             )
@@ -149,6 +192,10 @@ def build_macos():
         final_requirements = mount_dir / 'frozen.txt'
         shutil.move(final_requirements, output_dir)
 
+        # Move the dependency sizes to the output directory
+        dependency_sizes_dir = mount_dir / 'sizes.json'
+        shutil.move(dependency_sizes_dir, output_dir)
+
 
 def build_image():
     parser = argparse.ArgumentParser(prog='builder', allow_abbrev=False)
@@ -159,6 +206,8 @@ def build_image():
     parser.add_argument('--no-run', action='store_true')
     parser.add_argument('-a', '--build-arg', dest='build_args', nargs='+')
     parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('--constraints',
+                        help='Path to a pip constraints file for pinning transitive dependency versions.')
     args = parser.parse_args()
 
     image: str = args.image
@@ -169,7 +218,7 @@ def build_image():
     windows_image = image.startswith('windows-')
     if args.digest:
         image_name = f'ghcr.io/datadog/agent-int-builder@{args.digest}'
-        check_process(['docker', 'pull', image_name])
+        pull_image_with_retry(image_name)
     else:
         image_name = f'ghcr.io/datadog/agent-int-builder:{image}'
         with temporary_directory() as temp_dir:
@@ -206,6 +255,11 @@ def build_image():
             shutil.copytree(HERE / 'scripts', mount_dir / 'scripts')
             shutil.copytree(HERE / 'patches', mount_dir / 'patches')
 
+            if args.constraints:
+                constraints_path = Path(args.constraints)
+                if constraints_path.is_file():
+                    shutil.copy(constraints_path, mount_dir / 'constraints.txt')
+
             # Create outputs on the host so they can be removed
             wheels_dir = mount_dir / 'wheels'
             wheels_dir.mkdir()
@@ -216,12 +270,19 @@ def build_image():
             final_requirements = mount_dir / 'frozen.txt'
             final_requirements.touch()
 
+            script_args = ['--python', args.python]
+
+            # Assumption: if a digest was provided we're not changing the build image and therefore
+            # we're fine with reusing wheels we've built previously
+            if args.digest:
+                script_args.append('--use-built-index')
+
             check_process([
                 'docker', 'run', '--rm',
                 '-v', f'{mount_dir}:{internal_mount_dir}',
                 # Anything created within directories mounted to the container cannot be removed by the host
                 '-e', 'PYTHONDONTWRITEBYTECODE=1',
-                image_name, '--python', args.python,
+                image_name, *script_args,
             ])
 
             output_dir = Path(args.output_dir)
@@ -234,6 +295,9 @@ def build_image():
 
             # Move the final requirements file to the output directory
             shutil.move(final_requirements, output_dir)
+
+            # Move the dependency sizes to the output directory
+            shutil.move(mount_dir / 'sizes.json', output_dir)
 
 
 def main():

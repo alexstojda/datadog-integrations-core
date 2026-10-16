@@ -21,12 +21,39 @@ ENGINE_EDITION_AZURE_MANAGED_INSTANCE = 8
 ENGINE_EDITION_AZURE_SQL_EDGE = 9
 ENGINE_EDITION_AZURE_SYNAPSE_SERVERLESS_POOL = 11
 
-DEFAULT_INDEX_USAGE_STATS_INTERVAL = 5 * 60  # 5 minutes
-
 # Keys of the static info cache, used to cache server info which does not change
+STATIC_INFO_SERVERNAME = 'servername'
+STATIC_INFO_INSTANCENAME = 'instancename'
+STATIC_INFO_FULL_SERVERNAME = 'full_servername'
 STATIC_INFO_VERSION = 'version'
+# SQLSERVER_MAJOR_VERSIONS = [
+#     (2025, 17),
+#     (2022, 16),
+#     (2019, 15),
+#     (2017, 14),
+#     (2016, 13),
+#     (2014, 12),
+#     (2012, 11),
+#     (2008, 10),     # 2008 and 2008 R2 share major version 10, but R2 is 10.50.x, 2008 is 10.00.x
+# ]
+# https://learn.microsoft.com/en-us/troubleshoot/sql/releases/download-and-install-latest-updates
+STATIC_INFO_YEAR = 'year'
 STATIC_INFO_MAJOR_VERSION = 'major_version'
+
+# Database Engine edition of the instance of SQL Server installed on the server.
+# 1 = Personal or Desktop Engine (Not available in SQL Server 2005 (9.x) and later versions.)
+# 2 = Standard (For Standard, Standard Developer, Web, and Business Intelligence.)
+# 3 = Enterprise (For Enterprise, Enterprise Developer, Developer, and Evaluation editions.)
+# 4 = Express (For Express, Express with Tools, and Express with Advanced Services)
+# 5 = SQL Database
+# 6 = Azure Synapse Analytics
+# 8 = Azure SQL Managed Instance
+# 9 = Azure SQL Edge (For all editions of Azure SQL Edge)
+# 11 = Azure Synapse serverless SQL pool, or Microsoft Fabric
+# 12 = Microsoft Fabric SQL database in Microsoft Fabric.
+# https://learn.microsoft.com/en-us/sql/t-sql/functions/serverproperty-transact-sql?view=sql-server-ver17
 STATIC_INFO_ENGINE_EDITION = 'engine_edition'
+STATIC_INFO_RDS = 'is_rds'
 AWS_RDS_HOSTNAME_SUFFIX = ".rds.amazonaws.com"
 AZURE_DEPLOYMENT_TYPE_TO_RESOURCE_TYPES = {
     # azure sql database has a special case, where we should emit
@@ -37,6 +64,9 @@ AZURE_DEPLOYMENT_TYPE_TO_RESOURCE_TYPES = {
     "managed_instance": "azure_sql_server_managed_instance",
     "virtual_machine": "azure_virtual_machine_instance",
 }
+AZURE_SERVER_SUFFIX = ".database.windows.net"
+SQLSERVER_PARAMETER_LIMIT = 2100
+
 
 # Metric discovery queries
 COUNTER_TYPE_QUERY = """select distinct cntr_type
@@ -46,8 +76,7 @@ COUNTER_TYPE_QUERY = """select distinct cntr_type
 BASE_NAME_QUERY = (
     """select distinct counter_name
        from sys.dm_os_performance_counters
-       where (counter_name=? or counter_name=?
-       or counter_name=?) and cntr_type=%s;"""
+       where lower(counter_name) IN (?, ?, ?) and cntr_type=%s;"""
     % PERF_LARGE_RAW_BASE
 )
 
@@ -58,82 +87,109 @@ expected_sys_databases_columns = [
     'physical_database_name',
 ]
 
+DATABASE_SERVICE_CHECK_QUERY = """
+DECLARE @monitored_databases xml = ?;
+WITH monitored_databases AS (
+    SELECT database_node.value('.', 'nvarchar(128)') AS name
+    FROM @monitored_databases.nodes('/databases/database') AS databases(database_node)
+)
+SELECT name, CASE WHEN state = 0 AND HAS_DBACCESS(name) = 1 THEN 1 ELSE 0 END AS can_connect
+FROM sys.databases
+WHERE name IN (SELECT name FROM monitored_databases);
+"""
+
 VALID_METRIC_TYPES = ('gauge', 'rate', 'histogram')
 
 SERVICE_CHECK_NAME = 'sqlserver.can_connect'
 DATABASE_SERVICE_CHECK_NAME = 'sqlserver.database.can_connect'
 
 DBM_MIGRATED_METRICS = [
-    ('sqlserver.stats.connections', 'User Connections', ''),  # LARGE_RAWCOUNT
+    ('sqlserver.stats.connections', 'User Connections', '', ''),  # LARGE_RAWCOUNT
 ]
 
 # Default performance table metrics - Database Instance level
-# datadog metric name, counter name, instance name
+# datadog metric name, counter name, instance name, object name
 INSTANCE_METRICS = [
     # SQLServer:General Statistics
-    ('sqlserver.stats.procs_blocked', 'Processes blocked', ''),  # LARGE_RAWCOUNT
+    ('sqlserver.stats.procs_blocked', 'Processes blocked', '', ''),  # LARGE_RAWCOUNT
     # SQLServer:Access Methods
-    ('sqlserver.access.page_splits', 'Page Splits/sec', ''),  # BULK_COUNT
-    ('sqlserver.access.full_scans', 'Full Scans/sec', ''),  # BULK_COUNT
-    ('sqlserver.access.range_scans', 'Range Scans/sec', ''),  # BULK_COUNT
-    ('sqlserver.access.probe_scans', 'Probe Scans/sec', ''),  # BULK_COUNT
-    ('sqlserver.access.index_searches', 'Index Searches/sec', ''),  # BULK_COUNT
+    ('sqlserver.access.page_splits', 'Page Splits/sec', '', ''),  # BULK_COUNT
+    ('sqlserver.access.full_scans', 'Full Scans/sec', '', ''),  # BULK_COUNT
+    ('sqlserver.access.range_scans', 'Range Scans/sec', '', ''),  # BULK_COUNT
+    ('sqlserver.access.probe_scans', 'Probe Scans/sec', '', ''),  # BULK_COUNT
+    ('sqlserver.access.index_searches', 'Index Searches/sec', '', ''),  # BULK_COUNT
     # SQLServer:Memory Manager
-    ('sqlserver.memory.memory_grants_pending', 'Memory Grants Pending', ''),
-    ('sqlserver.memory.total_server_memory', 'Total Server Memory (KB)', ''),
-    ('sqlserver.memory.sql_cache', 'SQL Cache Memory (KB)', ''),
-    ('sqlserver.memory.grants_outstanding', 'Memory Grants Outstanding', ''),
-    ('sqlserver.memory.database_cache', 'Database Cache Memory (KB)', ''),
-    ('sqlserver.memory.connection', 'Connection Memory (KB)', ''),
-    ('sqlserver.memory.optimizer', 'Optimizer Memory (KB)', ''),
-    ('sqlserver.memory.granted_workspace', 'Granted Workspace Memory (KB)', ''),
-    ('sqlserver.memory.lock', 'Lock Memory (KB)', ''),
-    ('sqlserver.memory.stolen', 'Stolen Server Memory (KB)', ''),
-    ('sqlserver.memory.log_pool_memory', 'Log Pool Memory (KB)', ''),
+    ('sqlserver.memory.memory_grants_pending', 'Memory Grants Pending', '', ''),
+    ('sqlserver.memory.total_server_memory', 'Total Server Memory (KB)', '', ''),
+    ('sqlserver.memory.sql_cache', 'SQL Cache Memory (KB)', '', ''),
+    ('sqlserver.memory.grants_outstanding', 'Memory Grants Outstanding', '', ''),
+    ('sqlserver.memory.database_cache', 'Database Cache Memory (KB)', '', ''),
+    ('sqlserver.memory.connection', 'Connection Memory (KB)', '', ''),
+    ('sqlserver.memory.optimizer', 'Optimizer Memory (KB)', '', ''),
+    ('sqlserver.memory.granted_workspace', 'Granted Workspace Memory (KB)', '', ''),
+    ('sqlserver.memory.lock', 'Lock Memory (KB)', '', ''),
+    ('sqlserver.memory.stolen', 'Stolen Server Memory (KB)', '', ''),
+    ('sqlserver.memory.log_pool_memory', 'Log Pool Memory (KB)', '', ''),
     # SQLServer:Buffer Manager
-    ('sqlserver.buffer.cache_hit_ratio', 'Buffer cache hit ratio', ''),  # RAW_LARGE_FRACTION
-    ('sqlserver.buffer.page_life_expectancy', 'Page life expectancy', ''),  # LARGE_RAWCOUNT
-    ('sqlserver.buffer.page_reads', 'Page reads/sec', ''),  # LARGE_RAWCOUNT
-    ('sqlserver.buffer.page_writes', 'Page writes/sec', ''),  # LARGE_RAWCOUNT
-    ('sqlserver.buffer.checkpoint_pages', 'Checkpoint pages/sec', ''),  # BULK_COUNT
+    ('sqlserver.buffer.cache_hit_ratio', 'Buffer cache hit ratio', '', ''),  # RAW_LARGE_FRACTION
+    ('sqlserver.buffer.page_life_expectancy', 'Page life expectancy', '', ''),  # LARGE_RAWCOUNT
+    ('sqlserver.buffer.page_reads', 'Page reads/sec', '', ''),  # LARGE_RAWCOUNT
+    ('sqlserver.buffer.page_writes', 'Page writes/sec', '', ''),  # LARGE_RAWCOUNT
+    ('sqlserver.buffer.checkpoint_pages', 'Checkpoint pages/sec', '', ''),  # BULK_COUNT
     # SQLServer:SQL Statistics
-    ('sqlserver.stats.auto_param_attempts', 'Auto-Param Attempts/sec', ''),
-    ('sqlserver.stats.failed_auto_param_attempts', 'Failed Auto-Params/sec', ''),
-    ('sqlserver.stats.safe_auto_param_attempts', 'Safe Auto-Params/sec', ''),
-    ('sqlserver.stats.batch_requests', 'Batch Requests/sec', ''),  # BULK_COUNT
-    ('sqlserver.stats.sql_compilations', 'SQL Compilations/sec', ''),  # BULK_COUNT
-    ('sqlserver.stats.sql_recompilations', 'SQL Re-Compilations/sec', ''),  # BULK_COUNT
+    ('sqlserver.stats.auto_param_attempts', 'Auto-Param Attempts/sec', '', ''),
+    ('sqlserver.stats.failed_auto_param_attempts', 'Failed Auto-Params/sec', '', ''),
+    ('sqlserver.stats.safe_auto_param_attempts', 'Safe Auto-Params/sec', '', ''),
+    ('sqlserver.stats.batch_requests', 'Batch Requests/sec', '', ''),  # BULK_COUNT
+    ('sqlserver.stats.sql_compilations', 'SQL Compilations/sec', '', ''),  # BULK_COUNT
+    ('sqlserver.stats.sql_recompilations', 'SQL Re-Compilations/sec', '', ''),  # BULK_COUNT
     # SQLServer:Locks
-    ('sqlserver.stats.lock_waits', 'Lock Waits/sec', '_Total'),  # BULK_COUNT
-    ('sqlserver.latches.latch_waits', 'Latch Waits/sec', ''),  # BULK_COUNT
-    ('sqlserver.latches.latch_wait_time', 'Average Latch Wait Time (ms)', ''),  # BULK_COUNT
-    ('sqlserver.locks.deadlocks', 'Number of Deadlocks/sec', '_Total'),  # BULK_COUNT
+    ('sqlserver.stats.lock_waits', 'Lock Waits/sec', '_Total', ''),  # BULK_COUNT
+    ('sqlserver.latches.latch_waits', 'Latch Waits/sec', '', ''),  # BULK_COUNT
+    ('sqlserver.locks.deadlocks', 'Number of Deadlocks/sec', '_Total', ''),  # BULK_COUNT
     # SQLServer:Plan Cache
-    ('sqlserver.cache.object_counts', 'Cache Object Counts', '_Total'),
-    ('sqlserver.cache.pages', 'Cache Pages', '_Total'),
+    ('sqlserver.cache.object_counts', 'Cache Object Counts', '_Total', ''),
+    ('sqlserver.cache.pages', 'Cache Pages', '_Total', ''),
     # SQLServer:Database Replica
-    ('sqlserver.replica.transaction_delay', 'Transaction Delay', '_Total'),
-    ('sqlserver.replica.flow_control_sec', 'Flow Control/sec', '_Total'),
+    ('sqlserver.replica.transaction_delay', 'Transaction Delay', '_Total', 'SQLServer:Database Replica'),
+    ('sqlserver.replica.flow_control_sec', 'Flow Control/sec', '_Total', ''),
     # SQLServer:Transactions
-    ('sqlserver.transactions.version_store_size', 'Version Store Size (KB)', ''),
-    ('sqlserver.transactions.version_cleanup_rate', 'Version Cleanup rate (KB/s)', ''),
-    ('sqlserver.transactions.version_generation_rate', 'Version Generation rate (KB/s)', ''),
-    ('sqlserver.transactions.longest_transaction_running_time', 'Longest Transaction Running Time', ''),
+    ('sqlserver.transactions.version_store_size', 'Version Store Size (KB)', '', ''),
+    ('sqlserver.transactions.version_cleanup_rate', 'Version Cleanup rate (KB/s)', '', ''),
+    ('sqlserver.transactions.version_generation_rate', 'Version Generation rate (KB/s)', '', ''),
+    ('sqlserver.transactions.longest_transaction_running_time', 'Longest Transaction Running Time', '', ''),
+]
+
+# SQLServer version >= 2016
+# Default performance table metrics - Database Instance level
+# datadog metric name, counter name, instance name
+INSTANCE_METRICS_NEWER_2016 = [
+    # SQLServer:Locks
+    # base counter Average Latch Wait Time Base is available starting with SQL Server 2016
+    ('sqlserver.latches.latch_wait_time', 'Average Latch Wait Time (ms)', '', ''),  # BULK_COUNT
 ]
 
 # Performance table metrics, initially configured to track at instance-level only
 # With auto-discovery enabled, these metrics will be extended accordingly
-# datadog metric name, counter name, instance name
-INSTANCE_METRICS_DATABASE = [
+# datadog metric name, counter name, instance name, object name
+INSTANCE_METRICS_DATABASE_SINGLE = [
     # SQLServer:Databases
-    ('sqlserver.database.backup_restore_throughput', 'Backup/Restore Throughput/sec', '_Total'),
-    ('sqlserver.database.log_bytes_flushed', 'Log Bytes Flushed/sec', '_Total'),
-    ('sqlserver.database.log_flushes', 'Log Flushes/sec', '_Total'),
-    ('sqlserver.database.log_flush_wait', 'Log Flush Wait Time', '_Total'),
-    ('sqlserver.database.transactions', 'Transactions/sec', '_Total'),  # BULK_COUNT
-    ('sqlserver.database.write_transactions', 'Write Transactions/sec', '_Total'),  # BULK_COUNT
-    ('sqlserver.database.active_transactions', 'Active Transactions', '_Total'),  # BULK_COUNT
+    ('sqlserver.database.backup_restore_throughput', 'Backup/Restore Throughput/sec', '_Total', ''),
+    ('sqlserver.database.log_bytes_flushed', 'Log Bytes Flushed/sec', '_Total', ''),
+    ('sqlserver.database.log_flushes', 'Log Flushes/sec', '_Total', ''),
+    ('sqlserver.database.log_flush_wait', 'Log Flush Wait Time', '_Total', ''),
+    ('sqlserver.database.transactions', 'Transactions/sec', '_Total', ''),  # BULK_COUNT
+    ('sqlserver.database.write_transactions', 'Write Transactions/sec', '_Total', ''),  # BULK_COUNT
+    ('sqlserver.database.active_transactions', 'Active Transactions', '_Total', ''),  # BULK_COUNT
 ]
+
+# Performance table metrics when AlwaysOn is enabled
+# datadog metric name, counter name, instance name, object name
+INSTANCE_METRICS_DATABASE_AO = [
+    ('sqlserver.database.replica.transaction_delay', 'Transaction Delay', '', 'SQLServer:Database Replica'),
+]
+
+INSTANCE_METRICS_DATABASE = INSTANCE_METRICS_DATABASE_SINGLE + INSTANCE_METRICS_DATABASE_AO
 
 # AlwaysOn metrics
 # datadog metric name, sql table, column name, tag
@@ -141,7 +197,7 @@ AO_AG_SYNC_METRICS = [
     ('sqlserver.ao.ag_sync_health', 'sys.dm_hadr_availability_group_states', 'synchronization_health'),
 ]
 AO_REPLICA_SYNC_METRICS = [
-    ('sqlserver.ao.replica_sync_state', 'sys.dm_hadr_database_replica_states', 'synchronization_state'),
+    ('sqlserver.ao.replica_sync_state', 'sys.dm_hadr_availability_replica_states', 'synchronization_health'),
 ]
 AO_REPLICA_FAILOVER_METRICS = [
     ('sqlserver.ao.replica_failover_mode', 'sys.availability_replicas', 'failover_mode'),
@@ -190,6 +246,7 @@ DATABASE_FILES_METRICS = [
     ('sqlserver.database.files.state', 'sys.database_files', 'state'),
 ]
 DATABASE_STATS_METRICS = [
+    ('sqlserver.database.user_access', 'sys.databases', 'user_access'),
     ('sqlserver.database.state', 'sys.databases', 'state'),
     ('sqlserver.database.is_sync_with_backup', 'sys.databases', 'is_sync_with_backup'),
     ('sqlserver.database.is_in_standby', 'sys.databases', 'is_in_standby'),
@@ -231,6 +288,13 @@ DATABASE_MASTER_FILES = [
     ('sqlserver.database.master_files.state', 'sys.master_files', 'state'),
 ]
 
+TABLE_SIZE_METRICS = [
+    ('sqlserver.table.row_count', 'sys.dm_db_partition_stats', 'row_count'),
+    ('sqlserver.table.total_size', 'sys.dm_db_partition_stats', 'total_size'),
+    ('sqlserver.table.used_size', 'sys.dm_db_partition_stats', 'used_size'),
+    ('sqlserver.table.data_size', 'sys.dm_db_partition_stats', 'data_size'),
+]
+
 TEMPDB_FILE_SPACE_USAGE_METRICS = [
     ('sqlserver.tempdb.file_space_usage.free_space', 'sys.dm_db_file_space_usage', 'free_space'),
     (
@@ -252,3 +316,7 @@ TEMPDB_FILE_SPACE_USAGE_METRICS = [
 ]
 
 PROC_CHAR_LIMIT = 500
+
+DEFAULT_SCHEMAS_COLLECTION_INTERVAL = 600
+
+DEFAULT_LONG_METRICS_COLLECTION_INTERVAL = 300

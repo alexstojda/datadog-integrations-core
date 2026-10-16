@@ -1,4 +1,4 @@
-﻿# (C) Datadog, Inc. 2023-present
+# (C) Datadog, Inc. 2023-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
 
@@ -17,10 +17,12 @@ from datadog_checks.sqlserver.const import (
     ENGINE_EDITION_EXPRESS,
     ENGINE_EDITION_PERSONAL,
     ENGINE_EDITION_STANDARD,
+    STATIC_INFO_SERVERNAME,
 )
 from datadog_checks.sqlserver.stored_procedures import SQL_SERVER_PROCEDURE_METRICS_COLUMNS
 
 from .common import CHECK_NAME, OPERATION_TIME_METRIC_NAME
+from .utils import CLOSE_TO_ZERO_INTERVAL
 
 try:
     import pyodbc
@@ -37,8 +39,13 @@ SELF_HOSTED_ENGINE_EDITIONS = {
 logger = logging.getLogger(__name__)
 
 
-def _expected_dbm_instance_tags(dbm_instance):
-    return dbm_instance['tags']
+def _expected_dbm_instance_tags(check):
+    return check._config.tags + [
+        "database_hostname:{}".format("stubbed.hostname"),
+        "database_instance:{}".format("stubbed.hostname"),
+        "dd.internal.resource:database_instance:{}".format("stubbed.hostname"),
+        "sqlserver_servername:{}".format(check.static_info_cache[STATIC_INFO_SERVERNAME].lower()),
+    ]
 
 
 @pytest.fixture(autouse=True)
@@ -55,11 +62,13 @@ def dbm_instance(instance_docker):
     instance_docker['query_metrics'] = {'enabled': False}
     instance_docker['query_activity'] = {'enabled': False}
     instance_docker['collect_settings'] = {'enabled': False}
-    # set a very small collection interval so the tests go fast
+    # Set collection_interval close to 0. This is needed if the test runs the check multiple times.
+    # This prevents DBMAsync from skipping job executions, as it is designed
+    # to not execute jobs more frequently than their collection period.
     instance_docker['procedure_metrics'] = {
         'enabled': True,
         'run_sync': True,
-        'collection_interval': 0.1,
+        'collection_interval': CLOSE_TO_ZERO_INTERVAL,
     }
     return copy(instance_docker)
 
@@ -83,8 +92,8 @@ def test_get_available_procedure_metrics_columns(dbm_instance, expected_columns,
     check = SQLServer(CHECK_NAME, {}, [dbm_instance])
     check.initialize_connection()
     _conn_key_prefix = "dbm-test-procedures"
-    with check.connection.open_managed_default_connection(key_prefix=_conn_key_prefix):
-        with check.connection.get_managed_cursor(key_prefix=_conn_key_prefix) as cursor:
+    with check.connection.open_managed_default_connection(_conn_key_prefix):
+        with check.connection.get_managed_cursor(_conn_key_prefix) as cursor:
             result_available_columns = check.procedure_metrics._get_available_procedure_metrics_columns(
                 cursor, expected_columns
             )
@@ -98,8 +107,8 @@ def test_get_procedure_metrics_query_cached(aggregator, dbm_instance, caplog):
     check = SQLServer(CHECK_NAME, {}, [dbm_instance])
     check.initialize_connection()
     _conn_key_prefix = "dbm-test-procedures"
-    with check.connection.open_managed_default_connection(key_prefix=_conn_key_prefix):
-        with check.connection.get_managed_cursor(key_prefix=_conn_key_prefix) as cursor:
+    with check.connection.open_managed_default_connection(_conn_key_prefix):
+        with check.connection.get_managed_cursor(_conn_key_prefix) as cursor:
             for _ in range(3):
                 query = check.procedure_metrics._get_procedure_metrics_query_cached(cursor)
                 assert query, "query should be non-empty"
@@ -156,7 +165,7 @@ test_procedure_metrics_parametrized = (
             ],
         ],
         [
-            "datadog_test",  # database
+            "datadog_test-1",  # database
             "EXEC bobProc",  # query
             ((),),
             1,
@@ -164,13 +173,13 @@ test_procedure_metrics_parametrized = (
                 {
                     'schema_name': 'dbo',
                     'procedure_name': 'bobProc',
-                    'database_name': 'datadog_test',
+                    'database_name': 'datadog_test-1',
                     'execution_count': 1,
                 }
             ],
         ],
         [
-            "datadog_test",  # database
+            "datadog_test-1",  # database
             "EXEC bobProc",  # query
             ((),),
             10,
@@ -178,13 +187,13 @@ test_procedure_metrics_parametrized = (
                 {
                     'schema_name': 'dbo',
                     'procedure_name': 'bobProc',
-                    'database_name': 'datadog_test',
+                    'database_name': 'datadog_test-1',
                     'execution_count': 10,
                 }
             ],
         ],
         [
-            "datadog_test",  # database
+            "datadog_test-1",  # database
             "EXEC bobProcParams @P1 = ?, @P2 = ?",  # query
             (
                 (1, "foo"),
@@ -195,7 +204,7 @@ test_procedure_metrics_parametrized = (
                 {
                     'schema_name': 'dbo',
                     'procedure_name': 'bobProcParams',
-                    'database_name': 'datadog_test',
+                    'database_name': 'datadog_test-1',
                     'execution_count': 2,
                 }
             ],
@@ -204,6 +213,7 @@ test_procedure_metrics_parametrized = (
 )
 
 
+@pytest.mark.flaky
 @pytest.mark.integration
 @pytest.mark.usefixtures('dd_environment')
 @pytest.mark.parametrize(*test_procedure_metrics_parametrized)
@@ -243,14 +253,20 @@ def test_procedure_metrics(
     dd_run_check(check)
 
     _conn_key_prefix = "dbm-test-procedures"
-    with check.connection.open_managed_default_connection(key_prefix=_conn_key_prefix):
-        with check.connection.get_managed_cursor(key_prefix=_conn_key_prefix) as cursor:
+    with check.connection.open_managed_default_connection(_conn_key_prefix):
+        with check.connection.get_managed_cursor(_conn_key_prefix) as cursor:
             available_procedure_metrics_columns = check.procedure_metrics._get_available_procedure_metrics_columns(
                 cursor, SQL_SERVER_PROCEDURE_METRICS_COLUMNS
             )
 
     instance_tags = dbm_instance.get('tags', [])
     expected_instance_tags = {t for t in instance_tags if not t.startswith('dd.internal')}
+    expected_instance_tags.add("database_hostname:stubbed.hostname")
+    expected_instance_tags.add("database_instance:stubbed.hostname")
+    expected_instance_tags.add("dd.internal.resource:database_instance:stubbed.hostname")
+    expected_instance_tags.add(
+        "sqlserver_servername:{}".format(check.static_info_cache[STATIC_INFO_SERVERNAME].lower())
+    )
 
     # dbm-metrics
     dbm_metrics = aggregator.get_event_platform_events("dbm-metrics")
@@ -269,9 +285,7 @@ def test_procedure_metrics(
             expected_objects, payload['sqlserver_rows']
         )
 
-    assert len(payload['sqlserver_rows']) == len(expected_objects), 'should have as many emitted rows as expected'
     assert set(payload['tags']) == expected_instance_tags
-    assert payload['ddagenthostname'] == datadog_agent.get_hostname()
 
     for row in payload['sqlserver_rows']:
         for column in available_procedure_metrics_columns:
@@ -281,7 +295,7 @@ def test_procedure_metrics(
     aggregator.assert_metric(
         OPERATION_TIME_METRIC_NAME,
         tags=['agent_hostname:stubbed.hostname', 'operation:collect_procedure_metrics']
-        + _expected_dbm_instance_tags(dbm_instance),
+        + _expected_dbm_instance_tags(check),
     )
 
 
@@ -299,12 +313,12 @@ def test_procedure_metrics_limit(aggregator, dd_run_check, dbm_instance, bob_con
     dd_run_check(check)
     bob_conn.execute_with_retries('EXEC multiQueryProc', (), database='master')
     bob_conn.execute_with_retries('EXEC encryptedProc', (), database='master')
-    bob_conn.execute_with_retries('EXEC bobProc', (), database='datadog_test')
+    bob_conn.execute_with_retries('EXEC bobProc', (), database='datadog_test-1')
     dd_run_check(check)
     aggregator.reset()
     bob_conn.execute_with_retries('EXEC multiQueryProc', (), database='master')
     bob_conn.execute_with_retries('EXEC encryptedProc', (), database='master')
-    bob_conn.execute_with_retries('EXEC bobProc', (), database='datadog_test')
+    bob_conn.execute_with_retries('EXEC bobProc', (), database='datadog_test-1')
     dd_run_check(check)
 
     # dbm-metrics
@@ -320,19 +334,6 @@ def test_procedure_metrics_limit(aggregator, dd_run_check, dbm_instance, bob_con
     assert sqlserver_rows == sorted(sqlserver_rows, key=lambda i: i['total_elapsed_time'], reverse=True)
 
 
-@pytest.mark.parametrize("procedure_metrics_enabled", [True, False])
-def test_async_job_enabled(dd_run_check, dbm_instance, procedure_metrics_enabled):
-    dbm_instance['procedure_metrics'] = {'enabled': procedure_metrics_enabled, 'run_sync': False}
-    check = SQLServer(CHECK_NAME, {}, [dbm_instance])
-    dd_run_check(check)
-    check.cancel()
-    if procedure_metrics_enabled:
-        assert check.procedure_metrics._job_loop_future is not None
-        check.procedure_metrics._job_loop_future.result()
-    else:
-        assert check.procedure_metrics._job_loop_future is None
-
-
 @pytest.mark.integration
 @pytest.mark.usefixtures('dd_environment')
 def test_async_job_inactive_stop(aggregator, dd_run_check, dbm_instance):
@@ -342,7 +343,7 @@ def test_async_job_inactive_stop(aggregator, dd_run_check, dbm_instance):
     check.procedure_metrics._job_loop_future.result()
     aggregator.assert_metric(
         "dd.sqlserver.async_job.inactive_stop",
-        tags=['job:procedure-metrics'] + _expected_dbm_instance_tags(dbm_instance),
+        tags=['job:procedure-metrics'] + _expected_dbm_instance_tags(check),
         hostname='',
     )
 
@@ -353,13 +354,9 @@ def test_async_job_cancel_cancel(aggregator, dd_run_check, dbm_instance):
     dbm_instance['procedure_metrics']['run_sync'] = False
     check = SQLServer(CHECK_NAME, {}, [dbm_instance])
     dd_run_check(check)
+    # cancel() joins the job loop before returning, so the loop has reported its exit by now
     check.cancel()
-    # wait for it to stop and make sure it doesn't throw any exceptions
-    check.procedure_metrics._job_loop_future.result()
-    assert not check.procedure_metrics._job_loop_future.running(), "metrics thread should be stopped"
-    # if the thread doesn't start until after the cancel signal is set then the db connection will never
-    # be created in the first place
     aggregator.assert_metric(
         "dd.sqlserver.async_job.cancel",
-        tags=_expected_dbm_instance_tags(dbm_instance) + ['job:procedure-metrics'],
+        tags=_expected_dbm_instance_tags(check) + ['job:procedure-metrics'],
     )

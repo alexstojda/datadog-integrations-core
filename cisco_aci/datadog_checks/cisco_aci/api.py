@@ -85,7 +85,6 @@ class SessionWrapper:
 
 
 class Api:
-
     wrapper_factory = SessionWrapper
 
     def __init__(
@@ -220,17 +219,7 @@ class Api:
         return self._parse_response(response)
 
     def get_tenant_stats(self, tenant):
-        path = "/api/mo/uni/tn-{}.json?rsp-subtree-include=stats,no-scoped".format(tenant)
-        response = self.make_request(path)
-        # return only the list of stats
-        return self._parse_response(response)
-
-    def get_tenant_events(self, tenant, page=0, page_size=15):
-        query1 = 'rsp-subtree-include=event-logs,no-scoped,subtree'
-        query2 = 'order-by=eventRecord.created|desc'
-        query3 = 'page={}&page-size={}'.format(page, page_size)
-        query = '{}&{}&{}'.format(query1, query2, query3)
-        path = "/api/node/mo/uni/tn-{}.json?{}".format(tenant, query)
+        path = "/api/mo/uni/tn-{}.json?rsp-subtree-include=stats,health,no-scoped".format(tenant)
         response = self.make_request(path)
         # return only the list of stats
         return self._parse_response(response)
@@ -285,15 +274,31 @@ class Api:
         response = self.make_request(path)
         return self._parse_response(response)
 
-    def get_eth_list(self, pod, node):
-        query = 'query-target=subtree&target-subtree-class=l1PhysIf'
-        path = '/api/mo/topology/pod-{}/node-{}/sys.json?{}'.format(pod, node, query)
+    def get_eth_list_and_stats(self, pod, node):
+        subtree = 'children'
+        subtree_include = 'stats'
+        subtree_class = (
+            'ethpmPhysIf,eqptEgrTotal5min,eqptIngrTotal5min,eqptEgrDropPkts5min,eqptEgrBytes5min,eqptIngrBytes5min'
+        )
+        query = 'rsp-subtree={}&rsp-subtree-include={}&rsp-subtree-class={}'.format(
+            subtree, subtree_include, subtree_class
+        )
+        path = '/api/node/class/topology/pod-{}/node-{}/l1PhysIf.json?{}'.format(pod, node, query)
         response = self.make_request(path)
         return self._parse_response(response)
 
-    def get_eth_stats(self, pod, node, eth):
-        query = 'rsp-subtree-include=stats,no-scoped&page-size=50'
-        path = '/api/mo/topology/pod-{}/node-{}/sys/phys-[{}].json?{}'.format(pod, node, eth, query)
+    def get_cphys_list(self, pod, node):
+        path = '/api/node/class/topology/pod-{}/node-{}/cnwPhysIf.json'.format(pod, node)
+        response = self.make_request(path)
+        return self._parse_response(response)
+
+    def get_lldp_adj_eps(self):
+        path = '/api/node/class/lldpAdjEp.json'
+        response = self.make_request(path)
+        return self._parse_response(response)
+
+    def get_cdp_adj_eps(self):
+        path = '/api/node/class/cdpAdjEp.json'
         response = self.make_request(path)
         return self._parse_response(response)
 
@@ -323,6 +328,20 @@ class Api:
             query = "rsp-subtree-include=count"
         base_path = "/api/class/"
         path = "{}{}.json?{}".format(base_path, capacity_metric, query)
+        response = self.make_request(path)
+        return self._parse_response(response)
+
+    def get_faultinst_faults(self, afterTimestamp):
+        path = "/api/node/class/faultInst.json"
+        if afterTimestamp is not None:
+            path += "?query-target-filter=and(gt(faultInst.lastTransition,\"{}\"))".format(afterTimestamp)
+        response = self.make_request(path)
+        return self._parse_response(response)
+
+    def get_faultdelegate_faults(self, afterTimestamp):
+        path = "/api/node/class/faultDelegate.json"
+        if afterTimestamp is not None:
+            path += "?query-target-filter=and(gt(faultDelegate.lastTransition,\"{}\"))".format(afterTimestamp)
         response = self.make_request(path)
         return self._parse_response(response)
 

@@ -1,0 +1,31 @@
+name: Supabase
+fleet_configurable: true
+files:
+- name: supabase.yaml
+  options:
+  - template: init_config
+    options:
+    - template: init_config/default
+  - template: instances
+    options:
+    - name: privileged_metrics_endpoint
+      description: |
+        Endpoint exposing Supabase customer metrics
+        https://supabase.com/docs/guides/monitoring-troubleshooting/metrics#accessing-the-metrics-endpoint
+      fleet_configurable: true
+      value:
+        display_default: null
+        example: https://<project-ref>.supabase.co/customer/v1/privileged/metrics
+        type: string
+    - name: storage_api_endpoint
+      description: |
+        Endpoint exposing the S3 Storage API Prometheus metrics.
+      value:
+        display_default: null
+        example: http://%%host%%:5000/metrics
+        type: string
+      fleet_configurable: false
+    - template: instances/openmetrics
+      overrides:
+        openmetrics_endpoint.required: false
+        openmetrics_endpoint.hidden: true

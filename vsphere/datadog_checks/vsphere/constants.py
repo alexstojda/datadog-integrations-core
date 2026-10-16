@@ -6,6 +6,7 @@ from pyVmomi import vim
 SOURCE_TYPE = 'vsphere'
 
 BOTH = 'both'
+NONE = 'None'
 HISTORICAL = 'historical'
 REALTIME = 'realtime'
 
@@ -29,6 +30,8 @@ MOR_TYPE_AS_STRING = {
     vim.Datacenter: 'datacenter',
     vim.Datastore: 'datastore',
     vim.ClusterComputeResource: 'cluster',
+    vim.StoragePod: 'storage_pod',
+    vim.vslm.vcenter.VStorageObjectManager: 'vstorage_object_manager',
 }
 
 ALL_RESOURCES = [
@@ -66,6 +69,8 @@ DEFAULT_REFRESH_INFRASTRUCTURE_CACHE_INTERVAL = 300
 
 REFERENCE_METRIC = "cpu.usage.avg"
 
+DEFAULT_INFRASTRUCTURE_MODE = "full"
+
 DEFAULT_VSPHERE_TAG_PREFIX = ""
 DEFAULT_VSPHERE_ATTR_PREFIX = ""
 
@@ -98,7 +103,6 @@ VM_SIMPLE_PROPERTIES = [
     "config.cpuAllocation.overheadLimit",
     "config.memoryAllocation.limit",
     "config.memoryAllocation.overheadLimit",
-    "summary.config.numCpu",
     "summary.config.memorySizeMB",
     "summary.config.numEthernetCards",
     "summary.config.numVirtualDisks",
@@ -135,6 +139,17 @@ HOST_PROPERTIES = HOST_SIMPLE_PROPERTIES
 VM_PROPERTIES = VM_OBJECT_PROPERTIES + VM_SIMPLE_PROPERTIES
 
 ALL_PROPERTIES = VM_PROPERTIES + HOST_PROPERTIES + CLUSTER_PROPERTIES + DATASTORE_PROPERTIES
+
+# Always fetched, regardless of `collect_property_metrics` -- downstream consumers need these
+# counts continuously, so collection must not be opt-in. Keep them out of *_SIMPLE_PROPERTIES:
+# `get_infrastructure` nests those under `properties`, breaking the flat lookup when the option is on.
+VM_CPU_COUNT_PROPERTY = "summary.config.numCpu"
+HOST_CPU_COUNT_PROPERTY = "summary.hardware.numCpuCores"
+
+CPU_COUNT_PROPERTY_BY_RESOURCE_TYPE = {
+    'vm': VM_CPU_COUNT_PROPERTY,
+    'host': HOST_CPU_COUNT_PROPERTY,
+}
 
 
 OBJECT_PROPERTIES_TO_METRIC_NAME = {
@@ -175,3 +190,54 @@ PROPERTY_METRICS_BY_RESOURCE_TYPE = {
     'cluster': CLUSTER_SIMPLE_PROPERTIES,
     'datastore': DATASTORE_SIMPLE_PROPERTIES,
 }
+
+EXCLUDE_FILTERS = {
+    'AlarmStatusChangedEvent': [r'Gray to Green', r'Green to Gray'],
+    'TaskEvent': [
+        r'Initialize powering On',
+        r'Power Off virtual machine',
+        r'Power On virtual machine',
+        r'Reconfigure virtual machine',
+        r'Relocate virtual machine',
+        r'Suspend virtual machine',
+        r'Migrate virtual machine',
+    ],
+    'VmBeingHotMigratedEvent': [],
+    'VmMessageEvent': [],
+    'VmMigratedEvent': [],
+    'VmPoweredOnEvent': [],
+    'VmPoweredOffEvent': [],
+    'VmReconfiguredEvent': [],
+    'VmSuspendedEvent': [],
+}
+
+PER_RESOURCE_EVENTS = [
+    'AlarmAcknowledgedEvent',
+    'AlarmActionTriggeredEvent',
+    'AlarmClearedEvent',
+    'AlarmCreatedEvent',
+    'AlarmEmailCompletedEvent',
+    'AlarmEmailFailedEvent',
+    'AlarmReconfiguredEvent',
+    'AlarmRemovedEvent',
+    'AlarmScriptCompleteEvent',
+    'AlarmScriptFailedEvent',
+    'AlarmSnmpCompletedEvent',
+    'AlarmSnmpFailedEvent',
+    'AlarmStatusChangedEvent',
+    'CustomFieldValueChangedEvent',
+    'GeneralUserEvent',
+    'PermissionEvent',
+    'ScheduledTaskEvent',
+]
+
+VSAN_EVENT_IDS = [
+    'vsan.health.test.cluster.consistentconfig.event',
+    'vsan.health.test.network.hostdisconnected.event',
+]
+
+VSAN_EVENT_PREFIX = 'vsan'
+
+HOSTNAME_CASE_OPTIONS = ['default', 'lower', 'upper']
+
+INFRA_MODE_METRIC = 'cpu.usage.avg'

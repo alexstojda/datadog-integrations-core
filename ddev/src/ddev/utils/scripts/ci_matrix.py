@@ -51,10 +51,21 @@ TESTABLE_FILE_PATTERN = re.compile(
   | pyproject\.toml
   | datadog_checks/[^/]+/data/metrics\.yaml
   | datadog_checks/snmp/data/default_profiles/.+
+  # Add templates files from dcd to the list of testeable files to ensure template formatting
+  # tests are not ignored and break on master
+  | datadog_checks/dev/tooling/templates/configuration/.+yaml
     """,
     re.VERBOSE,
 )
-AGENT_REQUIREMENTS_FILE = 'datadog_checks_base/datadog_checks/base/data/agent_requirements.in'
+AGENT_REQUIREMENTS_FILE = 'agent_requirements.in'
+# Targets are derived from directory names in the pull request diff, which are attacker-controlled on fork PRs, and
+# they flow into CI as job inputs. Every real integration directory is lowercase alphanumeric with underscores or
+# hyphens, so anything else is either a mistake or an injection attempt and must never reach a runner.
+TARGET_NAME_PATTERN = re.compile(r'^[a-z0-9][a-z0-9_-]*$')
+# Target environments are built from the `envs.default.matrix` values in an integration's `hatch.toml`, which is also
+# attacker-controlled on fork pull requests. They reach CI as job inputs that are written to `$GITHUB_ENV`, so a value
+# containing a newline would append an arbitrary entry there (`BASH_ENV=...` being the usual escalation).
+TARGET_ENV_NAME_PATTERN = re.compile(r'^[A-Za-z0-9._-]+$')
 NON_TESTABLE_FILES = {'auto_conf.yaml'}
 DISPLAY_ORDER_OVERRIDE = {
     _d: _i
@@ -74,9 +85,12 @@ PLATFORMS = {
     'linux': __plat('Linux', 'ubuntu-22.04'),
     # https://github.com/actions/runner-images/blob/main/images/win/Windows2022-Readme.md
     'windows': __plat('Windows', 'windows-2022'),
-    # https://github.com/actions/runner-images/blob/main/images/macos/macos-12-Readme.md
-    'macos': __plat('macOS', 'macos-12'),
+    # https://github.com/actions/runner-images/blob/main/images/macos/macos-14-Readme.md
+    'macos': __plat('macOS', 'macos-14-large'),
 }
+
+# The following integrations are no longer tested in CI
+UNTESTABLE_INTEGRATIONS = {"mesos_slave"}
 
 
 @lru_cache(maxsize=None)
@@ -109,13 +123,14 @@ def git(*args) -> str:
     return process.stdout
 
 
-def get_changed_files(*, ref: str, local: bool) -> list[str]:
+def get_changed_files(*, ref: str, exact: bool, local: bool) -> list[str]:
     changed_files = set()
 
     # Committed e.g.:
     # A   relative/path/to/file.added
     # M   relative/path/to/file.modified
-    for line in git('diff', '--name-status', f'{ref}...').splitlines():
+    strategy = '..' if exact else '...'
+    for line in git('diff', '--name-status', f'{ref}{strategy}').splitlines():
         if not is_git_warning_line(line):
             _, relative_path = line.split(maxsplit=1)
             changed_files.add(relative_path)
@@ -133,8 +148,8 @@ def get_changed_files(*, ref: str, local: bool) -> list[str]:
     return sorted(changed_files, key=lambda path: (path, -path.count('/')))
 
 
-def get_changed_targets(root: Path, *, ref: str, local: bool, verbose: bool) -> list[str]:
-    changed_files = get_changed_files(ref=ref, local=local)
+def get_changed_targets(root: Path, *, ref: str, exact: bool, local: bool, verbose: bool) -> list[str]:
+    changed_files = get_changed_files(ref=ref, exact=exact, local=local)
     if verbose:
         print('\n'.join(changed_files), file=sys.stderr)
 
@@ -154,6 +169,11 @@ def get_changed_targets(root: Path, *, ref: str, local: bool, verbose: bool) -> 
     agent_requirements_file = root / AGENT_REQUIREMENTS_FILE
     targets = []
     for directory_name, files in changed_directories.items():
+        if directory_name in UNTESTABLE_INTEGRATIONS:
+            continue
+        if not TARGET_NAME_PATTERN.fullmatch(directory_name):
+            print(f'Ignoring target with unexpected name: {directory_name!r}', file=sys.stderr)
+            continue
         directory = root / directory_name
         if not ((directory / 'hatch.toml').is_file() and (directory / 'tests').is_dir()):
             continue
@@ -172,6 +192,8 @@ def get_changed_targets(root: Path, *, ref: str, local: bool, verbose: bool) -> 
 def get_all_targets(root: Path) -> list[str]:
     targets = []
     for entry in root.iterdir():
+        if entry.name in UNTESTABLE_INTEGRATIONS:
+            continue
         if (entry / 'hatch.toml').is_file() and (entry / 'tests').is_dir():
             targets.append(entry.name)
 
@@ -210,6 +232,46 @@ def construct_job_matrix(root: Path, targets: list[str]) -> list[dict[str, Any]]
             else:
                 platform_ids = ['linux']
 
+        hatch_toml = root / target / 'hatch.toml'
+        target_envs: dict[str, list[str]] = {}
+        if hatch_toml.is_file():
+            hatch_config = tomllib.loads(hatch_toml.read_text(encoding='utf-8'))
+            env_matrix = hatch_config.get('envs', {}).get('default', {}).get('matrix')
+            # convert the env matrix to a list of targets for each combination of values
+            if env_matrix:
+                for env in env_matrix:
+                    if not isinstance(env, dict):
+                        continue
+
+                    # Create a list of all combinations of values
+                    keys = env.keys()
+                    values = [[f"py{v}" if key == "python" else v for v in env[key]] for key in keys]
+                    if not values:
+                        continue
+
+                    # Generate all combinations of values
+                    from itertools import product
+
+                    # This maps the lists of target envs into all their permutations
+                    # For example, if the env matrix is:
+                    # { 'foo': ['bar', 'baz'], 'python': ['3.8', '3.9'] }
+                    # The permutations would be:
+                    # - bar-py3.8
+                    # - bar-py3.9
+                    # - baz-py3.8
+                    # - baz-py3.9
+                    # If 'os' is one of the keys, we use it to put the combinations into the right platform
+                    # so that we can get the correct runner for the target-env
+
+                    os_index = list(keys).index('os') if 'os' in keys else -1
+                    for combination in product(*values):
+                        env_name = '-'.join(combination)
+                        if not TARGET_ENV_NAME_PATTERN.fullmatch(env_name):
+                            print(f'Ignoring target env with unexpected name: {env_name!r}', file=sys.stderr)
+                            continue
+                        os = combination[os_index] if os_index != -1 else platform_ids[0]
+                        target_envs.setdefault(os, []).append(env_name)
+
         runners = matrix_overrides.get('runners', {})
         for platform_id in platform_ids:
             if platform_id not in PLATFORMS:
@@ -240,8 +302,15 @@ def construct_job_matrix(root: Path, targets: list[str]) -> list[dict[str, Any]]
             if supported_python_versions:
                 config['python-support'] = ''.join(supported_python_versions)
 
-            config['name'] = normalize_job_name(config['name'])
-            job_matrix.append(config)
+            job_name = normalize_job_name(config['name'])
+            if platform_id in target_envs:
+                for target_env in target_envs[platform_id]:
+                    if target_env != target:
+                        config['name'] = f'{job_name} ({target_env})'
+                    job_matrix.append({**config, 'target-env': target_env})
+            else:
+                config['name'] = job_name
+                job_matrix.append({**config})
 
     return job_matrix
 
@@ -252,6 +321,7 @@ def main():
 
     parser = argparse.ArgumentParser(prog=__name__, allow_abbrev=False)
     parser.add_argument('--ref', default='origin/master')
+    parser.add_argument('--exact', action='store_true', help='Whether ref refers to the merge base')
     parser.add_argument('-a', '--all', action='store_true')
     parser.add_argument('-p', '--pretty', action='store_true')
     parser.add_argument('-v', '--verbose', action='store_true')
@@ -261,7 +331,7 @@ def main():
     targets = (
         get_all_targets(root)
         if args.all
-        else get_changed_targets(root, ref=args.ref, local=args.pretty, verbose=args.verbose)
+        else get_changed_targets(root, ref=args.ref, exact=args.exact, local=args.pretty, verbose=args.verbose)
     )
     job_matrix = construct_job_matrix(root, targets)
 

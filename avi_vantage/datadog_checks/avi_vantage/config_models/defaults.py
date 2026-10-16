@@ -52,6 +52,10 @@ def instance_enable_health_service_check():
     return True
 
 
+def instance_enable_legacy_tags_normalization():
+    return True
+
+
 def instance_entities():
     return ['controller', 'pool', 'serviceengine', 'virtualservice']
 
@@ -106,6 +110,10 @@ def instance_tag_by_endpoint():
 
 def instance_telemetry():
     return False
+
+
+def instance_tenants():
+    return []
 
 
 def instance_timeout():

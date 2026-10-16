@@ -3,12 +3,23 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 import click
 
 if TYPE_CHECKING:
     from ddev.cli.application import Application
+
+# Split license expressions on operators (AND, OR, and/or) and separators (/, +).
+# Use negative lookbehind (?<!-) and lookahead (?!-) to avoid matching "-or-" or "-and-"
+# inside SPDX identifiers like "GPL-2.0-or-later" or "LGPL-2.1-or-later".
+_OP_SPLIT = re.compile(r'\s*(?:(?<!-)\b(?:AND|OR)\b(?!-)|/|\+|\band/or\b)\s*', re.IGNORECASE)
+# SPDX ids are typically: letters/digits plus . + -
+# and may appear as LicenseRef-* / DocumentRef-*:LicenseRef-*
+_ID = re.compile(r"(DocumentRef-[A-Za-z0-9.+-]+:)?LicenseRef-[A-Za-z0-9.+-]+|[A-Za-z0-9.+-]+")
+
+DOWNLOAD_RETRIES = 2
 
 
 def format_attribution_line(package_name, license_id, package_copyright):
@@ -61,18 +72,34 @@ def collect_source_url(package_data):
     return combined[0]
 
 
-def scrape_copyright_data(url_path):
-    """
-    Scrapes each tarfile for copyright attributions.
-    """
+def scrape_copyright_data(url_path: str) -> str | None:
+    """Download an archive with bounded connection retries and extract its copyright."""
+    import time
+
     import httpx
 
-    with httpx.stream('GET', url_path, follow_redirects=True) as resp:
-        resp.read()
-        for fcontents in pick_file_generator(url_path)(resp):
-            if cp := find_cpy(fcontents):
-                return cp
-    return None
+    attempt = 0
+    while True:
+        try:
+            # Keep the httpx.stream defaults so environment proxy support is preserved.
+            with httpx.stream('GET', url_path, follow_redirects=True) as resp:
+                resp.raise_for_status()
+                resp.read()
+                for fcontents in pick_file_generator(url_path)(resp):
+                    if cp := find_cpy(fcontents):
+                        return cp
+            return None
+        except (
+            httpx.ConnectError,
+            httpx.ConnectTimeout,
+            httpx.ReadError,
+            httpx.ReadTimeout,
+            httpx.RemoteProtocolError,
+        ):
+            if attempt == DOWNLOAD_RETRIES:
+                raise
+            time.sleep(2**attempt)
+            attempt += 1
 
 
 def find_cpy(data):
@@ -102,14 +129,10 @@ def find_cpy(data):
             return cpy
 
 
-def get_extra_license_files(app):
-    import os
-
-    for path in app.repo.path.iterdir():
-        if not os.path.isfile(os.path.join('', path, 'manifest.json')):
-            continue
-        extra_license_file = os.path.join('', path, '3rdparty-extra-LICENSE.csv')
-        if os.path.isfile(extra_license_file):
+def get_extra_license_files(app: Application):
+    for integration in app.repo.integrations.iter('all'):
+        extra_license_file = integration.path / '3rdparty-extra-LICENSE.csv'
+        if extra_license_file.is_file():
             yield extra_license_file
 
 
@@ -246,6 +269,9 @@ def scrape_license_data(urls, app):
                 else:
                     data['licenses'].add(package_license)
 
+            if license_expressions := info.get('license_expression'):
+                data['licenses'].add(license_expressions)
+
             if home_page := info['home_page']:
                 data['home_page'] = home_page
 
@@ -329,6 +355,33 @@ def validate_extra_licenses(app):
 def read_file_lines(file, encoding='utf-8'):
     with open(file, 'r', encoding=encoding) as f:
         return f.readlines()
+
+
+def split_license_expression_simple(expr: str) -> list[str]:
+    # Normalize parens to spaces
+    expr = expr.replace("(", " ").replace(")", " ")
+
+    parts: list[str] = []
+    for chunk in _OP_SPLIT.split(expr):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+
+        # Handle "WITH" exceptions by taking the left side license id.
+        chunk = re.split(r"\s+\bWITH\b\s+", chunk, flags=re.IGNORECASE)[0].strip()
+
+        # Extract tokens; keep ones that look like SPDX-ish ids
+        chunk_start_len = len(parts)
+        for token in _ID.findall(chunk):
+            if token:
+                parts.append(token if isinstance(token, str) else token[0])
+        if len(parts) == chunk_start_len:
+            # If we couldn't extract any ID from this chunk, try to use the whole chunk
+            # as a fallback, stripping any remaining noise.
+            fallback = re.sub(r'\s+', ' ', chunk).strip()
+            if fallback:
+                parts.append(fallback)
+    return parts
 
 
 @click.command(short_help='Validate third-party license list')
@@ -421,13 +474,7 @@ def licenses(app: Application, sync: bool):
         for package_license in data['licenses']:
             package_license = package_license.strip('"')
 
-            expanded_licenses = []
-            for separator in (' and/or ', '/', ' OR ', ' or '):
-                if separator in package_license:
-                    expanded_licenses.extend(package_license.split(separator))
-                    break
-            else:
-                expanded_licenses.append(package_license)
+            expanded_licenses = split_license_expression_simple(package_license)
 
             for expanded_license in expanded_licenses:
                 normalized_license = expanded_license.lower()
@@ -439,7 +486,14 @@ def licenses(app: Application, sync: bool):
                     license_ids.add(known_spdx_licenses[normalized_license])
                 else:
                     license_ids.add(expanded_license)
-                    package_license_errors[package_name].append(f'unknown license: {expanded_license}')
+                    package_license_errors[package_name].append(
+                        'Encountered unknown license. Options to fix this error:\n'
+                        '- If it is truly a new license type, add it to exclusions '
+                        'or known licenses in ddev/cli/validate/license_utils.py\n'
+                        '- If it is known but formatted in a way that we cannot parse it, '
+                        'hard-code a known version of it .ddev/config.toml\n\n'
+                        f'Here is the license for reference:\n{expanded_license}'
+                    )
 
         for classifier in data['classifiers']:
             if classifier in licenses_utils.KNOWN_CLASSIFIERS:
@@ -460,7 +514,7 @@ def licenses(app: Application, sync: bool):
         for package_name, package_errors in package_license_errors.items():
             for error in package_errors:
                 error_message += error + '\n'
-            validation_tracker.error((package_name), message=error_message)
+            validation_tracker.error((package_name,), message=error_message)
 
         validation_tracker.display()
         app.abort()

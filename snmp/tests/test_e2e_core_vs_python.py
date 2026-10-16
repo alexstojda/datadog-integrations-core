@@ -6,11 +6,11 @@ from copy import deepcopy
 
 import pytest
 
-from datadog_checks.base.stubs.common import MetricStub
+from datadog_checks.base.stubs.common import MetricStub, ServiceCheckStub
 
 from . import common
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.python_suite_only]
 
 SUPPORTED_METRIC_TYPES = [
     {'MIB': 'ABC', 'symbol': {'OID': "1.3.6.1.2.1.7.1.0", 'name': "IAmACounter32"}},  # Counter32
@@ -26,6 +26,7 @@ ASSERT_VALUE_METRICS = [
 # Profiles may contain symbols declared twice with different names and the same OID
 # Python check does handle one single metric name per OID symbol
 SKIPPED_CORE_ONLY_METRICS = [
+    'datadog.snmp.requests',
     'snmp.memory.total',
     'snmp.memory.used',
     'snmp.memory.free',
@@ -72,7 +73,7 @@ SKIPPED_CORE_ONLY_METRICS = [
     'snmp.dell.memoryDevice',  # Dell constant metric
 ]
 
-DEFAULT_TAGS_TO_SKIP = ['loader']
+DEFAULT_TAGS_TO_SKIP = ['loader', 'device_id', 'device_ip', 'agent_host']
 
 CORE_ONLY_TAGS = ['device_namespace:default']
 
@@ -421,6 +422,8 @@ def test_e2e_profile_cisco_asa(dd_agent_check):
             'temp_state',
             'power_source',
             'connection_type',
+            'rtt_timeout',
+            'rtt_sense',
         ],  # Ignore tags that have mappings
     )
 
@@ -446,6 +449,8 @@ def test_e2e_profile_cisco_asa_5525(dd_agent_check):
             'temp_state',
             'power_source',
             'connection_type',
+            'rtt_timeout',
+            'rtt_sense',
         ],  # Ignore tags that have mappings
     )
 
@@ -620,7 +625,7 @@ def test_e2e_profile_isilon(dd_agent_check):
 
 def test_e2e_profile_meraki_cloud_controller(dd_agent_check):
     config = common.generate_container_profile_config('meraki-cloud-controller')
-    assert_python_vs_core(dd_agent_check, config, tags_to_skip=['mac_address', 'status'])
+    assert_python_vs_core(dd_agent_check, config, tags_to_skip=['mac_address', 'device_status'])
 
 
 def test_e2e_profile_netapp(dd_agent_check):
@@ -688,7 +693,8 @@ def assert_python_vs_core(
     tags_to_skip += DEFAULT_TAGS_TO_SKIP
 
     # building expected metrics (python)
-    aggregator = dd_agent_check(python_config, rate=rate, pause=pause, times=times)
+    run_kwargs = common.two_runs_instead_of_rate({'rate': rate, 'pause': pause, 'times': times})
+    aggregator = dd_agent_check(python_config, **run_kwargs)
     python_metrics = defaultdict(list)
     for _, metrics in aggregator._metrics.items():
         for stub in metrics:
@@ -708,7 +714,7 @@ def assert_python_vs_core(
 
     # building core metrics (core)
     aggregator.reset()
-    aggregator = common.dd_agent_check_wrapper(dd_agent_check, core_config, rate=rate, pause=pause, times=times)
+    aggregator = common.dd_agent_check_wrapper(dd_agent_check, core_config, **run_kwargs)
     aggregator_metrics = aggregator._metrics
     aggregator._metrics = defaultdict(list)
     for metric_name in aggregator_metrics:
@@ -742,6 +748,15 @@ def assert_python_vs_core(
 
     aggregator.assert_all_metrics_covered()
 
+    # Removed skipped tags from core aggregator
+    aggregator_servicechecks = aggregator._service_checks
+    aggregator._service_checks = defaultdict(list)
+    for servicecheck_name in aggregator_servicechecks:
+        for stub in aggregator_servicechecks[servicecheck_name]:
+            if stub.name in metrics_to_skip:
+                continue
+            aggregator._service_checks[servicecheck_name].append(normalize_stub_servicecheck(stub, tags_to_skip))
+
     for (name, status, tags, message), stubs in python_service_checks.items():
         count = len(stubs) if assert_count else None
         aggregator.assert_service_check(name, status, tags, count=count, message=message)
@@ -763,6 +778,18 @@ def normalize_stub_metric(stub, tags_to_skip):
         tags,
         stub.hostname,
         stub.device,
+    )
+
+
+def normalize_stub_servicecheck(stub, tags_to_skip):
+    tags = [t for t in stub.tags if not is_skipped_tag(t, tags_to_skip)]  # Remove skipped tag
+    return ServiceCheckStub(
+        stub.check_id,
+        stub.name,
+        stub.status,
+        tags,
+        stub.hostname,
+        stub.message,
     )
 
 

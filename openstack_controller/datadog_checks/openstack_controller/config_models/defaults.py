@@ -16,6 +16,10 @@ def shared_timeout():
     return 10
 
 
+def instance_all_projects():
+    return False
+
+
 def instance_allow_redirects():
     return True
 
@@ -62,6 +66,10 @@ def instance_domain_id():
 
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
 
 
 def instance_endpoint_interface():

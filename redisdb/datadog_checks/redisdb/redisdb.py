@@ -9,110 +9,29 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 
 import redis
-from six import PY2, iteritems
 
 from datadog_checks.base import AgentCheck, ConfigurationError, ensure_unicode, is_affirmative
 from datadog_checks.base.utils.common import round_value
 
-DEFAULT_MAX_SLOW_ENTRIES = 128
-MAX_SLOW_ENTRIES_KEY = "slowlog-max-len"
-
-REPL_KEY = 'master_link_status'
-LINK_DOWN_KEY = 'master_link_down_since_seconds'
-
-DEFAULT_CLIENT_NAME = "unknown"
+from .constants import (
+    CLUSTER_INFO_GAUGE_KEYS,
+    CONFIG_GAUGE_KEYS,
+    DEFAULT_CLIENT_NAME,
+    DEFAULT_MAX_SLOW_ENTRIES,
+    GAUGE_KEYS,
+    LINK_DOWN_KEY,
+    MAX_SLOW_ENTRIES_KEY,
+    RATE_KEYS,
+    REPL_KEY,
+)
 
 
 class Redis(AgentCheck):
-    db_key_pattern = re.compile(r'^db\d+')
+    db_key_pattern = re.compile(r'^db\d+$')
     slave_key_pattern = re.compile(r'^slave\d+')
     subkeys = ['keys', 'expires']
 
     SOURCE_TYPE_NAME = 'redis'
-
-    CONFIG_GAUGE_KEYS = {
-        'maxclients': 'redis.net.maxclients',
-    }
-
-    GAUGE_KEYS = {
-        # Server
-        'io_threads_active': 'redis.server.io_threads_active',
-        # Active defrag metrics
-        'active_defrag_running': 'redis.active_defrag.running',
-        'active_defrag_hits': 'redis.active_defrag.hits',
-        'active_defrag_misses': 'redis.active_defrag.misses',
-        'active_defrag_key_hits': 'redis.active_defrag.key_hits',
-        'active_defrag_key_misses': 'redis.active_defrag.key_misses',
-        # Append-only metrics
-        'aof_last_rewrite_time_sec': 'redis.aof.last_rewrite_time',
-        'aof_rewrite_in_progress': 'redis.aof.rewrite',
-        'aof_current_size': 'redis.aof.size',
-        'aof_buffer_length': 'redis.aof.buffer_length',
-        'loading_total_bytes': 'redis.aof.loading_total_bytes',
-        'loading_loaded_bytes': 'redis.aof.loading_loaded_bytes',
-        'loading_loaded_perc': 'redis.aof.loading_loaded_perc',
-        'loading_eta_seconds': 'redis.aof.loading_eta_seconds',
-        # Network
-        'connected_clients': 'redis.net.clients',
-        'connected_slaves': 'redis.net.slaves',
-        'rejected_connections': 'redis.net.rejected',
-        # clients
-        'blocked_clients': 'redis.clients.blocked',
-        'client_biggest_input_buf': 'redis.clients.biggest_input_buf',
-        'client_longest_output_list': 'redis.clients.longest_output_list',
-        'client_recent_max_input_buffer': 'redis.clients.recent_max_input_buffer',
-        'client_recent_max_output_buffer': 'redis.clients.recent_max_output_buffer',
-        # Keys
-        'evicted_keys': 'redis.keys.evicted',
-        'expired_keys': 'redis.keys.expired',
-        # stats
-        'latest_fork_usec': 'redis.perf.latest_fork_usec',
-        'bytes_received_per_sec': 'redis.bytes_received_per_sec',
-        'bytes_sent_per_sec': 'redis.bytes_sent_per_sec',
-        # Note: 'bytes_received_per_sec' and 'bytes_sent_per_sec' are only
-        # available on Azure Redis
-        'instantaneous_input_kbps': 'redis.net.instantaneous_input',
-        'instantaneous_output_kbps': 'redis.net.instantaneous_output',
-        'total_connections_received': 'redis.net.total_connections_received',
-        # pubsub
-        'pubsub_channels': 'redis.pubsub.channels',
-        'pubsub_patterns': 'redis.pubsub.patterns',
-        # rdb
-        'rdb_bgsave_in_progress': 'redis.rdb.bgsave',
-        'rdb_changes_since_last_save': 'redis.rdb.changes_since_last',
-        'rdb_last_bgsave_time_sec': 'redis.rdb.last_bgsave_time',
-        # memory
-        'mem_fragmentation_ratio': 'redis.mem.fragmentation_ratio',
-        'used_memory': 'redis.mem.used',
-        'used_memory_lua': 'redis.mem.lua',
-        'used_memory_peak': 'redis.mem.peak',
-        'used_memory_rss': 'redis.mem.rss',
-        'used_memory_startup': 'redis.mem.startup',
-        'used_memory_overhead': 'redis.mem.overhead',
-        'maxmemory': 'redis.mem.maxmemory',
-        # replication
-        'master_last_io_seconds_ago': 'redis.replication.last_io_seconds_ago',
-        'master_sync_in_progress': 'redis.replication.sync',
-        'master_sync_left_bytes': 'redis.replication.sync_left_bytes',
-        'repl_backlog_histlen': 'redis.replication.backlog_histlen',
-        'master_repl_offset': 'redis.replication.master_repl_offset',
-        'slave_repl_offset': 'redis.replication.slave_repl_offset',
-    }
-
-    RATE_KEYS = {
-        # cpu
-        'used_cpu_sys': 'redis.cpu.sys',
-        'used_cpu_sys_children': 'redis.cpu.sys_children',
-        'used_cpu_user': 'redis.cpu.user',
-        'used_cpu_user_children': 'redis.cpu.user_children',
-        'used_cpu_sys_main_thread': 'redis.cpu.sys_main_thread',
-        'used_cpu_user_main_thread': 'redis.cpu.user_main_thread',
-        # stats
-        'keyspace_hits': 'redis.stats.keyspace_hits',
-        'keyspace_misses': 'redis.stats.keyspace_misses',
-        'io_threaded_reads_processed': 'redis.stats.io_threaded_reads_processed',
-        'io_threaded_writes_processed': 'redis.stats.io_threaded_writes_processed',
-    }
 
     def __init__(self, name, init_config, instances):
         super(Redis, self).__init__(name, init_config, instances)
@@ -121,6 +40,7 @@ class Redis(AgentCheck):
         custom_tags = self.instance.get('tags', [])
         self.tags = self._get_tags(custom_tags)
         self.collect_client_metrics = is_affirmative(self.instance.get('collect_client_metrics', False))
+        self._config_get_disabled = is_affirmative(self.instance.get('disable_config_get', False))
         if ("host" not in self.instance or "port" not in self.instance) and "unix_socket_path" not in self.instance:
             raise ConfigurationError("You must specify a host/port couple or a unix_socket_path")
 
@@ -163,20 +83,23 @@ class Redis(AgentCheck):
                     'username',
                     'password',
                     'socket_timeout',
-                    'connection_pool',
-                    'charset',
-                    'errors',
                     'unix_socket_path',
                     'ssl',
                     'ssl_certfile',
                     'ssl_keyfile',
                     'ssl_ca_certs',
                     'ssl_cert_reqs',
+                    'ssl_check_hostname',
+                    'client_name',
                 ]
 
                 # Set a default timeout (in seconds) if no timeout is specified in the instance config
                 instance_config['socket_timeout'] = instance_config.get('socket_timeout', 5)
                 connection_params = {k: instance_config[k] for k in list_params if k in instance_config}
+                # Select RESP2 explicitly instead of relying on the client default, which flipped to RESP3
+                # in redis-py 8. RESP3 sends `HELLO` on connect, unsupported before Redis 6.0, and changes
+                # the shape of some replies we parse.
+                connection_params['protocol'] = 2
                 # If caching is disabled, we overwrite the dictionary value so the old connection
                 # will be closed as soon as the corresponding Python object gets garbage collected
                 self.connections[key] = redis.Redis(**connection_params)
@@ -196,6 +119,22 @@ class Redis(AgentCheck):
         tags = sorted(tags_to_add.union(custom_tags))
         return tags
 
+    def _get_config(self, conn: redis.Redis, parameter: str) -> dict[str, str]:
+        if self._config_get_disabled:
+            return {}
+
+        try:
+            return conn.config_get(parameter)
+        except redis.ResponseError as e:
+            self._config_get_disabled = True
+            self.log.warning(
+                "CONFIG GET %s failed: %s. Disabling CONFIG GET for the lifetime of this check instance. "
+                "Set disable_config_get to true to skip CONFIG GET entirely on restricted backends.",
+                parameter,
+                e,
+            )
+            return {}
+
     def _check_db(self):
         tags = list(self.tags)
         conn = self._get_conn(self.instance)
@@ -207,7 +146,13 @@ class Redis(AgentCheck):
             # reduce the chance of connection time affecting our latency measurements
             conn.ping()
 
-            info, info_latency_ms = _call_and_time(conn.info)
+            try:
+                info, info_latency_ms = _call_and_time(
+                    conn.info, section='all'
+                )  # not available on older versions of Redis
+            except redis.ResponseError as e:
+                self.log.debug('`INFO all` command failed, falling back to `INFO`: %s', e)
+                info, info_latency_ms = _call_and_time(conn.info)
             _, ping_latency_ms = _call_and_time(conn.ping)
 
             self._collect_metadata(info)
@@ -228,12 +173,7 @@ class Redis(AgentCheck):
         self.gauge('redis.info.latency_ms', info_latency_ms, tags=tags)
         self.gauge('redis.ping.latency_ms', ping_latency_ms, tags=tags)
 
-        try:
-            config = conn.config_get("maxclients")
-        except redis.ResponseError:
-            # config_get is disabled on some environments
-            self.log.debug("Unable to collect max clients: CONFIG GET disabled in managed Redis instances.")
-            config = {}
+        config = self._get_config(conn, "maxclients")
 
         # Save the database statistics.
         for key in info.keys():
@@ -260,14 +200,9 @@ class Redis(AgentCheck):
                     self.gauge(metric, val, tags=db_tags)
 
         # Save a subset of db-wide statistics
-        for info_name in info:
-            if info_name in self.GAUGE_KEYS:
-                self.gauge(self.GAUGE_KEYS[info_name], info[info_name], tags=tags)
-            elif info_name in self.RATE_KEYS:
-                self.rate(self.RATE_KEYS[info_name], info[info_name], tags=tags)
-
-        for config_key, value in iteritems(config):
-            metric_name = self.CONFIG_GAUGE_KEYS.get(config_key)
+        self._check_info_fields(info, tags)
+        for config_key, value in config.items():
+            metric_name = CONFIG_GAUGE_KEYS.get(config_key)
             if metric_name is not None:
                 self.gauge(metric_name, value, tags=tags)
 
@@ -282,18 +217,24 @@ class Redis(AgentCheck):
                 # client_list is disabled on some environments
                 self.log.debug("Unable to collect client metrics: CLIENT disabled in some managed Redis.")
 
-        # Save the number of commands.
-        self.rate('redis.net.commands', info['total_commands_processed'], tags=tags)
-        if 'instantaneous_ops_per_sec' in info:
-            self.gauge('redis.net.instantaneous_ops_per_sec', info['instantaneous_ops_per_sec'], tags=tags)
-
         # Check some key lengths if asked
         self._check_key_lengths(conn, list(tags))
 
         # Check replication
         self._check_replication(info, tags)
+        if info.get('cluster_enabled') == 1:
+            self._check_cluster_info(conn, tags)
         if self.instance.get("command_stats", False):
             self._check_command_stats(conn, tags)
+
+    def _check_info_fields(self, info, tags):
+        for info_name in info:
+            if info_name in GAUGE_KEYS:
+                self.gauge(GAUGE_KEYS[info_name], info[info_name], tags=tags)
+            elif info_name in RATE_KEYS:
+                self.rate(RATE_KEYS[info_name], info[info_name], tags=tags)
+            else:
+                self.log.debug('Not collecting INFO field %s', info_name)
 
     def _check_key_lengths(self, conn, tags):
         """
@@ -397,7 +338,7 @@ class Redis(AgentCheck):
                     lengths[text_key]["key_type"] = key_type
 
             # Send the metrics for each db in the redis instance.
-            for key, total in iteritems(lengths):
+            for key, total in lengths.items():
                 # Only send non-zeros if tagged per db.
                 if total["length"] > 0:
                     self.gauge(
@@ -409,7 +350,7 @@ class Redis(AgentCheck):
 
         # Warn if a key is missing from the entire redis instance.
         # Send 0 if the key is missing/empty from the entire redis instance.
-        for key, total in iteritems(lengths_overall):
+        for key, total in lengths_overall.items():
             if total == 0:
                 key_tags = ['key:{}'.format(key)]
                 if instance_db:
@@ -446,6 +387,26 @@ class Redis(AgentCheck):
             self.service_check('redis.replication.master_link_status', status, tags=tags)
             self.gauge('redis.replication.master_link_down_since_seconds', down_seconds, tags=tags)
 
+    def _check_cluster_info(self, conn, tags):
+        """Collect metrics from CLUSTER INFO for cluster-mode enabled nodes."""
+        try:
+            cluster_info = conn.cluster('info')
+        except redis.ResponseError as e:
+            self.log.debug('Unable to collect cluster info: %s', e)
+            return
+
+        cluster_state = cluster_info.get('cluster_state')
+        if cluster_state is not None:
+            self.gauge('redis.cluster.state', int(cluster_state == 'ok'), tags=tags)
+
+        for key, metric in CLUSTER_INFO_GAUGE_KEYS.items():
+            value = cluster_info.get(key)
+            if value is not None:
+                try:
+                    self.gauge(metric, int(value), tags=tags)
+                except ValueError:
+                    self.log.debug('Unable to parse cluster metric %s value: %s', key, value)
+
     def _check_slowlog(self):
         """Retrieve length and entries from Redis' SLOWLOG
 
@@ -479,19 +440,15 @@ class Redis(AgentCheck):
         conn.set_response_callback("SLOWLOG GET", upstream_parse_slowlog_get)
 
         if not self.instance.get(MAX_SLOW_ENTRIES_KEY):
-            try:
-                max_slow_entries = int(conn.config_get(MAX_SLOW_ENTRIES_KEY)[MAX_SLOW_ENTRIES_KEY])
-                if max_slow_entries > DEFAULT_MAX_SLOW_ENTRIES:
-                    self.log.debug(
-                        "Redis {0} is higher than {1}. Defaulting to {1}. "  # noqa: G001
-                        "If you need a higher value, please set {0} in your check config".format(
-                            MAX_SLOW_ENTRIES_KEY, DEFAULT_MAX_SLOW_ENTRIES
-                        )
+            config = self._get_config(conn, MAX_SLOW_ENTRIES_KEY)
+            max_slow_entries = int(config.get(MAX_SLOW_ENTRIES_KEY, DEFAULT_MAX_SLOW_ENTRIES))
+            if max_slow_entries > DEFAULT_MAX_SLOW_ENTRIES:
+                self.log.debug(
+                    "Redis {0} is higher than {1}. Defaulting to {1}. "  # noqa: G001
+                    "If you need a higher value, please set {0} in your check config".format(
+                        MAX_SLOW_ENTRIES_KEY, DEFAULT_MAX_SLOW_ENTRIES
                     )
-                    max_slow_entries = DEFAULT_MAX_SLOW_ENTRIES
-            # No config on AWS Elasticache
-            except redis.ResponseError:
-                self.log.debug("Unable to collect length of slow log: CONFIG GET disabled in some managed Redis.")
+                )
                 max_slow_entries = DEFAULT_MAX_SLOW_ENTRIES
         else:
             max_slow_entries = int(self.instance.get(MAX_SLOW_ENTRIES_KEY))
@@ -499,19 +456,9 @@ class Redis(AgentCheck):
         # Get all slowlog entries
         try:
             slowlogs = conn.slowlog_get(max_slow_entries)
-        except TypeError as e:
-            # This catch is needed in PY2 because there is a known issue that has only been fixed after redis
-            # dropped python 2 support
-            # issue: https://github.com/andymccurdy/redis-py/issues/1475
-            # fix: https://github.com/andymccurdy/redis-py/pull/1352
-            # TODO: remove once PY2 is no longer supported
-            self.log.exception(e)
-            self.log.error(
-                'There was an error retrieving slowlog, these metrics will be skipped. This issue is fixed on Agent 7+.'
-                ' You can find more information about upgrading to agent 7 in '
-                'https://docs.datadoghq.com/agent/versions/upgrade_to_agent_v7/?tab=linux'
-            )
-            slowlogs = []
+        except redis.ResponseError:
+            self.log.debug("Unable to collect slow log: SLOWLOG GET disabled in some managed Redis.")
+            return
 
         # Find slowlog entries between last timestamp and now using start_time
         slowlogs = [s for s in slowlogs if s['start_time'] > self.last_timestamp_seen]
@@ -545,7 +492,7 @@ class Redis(AgentCheck):
             self.warning('Could not retrieve command stats from Redis. INFO COMMANDSTATS only works with Redis >= 2.6.')
             return
 
-        for key, stats in iteritems(command_stats):
+        for key, stats in command_stats.items():
             command = key.split('_', 1)[1]
             command_tags = tags + ['command:{}'.format(command)]
 
@@ -565,11 +512,8 @@ class Redis(AgentCheck):
             self.set_metadata('version', info['redis_version'])
 
 
-_timer = time.time if PY2 else time.perf_counter
-
-
-def _call_and_time(func):
-    start_time = _timer()
-    rv = func()
-    end_time = _timer()
+def _call_and_time(func, *args, **kwargs):
+    start_time = time.perf_counter()
+    rv = func(*args, **kwargs)
+    end_time = time.perf_counter()
     return rv, round_value((end_time - start_time) * 1000, 2)

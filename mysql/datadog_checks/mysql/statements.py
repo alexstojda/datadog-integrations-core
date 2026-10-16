@@ -18,13 +18,9 @@ from datadog_checks.base.utils.db.statement_metrics import StatementMetrics
 from datadog_checks.base.utils.db.utils import DBMAsyncJob, default_json_event_encoding, obfuscate_sql_with_metadata
 from datadog_checks.base.utils.serialization import json
 from datadog_checks.base.utils.tracking import tracked_method
+from datadog_checks.mysql.cursor import CommenterDictCursor
 
-from .util import DatabaseConfigurationError, warning_with_tags
-
-try:
-    import datadog_agent
-except ImportError:
-    from ..stubs import datadog_agent
+from .util import DatabaseConfigurationError, ManagedAuthConnectionMixin, warning_with_tags
 
 PyMysqlRow = Dict[str, Any]
 Row = Dict[str, Any]
@@ -44,7 +40,20 @@ METRICS_COLUMNS = {
     'sum_select_full_join',
     'sum_no_index_used',
     'sum_no_good_index_used',
+    'sum_sort_rows',
+    'sum_sort_merge_passes',
+    'sum_sort_range',
+    'sum_sort_scan',
+    'sum_created_tmp_tables',
+    'sum_created_tmp_disk_tables',
+    'sum_select_full_range_join',
+    'sum_select_range',
+    'sum_select_range_check',
 }
+
+INTERNAL_COLUMNS = {'_dd_statement_id'}
+DIGEST_STATEMENT_SOURCE = 'events_statements_summary_by_digest'
+PREPARED_STATEMENT_SOURCE = 'prepared_statements_instances'
 
 
 def _row_key(row):
@@ -55,13 +64,43 @@ def _row_key(row):
     return row['schema_name'], row['query_signature']
 
 
-class MySQLStatementMetrics(DBMAsyncJob):
+def _row_state_key(row):
+    """
+    :param row: a normalized row from a MySQL statement metrics source
+    :return: a tuple uniquely identifying the cumulative database counter
+    """
+    if row.get('_dd_statement_id') is not None:
+        # `object_instance_begin` is a reusable address, so key on the signature too.
+        return PREPARED_STATEMENT_SOURCE, row['schema_name'], row['_dd_statement_id'], row['query_signature']
+
+    return DIGEST_STATEMENT_SOURCE, row['schema_name'], row['digest']
+
+
+def _strip_internal_columns(row):
+    return {k: v for k, v in row.items() if k not in INTERNAL_COLUMNS}
+
+
+def _merge_rows_by_query_signature(rows):
+    merged_rows = {}
+    for row in rows:
+        query_key = _row_key(row)
+        if query_key in merged_rows:
+            for metric in METRICS_COLUMNS:
+                if metric in row:
+                    merged_rows[query_key][metric] = merged_rows[query_key].get(metric, 0) + row[metric]
+        else:
+            merged_rows[query_key] = _strip_internal_columns(row)
+
+    return list(merged_rows.values())
+
+
+class MySQLStatementMetrics(ManagedAuthConnectionMixin, DBMAsyncJob):
     """
     MySQLStatementMetrics collects database metrics per normalized MySQL statement
     """
 
-    def __init__(self, check, config, connection_args):
-        # (MySql, MySQLConfig) -> None
+    def __init__(self, check, config, connection_args_provider, uses_managed_auth=False):
+        # (MySql, MySQLConfig, Callable, bool) -> None
         collection_interval = float(config.statement_metrics_config.get('collection_interval', 10))
         if collection_interval <= 0:
             collection_interval = 10
@@ -72,33 +111,41 @@ class MySQLStatementMetrics(DBMAsyncJob):
             enabled=is_affirmative(config.statement_metrics_config.get('enabled', True)),
             expected_db_exceptions=(pymysql.err.DatabaseError,),
             min_collection_interval=config.min_collection_interval,
-            dbms="mysql",
+            dbms=check.dbms,
             job_name="statement-metrics",
             shutdown_callback=self._close_db_conn,
         )
         self._check = check
+        self._collect_prepared_statements = None
         self._metric_collection_interval = collection_interval
-        self._connection_args = connection_args
+        self._connection_args_provider = connection_args_provider
+        self._uses_managed_auth = uses_managed_auth
+        self._db_created_at = 0
         self._db = None
         self._config = config
         self.log = get_check_logger()
         self._state = StatementMetrics()
         self._obfuscate_options = to_native_string(json.dumps(self._config.obfuscator_options))
+        # last_seen: the last query execution time seen by the check
+        # This is used to limit the queries to fetch from the performance schema to only the new ones
+        self._last_seen = '1970-01-01'
         # full_statement_text_cache: limit the ingestion rate of full statement text events per query_signature
         self._full_statement_text_cache = TTLCache(
             maxsize=self._config.full_statement_text_cache_max_size,
             ttl=60 * 60 / self._config.full_statement_text_samples_per_hour_per_query,
         )  # type: TTLCache
 
-    def _get_db_connection(self):
-        """
-        lazy reconnect db
-        pymysql connections are not thread safe so we can't reuse the same connection from the main check
-        :return:
-        """
-        if not self._db:
-            self._db = pymysql.connect(**self._connection_args)
-        return self._db
+        # statement_rows: cache of all rows for each digest, keyed by (schema_name, query_signature)
+        # This is used to cache the metrics for queries that have the same query_signature but different digests
+        self._statement_rows = TTLCache(
+            maxsize=self._config.statement_rows_cache_max_size,
+            ttl=self._config.statement_rows_cache_ttl,
+        )
+
+    def shutdown(self) -> None:
+        self._close_db_conn()
+        self._check = None
+        self._connection_args_provider = None
 
     def _close_db_conn(self):
         if self._db:
@@ -110,16 +157,21 @@ class MySQLStatementMetrics(DBMAsyncJob):
                 self._db = None
 
     def run_job(self):
+        start = time.time()
+        self._statement_rows.expire()
         self.collect_per_statement_metrics()
+        self._check.gauge(
+            "dd.mysql.statement_metrics.collect_metrics.elapsed_ms",
+            (time.time() - start) * 1000,
+            tags=self._check.tag_manager.get_tags() + self._check._get_debug_tags(),
+            hostname=self._check.resolved_hostname,
+        )
 
     @tracked_method(agent_check_getter=attrgetter('_check'))
     def collect_per_statement_metrics(self):
         # Detect a database misconfiguration by checking if the performance schema is enabled since mysql
         # just returns no rows without errors if the performance schema is disabled
-        if self._check.performance_schema_enabled is None:
-            self.log.debug('Waiting for performance schema availability to be determined by the check, skipping run.')
-            return
-        if self._check.performance_schema_enabled is False:
+        if self._check.global_variables.performance_schema_enabled is False:
             self._check.record_warning(
                 DatabaseConfigurationError.performance_schema_not_enabled,
                 warning_with_tags(
@@ -128,17 +180,19 @@ class MySQLStatementMetrics(DBMAsyncJob):
                     'troubleshooting#%s for more details',
                     DatabaseConfigurationError.performance_schema_not_enabled.value,
                     code=DatabaseConfigurationError.performance_schema_not_enabled.value,
-                    host=self._check.resolved_hostname,
+                    host=self._check.reported_hostname,
                 ),
             )
             return
 
-        rows = self._collect_per_statement_metrics()
-        if not rows:
-            return
         # Omit internal tags for dbm payloads since those are only relevant to metrics processed directly
         # by the agent
         tags = [t for t in self._tags if not t.startswith('dd.internal')]
+
+        rows = self._collect_per_statement_metrics(tags)
+        if not rows:
+            # No rows to process, can skip the rest of the payload generation and avoid an empty payload
+            return
         for event in self._rows_to_fqt_events(rows, tags):
             self._check.database_monitoring_query_sample(json.dumps(event, default=default_json_event_encoding))
         payload = {
@@ -146,27 +200,54 @@ class MySQLStatementMetrics(DBMAsyncJob):
             'timestamp': time.time() * 1000,
             'mysql_version': self._check.version.version + '+' + self._check.version.build,
             'mysql_flavor': self._check.version.flavor,
-            "ddagenthostname": self._check.agent_hostname,
-            'ddagentversion': datadog_agent.get_version(),
+            'ddagentversion': self._check.agent_version,
             'min_collection_interval': self._metric_collection_interval,
             'tags': tags,
             'cloud_metadata': self._config.cloud_metadata,
+            'service': self._config.service,
             'mysql_rows': rows,
         }
         self._check.database_monitoring_query_metrics(json.dumps(payload, default=default_json_event_encoding))
-        self._check.count(
+        self._check.gauge(
             "dd.mysql.collect_per_statement_metrics.rows",
             len(rows),
+            tags=tags + self._check._get_debug_tags(),
+            hostname=self._check.reported_hostname,
+        )
+
+    def _collect_per_statement_metrics(self, tags):
+        # type: (List[str]) -> List[PyMysqlRow]
+
+        self._get_statement_count(tags)
+
+        monotonic_rows = self._query_summary_per_statement()
+        self._check.gauge(
+            "dd.mysql.statement_metrics.query_rows",
+            len(monotonic_rows),
             tags=tags + self._check._get_debug_tags(),
             hostname=self._check.resolved_hostname,
         )
 
-    def _collect_per_statement_metrics(self):
-        # type: () -> List[PyMysqlRow]
-        monotonic_rows = self._query_summary_per_statement()
+        monotonic_rows = self._filter_query_rows(monotonic_rows)
         monotonic_rows = self._normalize_queries(monotonic_rows)
-        rows = self._state.compute_derivative_rows(monotonic_rows, METRICS_COLUMNS, key=_row_key)
+        monotonic_rows = self._add_associated_rows(monotonic_rows)
+        rows = self._state.compute_derivative_rows(monotonic_rows, METRICS_COLUMNS, key=_row_state_key)
+        rows = _merge_rows_by_query_signature(rows)
         return rows
+
+    def _get_statement_count(self, tags):
+        self._raise_if_cancelled()
+        with closing(self._get_db_connection().cursor(CommenterDictCursor)) as cursor:
+            cursor.execute("SELECT count(*) AS count from performance_schema.events_statements_summary_by_digest")
+
+            rows = cursor.fetchall() or []  # type: ignore
+            if rows:
+                self._check.gauge(
+                    "dd.mysql.statement_metrics.events_statements_summary_by_digest.total_rows",
+                    rows[0]['count'],
+                    tags=tags + self._check._get_debug_tags(),
+                    hostname=self._check.resolved_hostname,
+                )
 
     def _query_summary_per_statement(self):
         # type: () -> List[PyMysqlRow]
@@ -176,9 +257,20 @@ class MySQLStatementMetrics(DBMAsyncJob):
         values to get the counts for the elapsed period. This is similar to monotonic_count, but
         several fields must be further processed from the delta values.
         """
+        only_query_recent_statements = self._config.statement_metrics_config.get('only_query_recent_statements', False)
+        # Since `performance_schema.prepared_statements_instances` doesn't have a last_seen column,
+        # we only collect prepared statements if we're not querying recent statements
+        collect_prepared_statements = not only_query_recent_statements and self.collect_prepared_statements
+
+        condition = (
+            "WHERE `last_seen` >= %s"
+            if only_query_recent_statements
+            else "WHERE `digest_text` NOT LIKE 'EXPLAIN %' OR `digest_text` IS NULL"
+        )
 
         sql_statement_summary = """\
-            SELECT `schema_name`,
+            SELECT NULL AS `_dd_statement_id`,
+                   `schema_name`,
                    `digest`,
                    `digest_text`,
                    `count_star`,
@@ -191,18 +283,87 @@ class MySQLStatementMetrics(DBMAsyncJob):
                    `sum_select_scan`,
                    `sum_select_full_join`,
                    `sum_no_index_used`,
-                   `sum_no_good_index_used`
+                   `sum_no_good_index_used`,
+                   `sum_sort_rows`,
+                   `sum_sort_merge_passes`,
+                   `sum_sort_range`,
+                   `sum_sort_scan`,
+                   `sum_created_tmp_tables`,
+                   `sum_created_tmp_disk_tables`,
+                   `sum_select_full_range_join`,
+                   `sum_select_range`,
+                   `sum_select_range_check`,
+                   `last_seen`
             FROM performance_schema.events_statements_summary_by_digest
-            WHERE `digest_text` NOT LIKE 'EXPLAIN %' OR `digest_text` IS NULL
-            ORDER BY `count_star` DESC
-            LIMIT 10000"""
+            {}
+            """.format(condition)
 
-        with closing(self._get_db_connection().cursor(pymysql.cursors.DictCursor)) as cursor:
-            cursor.execute(sql_statement_summary)
+        if collect_prepared_statements:
+            # Every prepared statement object has a row in `performance_schema.prepared_statements_instances`.
+            # MySQL documents `object_instance_begin` as the table's primary key:
+            # https://dev.mysql.com/doc/refman/8.4/en/performance-schema-prepared-statements-instances-table.html
+            prepared_sql_statement_summary = """\
+                SELECT  `object_instance_begin` AS `_dd_statement_id`,
+                        `owner_object_schema` AS `schema_name`,
+                        NULL AS `digest`,
+                        `sql_text` AS `digest_text`,
+                        `count_execute` AS `count_star`,
+                        `sum_timer_execute` AS `sum_timer_wait`,
+                        `sum_lock_time` AS `sum_lock_time`,
+                        `sum_errors` AS `sum_errors`,
+                        `sum_rows_affected` AS `sum_rows_affected`,
+                        `sum_rows_sent` AS `sum_rows_sent`,
+                        `sum_rows_examined` AS `sum_rows_examined`,
+                        `sum_select_scan` AS `sum_select_scan`,
+                        `sum_select_full_join` AS `sum_select_full_join`,
+                        `sum_no_index_used` AS `sum_no_index_used`,
+                        `sum_no_good_index_used` AS `sum_no_good_index_used`,
+                        `sum_sort_rows` AS `sum_sort_rows`,
+                        `sum_sort_merge_passes` AS `sum_sort_merge_passes`,
+                        `sum_sort_range` AS `sum_sort_range`,
+                        `sum_sort_scan` AS `sum_sort_scan`,
+                        `sum_created_tmp_tables` AS `sum_created_tmp_tables`,
+                        `sum_created_tmp_disk_tables` AS `sum_created_tmp_disk_tables`,
+                        `sum_select_full_range_join` AS `sum_select_full_range_join`,
+                        `sum_select_range` AS `sum_select_range`,
+                        `sum_select_range_check` AS `sum_select_range_check`,
+                        NOW() AS `last_seen`
+                FROM performance_schema.prepared_statements_instances
+                WHERE `sql_text` NOT LIKE 'EXPLAIN %' OR `sql_text` IS NULL
+                """
+
+            sql_statement_summary = f"""\
+                {sql_statement_summary}
+                UNION ALL
+                {prepared_sql_statement_summary}
+                """
+        if not only_query_recent_statements:
+            sql_statement_summary = f"""\
+                {sql_statement_summary}
+                ORDER BY `count_star` DESC
+                LIMIT 10000
+                """
+
+        self._raise_if_cancelled()
+        with closing(self._get_db_connection().cursor(CommenterDictCursor)) as cursor:
+            args = [self._last_seen] if only_query_recent_statements else None
+            cursor.execute(sql_statement_summary, args)
 
             rows = cursor.fetchall() or []  # type: ignore
 
+        if rows:
+            self._last_seen = max(row['last_seen'] for row in rows)
+
         return rows
+
+    def _filter_query_rows(self, rows):
+        # type: (List[PyMysqlRow]) -> List[PyMysqlRow]
+        """
+        Filter out rows that are EXPLAIN statements
+        """
+        return [
+            row for row in rows if row['digest_text'] is None or not row['digest_text'].lower().startswith('explain')
+        ]
 
     def _normalize_queries(self, rows):
         normalized_rows = []
@@ -212,7 +373,8 @@ class MySQLStatementMetrics(DBMAsyncJob):
                 statement = obfuscate_sql_with_metadata(row['digest_text'], self._obfuscate_options)
                 obfuscated_statement = statement['query'] if row['digest_text'] is not None else None
             except Exception as e:
-                self.log.warning("Failed to obfuscate query=[%s] | err=[%s]", row['digest_text'], e)
+                # repr so a query containing a null cannot make this handler raise inside the agent log binding.
+                self.log.warning("Failed to obfuscate query=[%s] | err=[%s]", repr(row['digest_text']), e)
                 continue
 
             normalized_row['digest_text'] = obfuscated_statement
@@ -220,9 +382,27 @@ class MySQLStatementMetrics(DBMAsyncJob):
             metadata = statement['metadata']
             normalized_row['dd_tables'] = metadata.get('tables', None)
             normalized_row['dd_commands'] = metadata.get('commands', None)
+            normalized_row['dd_comments'] = metadata.get('comments', None)
             normalized_rows.append(normalized_row)
 
         return normalized_rows
+
+    def _add_associated_rows(self, rows):
+        """
+        If two or more statements with different digests have the same query_signature, they are considered the same
+        Because only one digest statement may be updated, we cache all the rows for each digest,
+        update with any new rows and then return all the rows for all the query_signatures.
+
+        We return all rows to guard against the case where a signature wasn't collected on the immediately previous run
+        but was present on runs before that.
+        """
+        for row in rows:
+            key = (row['schema_name'], row['query_signature'])
+            digest_rows = self._statement_rows.get(key, {})
+            digest_rows[_row_state_key(row)] = row
+            self._statement_rows[key] = digest_rows
+
+        return [row for statement_row in self._statement_rows.values() for row in statement_row.values()]
 
     def _rows_to_fqt_events(self, rows, tags):
         for row in rows:
@@ -233,11 +413,12 @@ class MySQLStatementMetrics(DBMAsyncJob):
             row_tags = tags + ["schema:{}".format(row['schema_name'])] if row['schema_name'] else tags
             yield {
                 "timestamp": time.time() * 1000,
-                "host": self._check.resolved_hostname,
-                "ddagentversion": datadog_agent.get_version(),
+                "host": self._check.reported_hostname,
+                "ddagentversion": self._check.agent_version,
                 "ddsource": "mysql",
                 "ddtags": ",".join(row_tags),
                 "dbm_type": "fqt",
+                'service': self._config.service,
                 "db": {
                     "instance": row['schema_name'],
                     "query_signature": row['query_signature'],
@@ -245,7 +426,23 @@ class MySQLStatementMetrics(DBMAsyncJob):
                     "metadata": {
                         "tables": row['dd_tables'],
                         "commands": row['dd_commands'],
+                        "comments": row['dd_comments'],
                     },
                 },
                 "mysql": {"schema": row["schema_name"]},
             }
+
+    @property
+    def collect_prepared_statements(self):
+        if self._collect_prepared_statements is None:
+            # prepared_statements_instances table was added to MariaDB 10.5.2
+            if self._check.is_mariadb and self._check.version.version_compatible((10, 5, 2)) is False:
+                self._collect_prepared_statements = False
+            # prepared_statements_instances table was added to MySQL 5.7.4
+            elif self._check.version.version_compatible((5, 7, 4)) is False:
+                self._collect_prepared_statements = False
+            else:
+                self._collect_prepared_statements = self._config.statement_metrics_config.get(
+                    'collect_prepared_statements', True
+                )
+        return self._collect_prepared_statements

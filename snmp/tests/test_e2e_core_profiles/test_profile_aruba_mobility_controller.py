@@ -16,7 +16,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_aruba_mobility_controller(dd_agent_check):
@@ -28,8 +28,12 @@ def test_e2e_profile_aruba_mobility_controller(dd_agent_check):
     common_tags = [
         'snmp_profile:aruba-mobility-controller',
         'snmp_host:aruba-mobility-controller.device.name',
+        'device_hostname:aruba-mobility-controller.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + []
 
     # --- TEST EXTENDED METRICS ---
@@ -54,6 +58,7 @@ def test_e2e_profile_aruba_mobility_controller(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.14823.1.1.50',
         'vendor': 'aruba',
         'device_type': 'wlc',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

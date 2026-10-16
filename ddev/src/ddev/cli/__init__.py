@@ -5,19 +5,21 @@ import os
 
 import click
 import pluggy
-from datadog_checks.dev.tooling.commands.create import create
 from datadog_checks.dev.tooling.commands.run import run
 
 from ddev._version import __version__
-from ddev.cli.application import Application
+from ddev.cli import upgrade_check
+from ddev.cli.application import Application, DdevGroup
 from ddev.cli.ci import ci
 from ddev.cli.clean import clean
 from ddev.cli.config import config
+from ddev.cli.create import create
 from ddev.cli.dep import dep
 from ddev.cli.docs import docs
 from ddev.cli.env import env
 from ddev.cli.meta import meta
 from ddev.cli.release import release
+from ddev.cli.size import size
 from ddev.cli.status import status
 from ddev.cli.test import test
 from ddev.cli.validate import validate
@@ -25,14 +27,20 @@ from ddev.config.constants import AppEnvVars, ConfigEnvVars
 from ddev.plugin import specs
 from ddev.utils.ci import running_in_ci
 from ddev.utils.fs import Path
+from ddev.utils.github_errors import GitHubAuthenticationError
 
 
-@click.group(context_settings={'help_option_names': ['-h', '--help']}, invoke_without_command=True)
+def display_registered_exception(app: Application, error: Exception) -> None:
+    app.display_error(str(error))
+
+
+@click.group(cls=DdevGroup, context_settings={'help_option_names': ['-h', '--help']}, invoke_without_command=True)
 @click.option('--core', '-c', is_flag=True, help='Work on `integrations-core`.')
 @click.option('--extras', '-e', is_flag=True, help='Work on `integrations-extras`.')
 @click.option('--marketplace', '-m', is_flag=True, help='Work on `marketplace`.')
 @click.option('--agent', '-a', is_flag=True, help='Work on `datadog-agent`.')
 @click.option('--here', '-x', is_flag=True, help='Work on the current location.')
+@click.option('--org', '-o', default=None, help='Override org config field for this invocation.')
 @click.option(
     '--color/--no-color',
     default=None,
@@ -69,7 +77,9 @@ from ddev.utils.fs import Path
 )
 @click.version_option(version=__version__, prog_name='ddev')
 @click.pass_context
-def ddev(ctx: click.Context, core, extras, marketplace, agent, here, color, interactive, verbose, quiet, config_file):
+def ddev(
+    ctx: click.Context, core, extras, marketplace, agent, here, org, color, interactive, verbose, quiet, config_file
+):
     """
     \b
          _     _
@@ -88,12 +98,13 @@ def ddev(ctx: click.Context, core, extras, marketplace, agent, here, color, inte
         interactive = not running_in_ci()
 
     app = Application(ctx.exit, verbose - quiet, color, interactive)
+    app.register_exception_handler(GitHubAuthenticationError, display_registered_exception)
 
     if config_file:
         app.config_file.path = Path(config_file).resolve()
-        if not app.config_file.path.is_file():
+        if not app.config_file.global_path.is_file():
             app.abort(f'The selected config file `{str(app.config_file.path)}` does not exist.')
-    elif not app.config_file.path.is_file():
+    elif not app.config_file.global_path.is_file():
         if app.verbose:
             app.display_waiting('No config file found, creating one with default settings now...')
 
@@ -103,8 +114,16 @@ def ddev(ctx: click.Context, core, extras, marketplace, agent, here, color, inte
                 app.display_success('Success! Please see `ddev config`.')
         except OSError:  # no cov
             app.abort(
-                f'Unable to create config file located at `{str(app.config_file.path)}`. Please check your permissions.'
+                f'Unable to create config file located at `{str(app.config_file.global_path)}`.'
+                'Please check your permissions.'
             )
+
+    if app.verbose:
+        if app.config_file.overrides_available():
+            app.display_info('Local override config file found. Values from this file will override global values.')
+
+    if org is not None:
+        app.config.org = org
 
     if not ctx.invoked_subcommand:
         app.display_info(ctx.get_help(), highlight=False)
@@ -117,6 +136,12 @@ def ddev(ctx: click.Context, core, extras, marketplace, agent, here, color, inte
         app.config_file.load()
     except OSError as e:  # no cov
         app.abort(f'Error loading configuration: {e}')
+    if app.config.upgrade_check:
+        upgrade_check.upgrade_check(app, __version__)
+
+    if not ctx.invoked_subcommand:
+        app.display_info(ctx.get_help(), highlight=False)
+        return
 
     app.config.terminal.styles.parse_fields()
     errors = app.initialize_styles(app.config.terminal.styles.raw_data)
@@ -144,6 +169,7 @@ ddev.add_command(run)
 ddev.add_command(status)
 ddev.add_command(test)
 ddev.add_command(validate)
+ddev.add_command(size)
 
 __management_command = os.environ.get('PYAPP_COMMAND_NAME', '')
 if __management_command:

@@ -5,6 +5,9 @@ import re
 
 import pytest
 
+from ddev.cli.release.agent.common import get_changes_per_agent
+from ddev.repo.core import Repository
+
 
 def test_changelog_without_arguments(fake_changelog, ddev):
     result = ddev('release', 'agent', 'changelog')
@@ -23,7 +26,7 @@ def test_changelog_write_without_force_aborts_when_changelog_already_exists(
 
     # Create the changelog to trigger the condition
     open(repo.path / 'AGENT_CHANGELOG.md', 'w').close()
-    mock_fetch_tags = mocker.patch('ddev.utils.git.GitManager.fetch_tags')
+    mock_fetch_tags = mocker.patch('ddev.utils.git.GitRepository.fetch_tags')
 
     result = ddev('release', 'agent', 'changelog', '--write')
     assert result.exit_code == 1
@@ -37,7 +40,7 @@ def test_changelog_write_without_force_aborts_when_changelog_already_exists(
 
 def test_changelog_write_force(repo_with_fake_changelog, fake_changelog, ddev, mocker):
     repo, fake_changelog = repo_with_fake_changelog
-    mock_fetch_tags = mocker.patch('ddev.utils.git.GitManager.fetch_tags')
+    mock_fetch_tags = mocker.patch('ddev.utils.git.GitRepository.fetch_tags')
 
     result = ddev('release', 'agent', 'changelog', '--write', '--force')
     assert result.exit_code == 0
@@ -48,7 +51,7 @@ def test_changelog_write_force(repo_with_fake_changelog, fake_changelog, ddev, m
 
 
 def test_changelog_since_to(fake_changelog, ddev, mocker):
-    mock_fetch_tags = mocker.patch('ddev.utils.git.GitManager.fetch_tags')
+    mock_fetch_tags = mocker.patch('ddev.utils.git.GitRepository.fetch_tags')
 
     result = ddev('release', 'agent', 'changelog', '--since', '7.38.0', '--to', '7.39.0')
     assert result.exit_code == 0
@@ -56,6 +59,7 @@ def test_changelog_since_to(fake_changelog, ddev, mocker):
     expected_output = (
         """## Datadog Agent version [7.39.0](https://github.com/DataDog/datadog-agent/blob/master/CHANGELOG.rst#7390)
 
+### Integration Updates
 * bar [2.0.0](https://github.com/DataDog/integrations-core/blob/master/bar/CHANGELOG.md) **BREAKING CHANGE**
 """
         "* datadog_checks_base [3.0.0]"
@@ -64,6 +68,78 @@ def test_changelog_since_to(fake_changelog, ddev, mocker):
     )
     assert result.output.rstrip('\n') == expected_output.strip('\n')
     assert mock_fetch_tags.call_count == 1
+
+
+def test_new_integration_with_non_initial_version(repo_with_new_integration_patched, ddev, mocker):
+    """
+    Test that a new integration is correctly detected even when its version
+    is not 1.0.0 (e.g., 1.0.1 or 1.2.0). This can happen when a new integration
+    is added in an RC and then patched before the final agent release.
+    """
+    repo, _ = repo_with_new_integration_patched
+    mock_fetch_tags = mocker.patch('ddev.utils.git.GitRepository.fetch_tags')
+
+    result = ddev('release', 'agent', 'changelog', '--since', '7.49.0', '--to', '7.50.0')
+    assert result.exit_code == 0
+
+    # The integration "newcheck" at version 1.0.1 should be listed as a NEW integration,
+    # not under "Integration Updates", because it didn't exist in the previous stable release
+    expected_output = """## Datadog Agent version [7.50.0](https://github.com/DataDog/datadog-agent/blob/master/CHANGELOG.rst#7500)
+
+### New Integrations
+* newcheck [1.0.1](https://github.com/DataDog/integrations-core/blob/master/newcheck/CHANGELOG.md)
+"""
+    assert result.output.rstrip('\n') == expected_output.strip('\n')
+    assert mock_fetch_tags.call_count == 1
+
+
+def test_changelog_skips_unreleased_integrations(repo_with_history, config_file, ddev, mocker, write_repo_config):
+    config_file.model.repos['core'] = str(repo_with_history.path)
+    config_file.save()
+    write_repo_config(
+        repo_with_history.path,
+        """
+[overrides.release.agent.unreleased-integrations.by-integration]
+bar = ["7.38.0"]
+""",
+    )
+    mock_fetch_tags = mocker.patch('ddev.utils.git.GitRepository.fetch_tags')
+
+    result = ddev('release', 'agent', 'changelog', '--since', '7.37.0', '--to', '7.38.0')
+    assert result.exit_code == 0
+
+    expected_output = """## Datadog Agent version [7.38.0](https://github.com/DataDog/datadog-agent/blob/master/CHANGELOG.rst#7380)
+
+### New Integrations
+* datadog_checks_base [2.1.3](https://github.com/DataDog/integrations-core/blob/master/datadog_checks_base/CHANGELOG.md)
+### Integration Updates
+* foo [1.5.0](https://github.com/DataDog/integrations-core/blob/master/foo/CHANGELOG.md)
+"""
+    assert result.output.rstrip('\n') == expected_output.strip('\n')
+    assert mock_fetch_tags.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ('previous_version', 'current_version', 'breaking'),
+    [
+        pytest.param('9.4.1', '10.0.0', True, id='major-upgrade-across-digit-boundary'),
+        pytest.param('10.0.0', '9.4.1', True, id='major-downgrade-across-digit-boundary'),
+        pytest.param('10.0.0', '10.1.0', False, id='minor-upgrade'),
+        pytest.param('10.0.0', '10.0.1', False, id='patch-upgrade'),
+    ],
+)
+def test_major_version_change_detection(
+    repo_with_history: Repository, previous_version: str, current_version: str, breaking: bool
+):
+    # Regression for the missing NGINX 9 -> 10 breaking-change notice in #25291.
+    for tag, version in (('7.42.0', previous_version), ('7.43.0', current_version)):
+        repo_with_history.agent_release_requirements.write_text(f'datadog-foo=={version}\n')
+        repo_with_history.git.run('commit', '--no-verify', '-am', tag)
+        repo_with_history.git.run('tag', tag)
+
+    changes = get_changes_per_agent(repo_with_history, '7.42.0', '7.43.0')
+
+    assert changes == {'7.43.0': {'foo': (current_version, False, breaking)}}
 
 
 @pytest.fixture
@@ -75,14 +151,17 @@ def repo_with_fake_changelog(repo_with_history, config_file):
         """
 ## Datadog Agent version [7.41.0](https://github.com/DataDog/datadog-agent/blob/master/CHANGELOG.rst#7410)
 
+### New Integrations
 * datadog_checks_downloader [4.0.0](https://github.com/DataDog/integrations-core/blob/master/datadog_checks_downloader/CHANGELOG.md)
 
 ## Datadog Agent version [7.40.0](https://github.com/DataDog/datadog-agent/blob/master/CHANGELOG.rst#7400)
 
+### New Integrations
 * onlywin [1.0.0](https://github.com/DataDog/integrations-core/blob/master/onlywin/CHANGELOG.md)
 
 ## Datadog Agent version [7.39.0](https://github.com/DataDog/datadog-agent/blob/master/CHANGELOG.rst#7390)
 
+### Integration Updates
 * bar [2.0.0](https://github.com/DataDog/integrations-core/blob/master/bar/CHANGELOG.md) **BREAKING CHANGE**
 """
         "* datadog_checks_base [3.0.0]"
@@ -92,9 +171,11 @@ def repo_with_fake_changelog(repo_with_history, config_file):
 
 ## Datadog Agent version [7.38.0](https://github.com/DataDog/datadog-agent/blob/master/CHANGELOG.rst#7380)
 
-* foo [1.5.0](https://github.com/DataDog/integrations-core/blob/master/foo/CHANGELOG.md)
+### New Integrations
 * bar [1.0.0](https://github.com/DataDog/integrations-core/blob/master/bar/CHANGELOG.md)
 * datadog_checks_base [2.1.3](https://github.com/DataDog/integrations-core/blob/master/datadog_checks_base/CHANGELOG.md)
+### Integration Updates
+* foo [1.5.0](https://github.com/DataDog/integrations-core/blob/master/foo/CHANGELOG.md)
 """
     )
     return (

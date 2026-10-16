@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "4ea56824-28da-4beb-8937-c45ef32fdb7f",
   "app_id": "voltdb",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,8 @@
       "Supported OS::macOS",
       "Supported OS::Windows",
       "Category::Data Stores",
-      "Category::Log Collection"
+      "Category::Log Collection",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -52,13 +54,10 @@
       "VoltDB - Overview": "assets/dashboards/voltdb_overview.json"
     },
     "monitors": {
-      "CPU load": "assets/monitors/cpu_load.json"
+      "Voltdb Node CPU is high": "assets/monitors/cpu_load.json"
     },
     "saved_views": {
       "voltdb_processes": "assets/saved_views/voltdb_processes.json"
-    },
-    "logs": {
-      "source": "voltdb"
     }
   }
 }

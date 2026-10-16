@@ -2,6 +2,255 @@
 
 <!-- towncrier release notes start -->
 
+## 6.1.0 / 2026-10-01
+
+***Added***:
+
+* Update dependencies ([#25284](https://github.com/DataDog/integrations-core/pull/25284))
+
+## 6.0.0 / 2026-09-02 / Agent 7.84.0
+
+***Changed***:
+
+* [Cisco ACI] Stop passing hostname when emitting metrics ([#24707](https://github.com/DataDog/integrations-core/pull/24707))
+
+***Added***:
+
+* [Cisco ACI] Add new endpoint to process APIC interfaces to enable topology ([#24193](https://github.com/DataDog/integrations-core/pull/24193))
+
+## 5.1.0 / 2026-08-24 / Agent 7.83.0
+
+***Security***:
+
+* Bump cryptography to 50.0.0 to remediate CVE-2026-69247, GHSA-jwv3-5hgf-82ww, and GHSA-m2h6-j472-rp4c. ([#24948](https://github.com/DataDog/integrations-core/pull/24948))
+
+## 5.0.1 / 2026-06-18 / Agent 7.81.0
+
+***Fixed***:
+
+* Bump cryptography to 48.0.1. ([#24073](https://github.com/DataDog/integrations-core/pull/24073))
+
+## 5.0.0 / 2026-05-14 / Agent 7.80.0
+
+***Removed***:
+
+* Remove tenant faults as events, faults are now only sent as logs. ([#23350](https://github.com/DataDog/integrations-core/pull/23350))
+
+***Added***:
+
+* Get health score from healthInst if fvOverallHealth isn't enabled. ([#21988](https://github.com/DataDog/integrations-core/pull/21988))
+
+## 4.14.2 / 2026-04-28 / Agent 7.79.0
+
+***Fixed***:
+
+* Bump cryptography from 46.0.6 to 46.0.7 to address CVE-2026-39892. ([#23403](https://github.com/DataDog/integrations-core/pull/23403))
+
+## 4.14.1 / 2026-04-09 / Agent 7.78.0
+
+***Fixed***:
+
+* Bump `cryptography` to `==46.0.6` (CVE-2026-34073 / VULN-59768). ([#23223](https://github.com/DataDog/integrations-core/pull/23223))
+
+## 4.14.0 / 2026-04-01
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 4.13.1 / 2026-03-18
+
+***Fixed***:
+
+* Fix NDM tagging: use only device_id in device id_tags to prevent collisions when devices are unreachable, and add interface:{name} tag to interface metrics for proper metadata-to-metrics linking ([#22645](https://github.com/DataDog/integrations-core/pull/22645))
+
+## 4.13.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+***Fixed***:
+
+* Cisco ACI: Bypass OOB IP comparison when building topology ([#22572](https://github.com/DataDog/integrations-core/pull/22572))
+
+## 4.12.0 / 2026-02-11 / Agent 7.76.0
+
+***Security***:
+
+* Bump `cryptography` to 46.0.5 ([#22607](https://github.com/DataDog/integrations-core/pull/22607))
+
+## 4.11.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 4.10.1 / 2025-10-31 / Agent 7.73.0
+
+***Fixed***:
+
+* Add allowed values list on kerberos_auth field ([#20879](https://github.com/DataDog/integrations-core/pull/20879))
+
+## 4.10.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 4.9.0 / 2025-09-05 / Agent 7.71.0
+
+***Added***:
+
+* Update dependencies ([#21217](https://github.com/DataDog/integrations-core/pull/21217))
+
+## 4.8.0 / 2025-07-10 / Agent 7.69.0
+
+***Added***:
+
+* Update dependencies ([#20561](https://github.com/DataDog/integrations-core/pull/20561))
+
+## 4.7.0 / 2025-06-12 / Agent 7.68.0
+
+***Added***:
+
+* Update dependencies ([#20399](https://github.com/DataDog/integrations-core/pull/20399))
+
+***Fixed***:
+
+* skip topology link resolution for cisco-aci when remote port index is None ([#20418](https://github.com/DataDog/integrations-core/pull/20418))
+
+## 4.6.0 / 2025-05-15 / Agent 7.67.0
+
+***Added***:
+
+* Update dependencies ([#20215](https://github.com/DataDog/integrations-core/pull/20215))
+
+## 4.5.0 / 2025-04-17 / Agent 7.66.0
+
+***Added***:
+
+* Update dependencies ([#19962](https://github.com/DataDog/integrations-core/pull/19962))
+
+## 4.4.0 / 2025-03-19 / Agent 7.65.0
+
+***Added***:
+
+* Update dependencies ([#19687](https://github.com/DataDog/integrations-core/pull/19687))
+* Add failover support with Agent High Availability feature. ([#19776](https://github.com/DataDog/integrations-core/pull/19776))
+* Collect Cisco ACI faults as logs. ([#19836](https://github.com/DataDog/integrations-core/pull/19836))
+
+## 4.3.0 / 2025-01-16 / Agent 7.63.0
+
+***Added***:
+
+* Add `tls_ciphers` param to integration ([#19334](https://github.com/DataDog/integrations-core/pull/19334))
+
+## 4.2.0 / 2024-12-26 / Agent 7.62.0
+
+***Added***:
+
+* [NDM] [Cisco ACI] Support submitting topology metadata (utilizing LLDP neighbor information) ([#18675](https://github.com/DataDog/integrations-core/pull/18675))
+
+***Fixed***:
+
+* [NDM] [Cisco ACI] Fix APIC device status ([#19204](https://github.com/DataDog/integrations-core/pull/19204))
+
+## 4.1.0 / 2024-10-31 / Agent 7.60.0
+
+***Added***:
+
+* [NDM] [Cisco ACI] Utilize raw ID for interface metadata ([#18842](https://github.com/DataDog/integrations-core/pull/18842))
+
+***Fixed***:
+
+* [NDM] [Cisco ACI] Improve integration performance ([#18747](https://github.com/DataDog/integrations-core/pull/18747))
+
+## 4.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+* [NDM] [Cisco ACI] Add check metrics ([#18748](https://github.com/DataDog/integrations-core/pull/18748))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 3.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Security***:
+
+* Bump version of cryptography to 43.0.1 to address vulnerability ([#18656](https://github.com/DataDog/integrations-core/pull/18656))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 2.12.0 / 2024-09-06
+
+***Added***:
+
+* Add the ability to tag Cisco ACI device and interface metrics with user-defined tags. ([#18496](https://github.com/DataDog/integrations-core/pull/18496))
+
+## 2.11.0 / 2024-09-05
+
+***Added***:
+
+* Update dependencies ([#18478](https://github.com/DataDog/integrations-core/pull/18478))
+
+***Fixed***:
+
+* [NDM] [Cisco ACI] Use name instead of node ID as device hostname ([#18375](https://github.com/DataDog/integrations-core/pull/18375))
+
+## 2.10.2 / 2024-09-02 / Agent 7.57.0
+
+***Fixed***:
+
+* [NDM] [Cisco ACI] Use actual int for interface index ([#18414](https://github.com/DataDog/integrations-core/pull/18414))
+
+## 2.10.1 / 2024-08-20
+
+***Fixed***:
+
+* [NDM] [Cisco ACI] Refactor batched payloads to fix incorrect status + use interface ID if name not available ([#18360](https://github.com/DataDog/integrations-core/pull/18360))
+
+## 2.10.0 / 2024-08-09
+
+***Added***:
+
+* [NDM] Add NDM metadata support for Cisco ACI ([#17735](https://github.com/DataDog/integrations-core/pull/17735))
+* [NDM] [Cisco ACI] Add common NDM tags to metrics ([#18017](https://github.com/DataDog/integrations-core/pull/18017))
+* [NDM] [Cisco ACI] Add config flag for enabling sending metadata to NDM ([#18099](https://github.com/DataDog/integrations-core/pull/18099))
+* Update dependencies ([#18187](https://github.com/DataDog/integrations-core/pull/18187))
+
+## 2.9.0 / 2024-07-05 / Agent 7.56.0
+
+***Added***:
+
+* Update dependencies ([#17817](https://github.com/DataDog/integrations-core/pull/17817))
+
+## 2.8.0 / 2024-05-31 / Agent 7.55.0
+
+***Added***:
+
+* Update dependencies ([#17519](https://github.com/DataDog/integrations-core/pull/17519))
+
+***Fixed***:
+
+* Update the description for the `tls_ca_cert` config option to use `openssl rehash` instead of `c_rehash` ([#16981](https://github.com/DataDog/integrations-core/pull/16981))
+
+## 2.7.0 / 2024-03-07 / Agent 7.52.0
+
+***Security***:
+
+* Bump cryptography to 42.0.5 ([#17054](https://github.com/DataDog/integrations-core/pull/17054))
+
 ## 2.6.0 / 2024-02-16
 
 ***Added***:

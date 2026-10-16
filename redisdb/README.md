@@ -2,7 +2,7 @@
 
 ## Overview
 
-Whether you use Redis as a database, cache, or message queue, this integration tracks problems with your Redis servers, cloud service, and the parts of your infrastructure they serve. Use the Datadog Agent's Redis check to collects metrics related to:
+Whether you use Redis as a database, cache, or message queue, this integration tracks problems with your Redis servers, cloud service, and the parts of your infrastructure they serve. Use the Datadog Agent's Redis check to collect metrics related to:
 
 - Performance
 - Memory usage
@@ -11,6 +11,8 @@ Whether you use Redis as a database, cache, or message queue, this integration t
 - Disk persistence
 - Expired and evicted keys
 - and many more
+
+**Minimum Agent version:** 6.0.0
 
 ## Setup
 
@@ -51,6 +53,8 @@ To configure this check for an Agent running on a host:
        #
        # password: <PASSWORD>
    ```
+
+   **Note**: The Redis check does not support Amazon ElastiCache IAM authentication. Use the `username` and `password` parameters for Redis-level authentication instead.
 
 2. If using Redis 6+ and ACLs, ensure that the user has at least `DB  Viewer` permissions at the Database level, `Cluster Viewer` permissions if operating in a cluster environment, and `+config|get +info +slowlog|get` ACL rules. For more details, see [Database access control][4].
 
@@ -145,7 +149,15 @@ To configure this check for an Agent running on Kubernetes:
 
 ##### Metric collection
 
-Set [Autodiscovery Integrations Templates][14] as pod annotations on your application container. Aside from this, templates can also be configured using a [file, configmap, or key-value store][15].
+To collect metrics, set the following parameters and values with one of the Kubernetes Autodiscovery options below. You can also use a [local file, ConfigMap, key-value store, Datadog Operator manifest, or Helm chart][15].
+
+| Parameter            | Value                                                                      |
+| -------------------- | -------------------------------------------------------------------------- |
+| `<INTEGRATION_NAME>` | `["redisdb"]`                                                              |
+| `<INIT_CONFIG>`      | `[{}]`                                                                     |
+| `<INSTANCE_CONFIG>`  | `[{"host": "%%host%%","port":"6379","password":"%%env_REDIS_PASSWORD%%"}]` |
+
+###### Kubernetes annotations
 
 **Annotations v1** (for Datadog Agent < v7.36)
 
@@ -205,8 +217,35 @@ spec:
       ports:
         - containerPort: 6379
 ```
+###### DatadogInstrumentation CRD
 
-**Note**: The `"%%env_<ENV_VAR>%%"` template variable logic is used to avoid storing the password in plain text, hence the `REDIS_PASSWORD` environment variable must be set on the Agent container. See the [Autodiscovery Template Variable][9] documentation. Alternatively, the Agent can leverage the `secrets` package to work with any [secrets management][10] backend (such as HashiCorp Vault or AWS Secrets Manager).
+```yaml
+apiVersion: datadoghq.com/v1alpha1
+kind: DatadogInstrumentation
+metadata:
+  name: <CR_NAME>
+  namespace: <WORKLOAD_NAMESPACE>
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet # Or another target kind, if applicable.
+    name: <REDIS_WORKLOAD_NAME>
+  config:
+    checks:
+      - integration: redisdb
+        containerName: redis
+        initConfig: {}
+        instances:
+          - host: "%%host%%"
+            port: "6379"
+            password: "%%env_REDIS_PASSWORD%%"
+```
+
+For setup details, see [Configure Autodiscovery with the DatadogInstrumentation CRD][27].
+
+**Note**: 
+- If no user is specified in the configuration, the Redis integration authenticates with the `default` user. The password specified in the configuration therefore applies to `default` user.
+- The `"%%env_<ENV_VAR>%%"` template variable logic is used to avoid storing the password in plain text, hence the `REDIS_PASSWORD` environment variable must be set on the Agent container. See the [Autodiscovery Template Variable][9] documentation. Alternatively, the Agent can leverage the `secrets` package to work with any [secrets management][10] backend (such as HashiCorp Vault or AWS Secrets Manager).
 
 ##### Log collection
 
@@ -214,7 +253,11 @@ _Available for Agent versions >6.0_
 
 Collecting logs is disabled by default in the Datadog Agent. To enable it, see [Kubernetes Log Collection][16].
 
-Then, set [Log Integrations][12] as pod annotations. This can also be configure using a [file, configmap, or key-value store][17].
+Then, set the following parameter in an [Autodiscovery template][14]. You can do this with Kubernetes Annotations (shown below) on your Redis pod(s), or with a [local file, ConfigMap, key-value store, Datadog Operator manifest, or Helm chart][15].
+
+| Parameter            | Value                                                                      |
+| -------------------- | -------------------------------------------------------------------------- |
+| `<LOG_CONFIG>`       | `[{"source":"redis","service":"<YOUR_APP_NAME>"}]`                         |
 
 **Annotations v1/v2**
 
@@ -365,10 +408,10 @@ Additional helpful documentation, links, and articles:
 
 - [How to monitor Redis performance metrics][26]
 
-[1]: https://app.datadoghq.com/account/settings/agent/latest
+[1]: /account/settings/agent/latest
 [2]: https://docs.datadoghq.com/agent/guide/agent-configuration-files/#agent-configuration-directory
 [3]: https://github.com/DataDog/integrations-core/blob/master/redisdb/datadog_checks/redisdb/data/conf.yaml.example
-[4]: https://docs.redis.com/latest/rs/security/passwords-users-roles/
+[4]: https://redis.io/docs/latest/operate/rs/security/access-control/
 [5]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
 [6]: https://docs.datadoghq.com/tracing/send_traces/
 [7]: https://docs.datadoghq.com/tracing/setup/
@@ -390,3 +433,4 @@ Additional helpful documentation, links, and articles:
 [23]: https://github.com/DataDog/integrations-core/blob/master/redisdb/metadata.csv
 [24]: https://github.com/DataDog/integrations-core/blob/master/redisdb/assets/service_checks.json
 [26]: https://www.datadoghq.com/blog/how-to-monitor-redis-performance-metrics
+[27]: https://docs.datadoghq.com/containers/guide/configure-autodiscovery-with-the-datadoginstrumentation-crd/

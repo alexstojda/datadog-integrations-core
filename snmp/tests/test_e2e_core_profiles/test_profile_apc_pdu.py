@@ -17,7 +17,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_apc_pdu(dd_agent_check):
@@ -29,12 +29,16 @@ def test_e2e_profile_apc_pdu(dd_agent_check):
     common_tags = [
         'snmp_profile:apc-pdu',
         'snmp_host:apc-pdu.device.name',
+        'device_hostname:apc-pdu.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + [
         'powernet_r_pdu_ident_firmware_rev:kept zombies forward acted zombies but kept forward',
         'powernet_r_pdu_ident_hardware_rev:zombies forward their',
-        'powernet_r_pdu_ident_model_number:zombies kept their kept zombies kept Jaded zombies ' 'but',
+        'powernet_r_pdu_ident_model_number:zombies kept their kept zombies kept Jaded zombies but',
         'powernet_r_pdu_ident_name:oxen',
         'powernet_r_pdu_ident_serial_number:Jaded kept',
     ]
@@ -167,6 +171,7 @@ def test_e2e_profile_apc_pdu(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.318.1.3.4.5',
         'vendor': 'apc',
         'device_type': 'pdu',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

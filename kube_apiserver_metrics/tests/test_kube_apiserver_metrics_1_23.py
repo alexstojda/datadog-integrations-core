@@ -38,6 +38,7 @@ class TestKubeAPIServerMetrics:
         'grpc_client_started_total',
         'rest_client_request_latency_seconds.sum',
         'rest_client_request_latency_seconds.count',
+        'apiserver_admission_webhook_request_total',
         'admission_step_admission_latencies_seconds.sum',
         'admission_step_admission_latencies_seconds.count',
         'admission_step_admission_latencies_seconds_summary.sum',
@@ -48,6 +49,7 @@ class TestKubeAPIServerMetrics:
         'request_duration_seconds.sum',
         'request_duration_seconds.count',
         'registered_watchers',
+        'process_cpu_total',
         'process_resident_memory_bytes',
         'process_virtual_memory_bytes',
         'etcd_request_duration_seconds.sum',
@@ -69,11 +71,14 @@ class TestKubeAPIServerMetrics:
         'flowcontrol_request_concurrency_limit',
         'flowcontrol_current_inqueue_requests',
         'flowcontrol_dispatched_requests_total',
+        'flowcontrol_request_wait_duration_seconds.sum',
+        'flowcontrol_request_wait_duration_seconds.count',
     ]
     COUNT_METRICS = [
         'audit_event.count',
         'rest_client_requests_total.count',
         'authenticated_user_requests.count',
+        'apiserver_admission_webhook_request_total.count',
         'apiserver_request_total.count',
         'apiserver_request_terminations_total.count',
     ]

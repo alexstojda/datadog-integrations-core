@@ -2,7 +2,131 @@
 
 <!-- towncrier release notes start -->
 
-## 5.4.0 / 2024-02-16
+## 9.5.3 / 2026-07-08 / Agent 7.82.0
+
+***Fixed***:
+
+* Fix collisions between gauge and counter metrics that share a name after the OpenMetrics V2 parser strips the ``_total`` suffix. ``istio.go.memstats.alloc_bytes`` (gauge) and ``istio.go.memstats.alloc_bytes.count`` (counter), and their ``istio.mesh.agent.go.memstats.alloc_bytes`` counterparts, are now both collected. ([#23396](https://github.com/DataDog/integrations-core/pull/23396))
+
+## 9.5.2 / 2026-05-20 / Agent 7.80.0
+
+***Fixed***:
+
+* Restore Istio ambient mode metric collection broken in 9.4.0: ztunnel counters are no longer silently dropped, proxy management metrics use the `workload_manager_*` names ztunnel actually emits, and the missing xDS message counters are now registered. ([#23707](https://github.com/DataDog/integrations-core/pull/23707))
+
+## 9.5.1 / 2026-04-15 / Agent 7.79.0
+
+***Fixed***:
+
+* Polish fleet-configurable spec descriptions. ([#22967](https://github.com/DataDog/integrations-core/pull/22967))
+* Improve descriptions ([#23047](https://github.com/DataDog/integrations-core/pull/23047))
+
+## 9.5.0 / 2026-04-01 / Agent 7.78.0
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 9.4.0 / 2026-03-18
+
+***Added***:
+
+* Add support for Istio ambient mode (v1.24+) with ztunnel and waypoint proxy metrics collection ([#22581](https://github.com/DataDog/integrations-core/pull/22581))
+
+## 9.3.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+* Add DNS and certificate expiry metrics to Istio integration ([#22463](https://github.com/DataDog/integrations-core/pull/22463))
+
+## 9.2.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+***Fixed***:
+
+* Update the envoy and istio specs to more descriptive of restrictions ([#21866](https://github.com/DataDog/integrations-core/pull/21866))
+
+## 9.1.1 / 2025-10-31 / Agent 7.73.0
+
+***Fixed***:
+
+* Add allowed values list on kerberos_auth field ([#20879](https://github.com/DataDog/integrations-core/pull/20879))
+* Fix schema issue on `ignore_metrics_by_labels` field ([#21583](https://github.com/DataDog/integrations-core/pull/21583))
+
+## 9.1.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 9.0.1 / 2025-08-07 / Agent 7.70.0
+
+***Fixed***:
+
+* Improve descriptions and examples in example configuration file ([#20878](https://github.com/DataDog/integrations-core/pull/20878))
+
+## 9.0.0 / 2025-07-10 / Agent 7.69.0
+
+***Changed***:
+
+* Bump datadog_checks_base to 37.16.0 ([#20711](https://github.com/DataDog/integrations-core/pull/20711))
+
+## 8.1.0 / 2025-01-16 / Agent 7.63.0
+
+***Added***:
+
+* Add `tls_ciphers` param to integration ([#19334](https://github.com/DataDog/integrations-core/pull/19334))
+
+## 8.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 7.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 6.1.2 / 2024-07-05 / Agent 7.55.0
+
+***Fixed***:
+
+* Update config model names ([#17802](https://github.com/DataDog/integrations-core/pull/17802))
+
+## 6.1.1 / 2024-05-31
+
+***Fixed***:
+
+* Update the description for the `tls_ca_cert` config option to use `openssl rehash` instead of `c_rehash` ([#16981](https://github.com/DataDog/integrations-core/pull/16981))
+
+## 6.1.0 / 2024-04-26 / Agent 7.54.0
+
+***Added***:
+
+* Add the citadel_server_cert_chain_expiry_timestamp metric ([#17268](https://github.com/DataDog/integrations-core/pull/17268))
+
+## 6.0.0 / 2024-03-22 / Agent 7.53.0
+
+***Changed***:
+
+* Disable `exclude_labels` by default ([#17225](https://github.com/DataDog/integrations-core/pull/17225))
+
+## 5.4.0 / 2024-02-16 / Agent 7.52.0
 
 ***Added***:
 

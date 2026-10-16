@@ -5,18 +5,25 @@
 from __future__ import unicode_literals
 
 import logging
-from copy import copy
+from copy import copy, deepcopy
 
 import pytest
 
+from datadog_checks.dev.utils import running_on_windows_ci
 from datadog_checks.sqlserver import SQLServer
 
 from .common import CHECK_NAME
+from .utils import deep_compare, normalize_ids, normalize_indexes_columns
 
 try:
     import pyodbc
 except ImportError:
     pyodbc = None
+
+
+def normalize_compatibility_level(actual_payload):
+    assert actual_payload['compatibility_level'].isdigit()
+    actual_payload['compatibility_level'] = 'normalized_value'
 
 
 @pytest.fixture
@@ -54,8 +61,8 @@ def test_get_available_settings_columns(dbm_instance, expected_columns, availabl
     check = SQLServer(CHECK_NAME, {}, [dbm_instance])
     check.initialize_connection()
     _conn_key_prefix = "dbm-metadata-"
-    with check.connection.open_managed_default_connection(key_prefix=_conn_key_prefix):
-        with check.connection.get_managed_cursor(key_prefix=_conn_key_prefix) as cursor:
+    with check.connection.open_managed_default_connection(_conn_key_prefix):
+        with check.connection.get_managed_cursor(_conn_key_prefix) as cursor:
             result_available_columns = check.sql_metadata._get_available_settings_columns(cursor, expected_columns)
             assert result_available_columns == available_columns
 
@@ -67,8 +74,8 @@ def test_get_settings_query_cached(dbm_instance, caplog):
     check = SQLServer(CHECK_NAME, {}, [dbm_instance])
     check.initialize_connection()
     _conn_key_prefix = "dbm-metadata"
-    with check.connection.open_managed_default_connection(key_prefix=_conn_key_prefix):
-        with check.connection.get_managed_cursor(key_prefix=_conn_key_prefix) as cursor:
+    with check.connection.open_managed_default_connection(_conn_key_prefix):
+        with check.connection.get_managed_cursor(_conn_key_prefix) as cursor:
             for _ in range(3):
                 query = check.sql_metadata._get_settings_query_cached(cursor)
                 assert query, "query should be non-empty"
@@ -90,3 +97,421 @@ def test_sqlserver_collect_settings(aggregator, dd_run_check, dbm_instance):
     assert event['dbms'] == "sqlserver"
     assert event['kind'] == "sqlserver_configs"
     assert len(event["metadata"]) > 0
+
+
+def test_collect_schemas(aggregator, dd_run_check, dbm_instance):
+    databases_to_find = ['datadog_test_schemas', 'datadog_test_schemas_second', 'datadog_test_collation']
+    exp_datadog_test = {
+        'id': 'normalized_value',
+        'name': 'datadog_test_schemas_second',
+        "collation": "SQL_Latin1_General_CP1_CI_AS",
+        'owner': 'dbo',
+        'compatibility_level': 'normalized_value',
+        'schemas': [
+            {
+                'name': 'dbo',
+                'id': 'normalized_value',
+                'owner_name': 'dbo',
+                'tables': [
+                    {
+                        'id': 'normalized_value',
+                        'name': 'ϑings',
+                        'columns': [
+                            {
+                                'name': 'id',
+                                'data_type': 'int',
+                                'default': '((0))',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'name',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                        ],
+                        'foreign_keys': [],
+                        'partitions': {'partition_count': 1},
+                        'indexes': [
+                            {
+                                'name': 'thingsindex',
+                                'type': 1,
+                                'is_unique': False,
+                                'is_primary_key': False,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                'key_columns': 'name',
+                                'included_columns': '',
+                                'column_names': 'name',
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    exp_datadog_test_schemas = {
+        'id': 'normalized_value',
+        'name': 'datadog_test_schemas',
+        "collation": "SQL_Latin1_General_CP1_CI_AS",
+        'owner': 'dbo',
+        'compatibility_level': 'normalized_value',
+        'schemas': [
+            {
+                'name': 'test_schema',
+                'id': 'normalized_value',
+                'owner_name': 'dbo',
+                'tables': [
+                    {
+                        'id': 'normalized_value',
+                        'name': 'cities',
+                        'columns': [
+                            {
+                                'name': 'id',
+                                'data_type': 'int',
+                                'default': '((0))',
+                                'nullable': False,
+                            },
+                            {
+                                'name': 'name',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'population',
+                                'data_type': 'int',
+                                'default': '((0))',
+                                'nullable': False,
+                            },
+                        ],
+                        'foreign_keys': [],
+                        'partitions': {'partition_count': 12},
+                        'indexes': [
+                            {
+                                'name': 'PK_Cities',
+                                'type': 1,
+                                'is_unique': True,
+                                'is_primary_key': True,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                'key_columns': 'id',
+                                'included_columns': '',
+                                'column_names': 'id',
+                            },
+                            {
+                                'name': 'single_column_index',
+                                'type': 2,
+                                'is_unique': False,
+                                'is_primary_key': False,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                # id is the table partitioning column, not part of this index key.
+                                'key_columns': 'population',
+                                'included_columns': '',
+                                'column_names': 'id,population',
+                            },
+                            {
+                                'name': 'two_columns_index',
+                                'type': 2,
+                                'is_unique': False,
+                                'is_primary_key': False,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                'key_columns': 'id,name',
+                                'included_columns': '',
+                                'column_names': 'id,name',
+                            },
+                        ],
+                    },
+                    {
+                        'id': 'normalized_value',
+                        'name': 'landmarks',
+                        'columns': [
+                            {
+                                'name': 'name',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'city_id',
+                                'data_type': 'int',
+                                'default': '((0))',
+                                'nullable': True,
+                            },
+                        ],
+                        'indexes': [],
+                        'partitions': {'partition_count': 1},
+                        'foreign_keys': [
+                            {
+                                'foreign_key_name': 'FK_CityId',
+                                'referencing_table': 'landmarks',
+                                'referencing_column': 'city_id',
+                                'referenced_table': 'cities',
+                                'referenced_column': 'id',
+                                "delete_action": "SET_NULL",
+                                "update_action": "NO_ACTION",
+                            }
+                        ],
+                    },
+                    {
+                        'id': 'normalized_value',
+                        'name': 'RestaurantReviews',
+                        'columns': [
+                            {
+                                'name': 'RestaurantName',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'District',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'Review',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                        ],
+                        'indexes': [],
+                        'partitions': {'partition_count': 1},
+                        'foreign_keys': [
+                            {
+                                'foreign_key_name': 'FK_RestaurantNameDistrict',
+                                'referencing_table': 'RestaurantReviews',
+                                'referencing_column': 'RestaurantName,District',
+                                'referenced_table': 'Restaurants',
+                                'referenced_column': 'RestaurantName,District',
+                                "delete_action": "CASCADE",
+                                "update_action": "SET_NULL",
+                            }
+                        ],
+                    },
+                    {
+                        'id': 'normalized_value',
+                        'name': 'Restaurants',
+                        'columns': [
+                            {
+                                'name': 'RestaurantName',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'District',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'Cuisine',
+                                'data_type': 'varchar',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                        ],
+                        'foreign_keys': [],
+                        'partitions': {'partition_count': 2},
+                        'indexes': [
+                            {
+                                'name': 'UC_RestaurantNameDistrict',
+                                'type': 2,
+                                'is_unique': True,
+                                'is_primary_key': False,
+                                'is_unique_constraint': True,
+                                'is_disabled': False,
+                                # column_names is sorted above; key_columns stays in constraint order.
+                                'key_columns': 'RestaurantName,District',
+                                'included_columns': '',
+                                'column_names': 'District,RestaurantName',
+                            }
+                        ],
+                    },
+                    {
+                        'id': 'normalized_value',
+                        'name': 'index_coverage',
+                        'columns': [
+                            {
+                                'name': 'a',
+                                'data_type': 'int',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'c',
+                                'data_type': 'int',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                            {
+                                'name': 'e',
+                                'data_type': 'int',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                        ],
+                        'foreign_keys': [],
+                        'partitions': {'partition_count': 4},
+                        'indexes': [
+                            {
+                                'name': 'ix_include',
+                                'type': 2,
+                                'is_unique': False,
+                                'is_primary_key': False,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                # (c) INCLUDE (a, e). column_names matches ix_prefix; included_columns does not.
+                                'key_columns': 'c',
+                                'included_columns': 'a,e',
+                                'column_names': 'a,c,e',
+                            },
+                            {
+                                'name': 'ix_prefix',
+                                'type': 2,
+                                'is_unique': False,
+                                'is_primary_key': False,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                # (c, a) INCLUDE (e).
+                                'key_columns': 'c,a',
+                                'included_columns': 'e',
+                                'column_names': 'a,c,e',
+                            },
+                            {
+                                'name': 'ix_filtered',
+                                'type': 2,
+                                'is_unique': False,
+                                'is_primary_key': False,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                # Only filtered indexes carry filter_definition; FOR JSON omits it when NULL.
+                                'filter_definition': '([e] IS NOT NULL)',
+                                'key_columns': 'a',
+                                'included_columns': '',
+                                'column_names': 'a',
+                            },
+                        ],
+                    },
+                    {
+                        'id': 'normalized_value',
+                        'name': 'key_order',
+                        # a and b are NOT NULL because they are the primary key.
+                        'columns': [
+                            {
+                                'name': 'a',
+                                'data_type': 'int',
+                                'default': 'None',
+                                'nullable': False,
+                            },
+                            {
+                                'name': 'b',
+                                'data_type': 'int',
+                                'default': 'None',
+                                'nullable': False,
+                            },
+                            {
+                                'name': 'c',
+                                'data_type': 'int',
+                                'default': 'None',
+                                'nullable': True,
+                            },
+                        ],
+                        'foreign_keys': [],
+                        'partitions': {'partition_count': 2},
+                        'indexes': [
+                            {
+                                'name': 'pk_key_order',
+                                'type': 1,
+                                'is_unique': True,
+                                'is_primary_key': True,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                # column_names is sorted above. The clustered key stays (b, a).
+                                'key_columns': 'b,a',
+                                'included_columns': '',
+                                'column_names': 'a,b',
+                            },
+                            {
+                                'name': 'ix_desc',
+                                'type': 2,
+                                'is_unique': False,
+                                'is_primary_key': False,
+                                'is_unique_constraint': False,
+                                'is_disabled': False,
+                                'key_columns': 'c DESC,a',
+                                'included_columns': '',
+                                'column_names': 'a,c',
+                            },
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+    exp_datadog_test_collation = deepcopy(exp_datadog_test_schemas)
+    exp_datadog_test_collation['name'] = 'datadog_test_collation'
+    exp_datadog_test_collation['collation'] = 'Latin1_General_100_BIN2'
+
+    if running_on_windows_ci():
+        exp_datadog_test['owner'] = 'None'
+        exp_datadog_test_schemas['owner'] = 'None'
+        exp_datadog_test_collation['owner'] = 'None'
+
+    expected_data_for_db = {
+        'datadog_test_schemas_second': exp_datadog_test,
+        'datadog_test_schemas': exp_datadog_test_schemas,
+        'datadog_test_collation': exp_datadog_test_collation,
+    }
+
+    dbm_instance['database_autodiscovery'] = True
+    dbm_instance['autodiscovery_include'] = [
+        'datadog_test_schemas',
+        'datadog_test_schemas_second',
+        'datadog_test_collation',
+    ]
+    dbm_instance['dbm'] = True
+    dbm_instance['collect_schemas'] = {"enabled": True}
+
+    check = SQLServer(CHECK_NAME, {}, [dbm_instance])
+    dd_run_check(check)
+
+    dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
+
+    actual_payloads = {}
+
+    for schema_event in (e for e in dbm_metadata if e['kind'] == 'sqlserver_databases'):
+        assert schema_event.get("timestamp") is not None
+        assert schema_event["host"] == "stubbed.hostname"
+        assert schema_event["agent_version"] == "0.0.0"
+        assert schema_event["dbms"] == "sqlserver"
+        assert schema_event.get("collection_interval") is not None
+        assert schema_event.get("dbms_version") is not None
+
+        database_metadata = schema_event['metadata']
+        for db_metadata in database_metadata:
+            db_name = db_metadata['name']
+
+            if db_name in actual_payloads:
+                actual_payloads[db_name]['schemas'][0]['tables'] = (
+                    actual_payloads[db_name]['schemas'][0]['tables'] + db_metadata['schemas'][0]['tables']
+                )
+            else:
+                actual_payloads[db_name] = db_metadata
+
+    assert len(actual_payloads) == len(expected_data_for_db)
+
+    for db_name, actual_payload in actual_payloads.items():
+        assert db_name in databases_to_find
+        # id's are env dependant
+        normalize_ids(actual_payload)
+        # compatibility_level varies by SQL Server version
+        normalize_compatibility_level(actual_payload)
+        # index columns may be in any order
+        normalize_indexes_columns(actual_payload)
+        matches = deep_compare(actual_payload, expected_data_for_db[db_name])
+        assert matches

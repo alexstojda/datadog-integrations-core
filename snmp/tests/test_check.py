@@ -19,7 +19,7 @@ from datadog_checks.snmp import SnmpCheck
 
 from . import common
 
-pytestmark = [pytest.mark.usefixtures("dd_environment"), common.snmp_integration_only]
+pytestmark = [pytest.mark.usefixtures("dd_environment"), common.python_suite_only]
 
 
 def test_command_generator():
@@ -31,8 +31,8 @@ def test_command_generator():
     config = check._config
 
     # Test command generator MIB source
-    mib_folders = config._snmp_engine.getMibBuilder().getMibSources()
-    full_path_mib_folders = [f.fullPath() for f in mib_folders]
+    mib_folders = config._snmp_engine.get_mib_builder().get_mib_sources()
+    full_path_mib_folders = [f.full_path() for f in mib_folders]
     assert check.ignore_nonincreasing_oid is False  # Default value
 
     check = SnmpCheck('snmp', common.IGNORE_NONINCREASING_OID, [instance])
@@ -671,6 +671,8 @@ def test_network_failure(aggregator):
 
     # Change port so connection will fail
     instance['port'] = 162
+    instance['timeout'] = 1
+    instance['retries'] = 0
     check = common.create_check(instance)
 
     check.check(instance)
@@ -717,7 +719,7 @@ def test_profile_by_file(aggregator):
     instance['profile'] = 'profile1'
     with temp_dir() as tmp:
         profile_file = os.path.join(tmp, 'profile1.yaml')
-        with open(profile_file, 'wb') as f:
+        with open(profile_file, 'w') as f:
             f.write(yaml.safe_dump({'metrics': common.SUPPORTED_METRIC_TYPES}))
         init_config = {'profiles': {'profile1': {'definition_file': profile_file}}}
         check = SnmpCheck('snmp', init_config, [instance])
@@ -865,7 +867,7 @@ def test_profile_sys_object_unknown(aggregator, caplog):
     # Via network discovery...
 
     host = socket.gethostbyname(common.HOST)
-    network = ipaddress.ip_network(u'{}/29'.format(host), strict=False).with_prefixlen
+    network = ipaddress.ip_network('{}/29'.format(host), strict=False).with_prefixlen
     instance = {
         'name': 'snmp_conf',
         'network_address': network,
@@ -898,7 +900,7 @@ def test_profile_sys_object_no_metrics():
 
 def test_discovery(aggregator):
     host = socket.gethostbyname(common.HOST)
-    network = ipaddress.ip_network(u'{}/29'.format(host), strict=False).with_prefixlen
+    network = ipaddress.ip_network('{}/29'.format(host), strict=False).with_prefixlen
     check_tags = [
         'snmp_device:{}'.format(host),
         'snmp_profile:profile1',
@@ -949,7 +951,7 @@ def test_discovery_devices_monitored_count(read_mock, aggregator):
     read_mock.return_value = '["192.168.0.1","192.168.0.2"]'
 
     host = socket.gethostbyname(common.HOST)
-    network = ipaddress.ip_network(u'{}/29'.format(host), strict=False).with_prefixlen
+    network = ipaddress.ip_network('{}/29'.format(host), strict=False).with_prefixlen
     check_tags = [
         'autodiscovery_subnet:{}'.format(to_native_string(network)),
     ]
@@ -961,6 +963,7 @@ def test_discovery_devices_monitored_count(read_mock, aggregator):
         'port': common.PORT,
         'community_string': 'public',
         'retries': 0,
+        'timeout': 1,
         'discovery_interval': 0,
     }
     init_config = {
@@ -1226,6 +1229,8 @@ def test_timeout(aggregator, caplog):
     aggregator.assert_metric('snmp.ifOutDiscards.rate', count=4)
     aggregator.assert_metric('snmp.ifInErrors.rate', count=4)
     aggregator.assert_metric('snmp.ifOutErrors.rate', count=4)
+    aggregator.assert_metric('snmp.ifOperStatus', count=4)
+    aggregator.assert_metric('snmp.ifSpeed', count=4)
     aggregator.assert_metric('snmp.sysUpTimeInstance', count=1)
 
     common.assert_common_metrics(aggregator)

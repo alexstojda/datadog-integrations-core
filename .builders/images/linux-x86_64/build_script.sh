@@ -6,12 +6,6 @@ build_wheels() {
     /py${DD_BUILD_PYTHON_VERSION}/bin/python -m pip wheel "$@"
 }
 
-export PIP_CONSTRAINT="/pip_constraints.txt"
-echo "PIP_CONSTRAINT=\"${PIP_CONSTRAINT}\"" >> $DD_ENV_FILE
-
-# bcrypt >= 4.1.0 requires rust >= 1.64, which dropped support for glibc 2.12 (~Centos 6)
-echo "bcrypt < 4.1.0" >> "${PIP_CONSTRAINT}"
-
 # Packages which must be built from source
 always_build=()
 
@@ -24,26 +18,29 @@ if [[ "${DD_BUILD_PYTHON_VERSION}" == "3" ]]; then
     LDFLAGS="${LDFLAGS} -L/usr/local/lib -lkrb5 -lgssapi_krb5 -llmdb" \
     DOWNLOAD_URL="https://github.com/confluentinc/librdkafka/archive/refs/tags/v{{version}}.tar.gz" \
         VERSION="${kafka_version}" \
-        SHA256="2d49c35c77eeb3d42fa61c43757fcbb6a206daa560247154e60642bcdcc14d12" \
+        SHA256="14972092e4115f6e99f798a7cb420cbf6daa0c73502b3c52ae42fb5b418eea8f" \
         RELATIVE_PATH="librdkafka-{{version}}" \
-        bash install-from-source.sh --enable-sasl --enable-curl
+        PATCHES="librdkafka-fix-coord-request-uaf.patch" \
+        bash install-from-source.sh --enable-sasl --enable-curl --enable-zstd
     always_build+=("confluent-kafka")
 
-    # pydantic-core
-    pydantic_core_version="2.1.2"
-    curl -L "https://github.com/pydantic/pydantic-core/archive/refs/tags/v${pydantic_core_version}.tar.gz" \
-        | tar -C /tmp -xzf -
-    pushd "/tmp/pydantic-core-${pydantic_core_version}"
-    patch -p1 -i "${DD_MOUNT_DIR}/patches/pydantic-core-for-manylinux1.patch"
-    build_wheels --no-deps .
-    echo "pydantic-core == ${pydantic_core_version}" >> "${PIP_CONSTRAINT}"
-    popd
+    # The version of pyodbc is dynamically linked against a version of the odbc which doesn't come included in the wheel
+    # That causes the omnibus' health check to flag it. Forcing the build so that we do include it in the wheel.
+    always_build+=("pyodbc")
+    # Build psycopg to have control over openssl version
+    always_build+=("psycopg-c")
+    
+    # We need to build cryptography for FIPS support
+    always_build+=("cryptography")
+
+    # PyPI's manylinux pymongo wheels ship C extensions with DWARF debug info (~0.7 MiB);
+    # building from source applies our LDFLAGS=-Wl,--strip-debug.
+    always_build+=("pymongo")
 fi
 
-# Empty arrays are flagged as unset when using the `-u` flag. This is the safest way to work around that
-# (see https://stackoverflow.com/a/61551944)
-pip_no_binary=${always_build[@]+"${always_build[@]}"}
+# package names passed to PIP_NO_BINARY need to be separated by commas
+pip_no_binary=$(IFS=, ; printf "${always_build[*]-}")
 if [[ "$pip_no_binary" ]]; then
     # If there are any packages that must always be built, inform pip
-    echo "PIP_NO_BINARY=\"${pip_no_binary}\"" >> $DD_ENV_FILE
+    echo "PIP_NO_BINARY=${pip_no_binary}" >> $DD_ENV_FILE
 fi

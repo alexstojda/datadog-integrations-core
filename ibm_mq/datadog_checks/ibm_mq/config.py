@@ -5,8 +5,7 @@
 import datetime as dt
 import re
 
-from dateutil.tz import UTC
-from six import PY2, iteritems
+from dateutil import tz
 
 from datadog_checks.base import AgentCheck, ConfigurationError, is_affirmative
 from datadog_checks.base.constants import ServiceCheck
@@ -82,10 +81,12 @@ class IBMMQConfig:
 
         self.auto_discover_queues = is_affirmative(instance.get('auto_discover_queues', False))  # type: bool
 
-        self.collect_statistics_metrics = is_affirmative(
-            instance.get('collect_statistics_metrics', False)
-        )  # type: bool
+        self.collect_statistics_metrics = is_affirmative(instance.get('collect_statistics_metrics', False))  # type: bool
+        self.filter_queue_statistics_metrics = is_affirmative(instance.get('filter_queue_statistics_metrics', False))  # type: bool
         self.collect_reset_queue_metrics = is_affirmative(instance.get('collect_reset_queue_metrics', True))
+        self.collect_connection_metrics = is_affirmative(instance.get('collect_connection_metrics', True))
+        self.add_description_tags = is_affirmative(instance.get('add_description_tags', False))  # type: bool
+        self.normalize_description_tags = is_affirmative(instance.get('normalize_description_tags', True))  # type: bool
         if int(self.auto_discover_queues) + int(bool(self.queue_patterns)) + int(bool(self.queue_regex)) > 1:
             self.log.warning(
                 "Configurations auto_discover_queues, queue_patterns and queue_regex are not intended to be used "
@@ -94,13 +95,32 @@ class IBMMQConfig:
 
         self.channels = instance.get('channels', [])  # type: List[str]
 
-        self.channel_status_mapping = self.get_channel_status_mapping(
-            instance.get('channel_status_mapping')
-        )  # type: Dict[str, str]
+        self.channel_status_mapping = self.get_channel_status_mapping(instance.get('channel_status_mapping'))  # type: Dict[str, str]
 
         self.convert_endianness = instance.get('convert_endianness', False)  # type: bool
         self.qm_timezone = instance.get('queue_manager_timezone', 'UTC')  # type: str
         self.auto_discover_channels = instance.get('auto_discover_channels', True)  # type: bool
+        self.use_qm_tz_for_metrics = is_affirmative(instance.get('use_qm_tz_for_metrics', False))  # type: bool
+        self.auto_discover_queues_via_names = is_affirmative(instance.get('auto_discover_queues_via_names', False))  # type: bool
+
+        # Initialize timezone handling
+        # First validate the timezone if it's not UTC
+        if self.qm_timezone != 'UTC':
+            tz_obj = tz.gettz(self.qm_timezone)
+            if tz_obj is None:
+                self.log.error(
+                    "Invalid timezone: %s. Defaulting to UTC. Please specify a valid time zone in IANA/Olson format.",
+                    self.qm_timezone,
+                )
+                self.qm_stats_tz = tz.UTC
+                self.qm_timezone = 'UTC'
+            elif self.use_qm_tz_for_metrics:
+                self.qm_stats_tz = tz_obj
+            else:
+                self.qm_stats_tz = tz.UTC
+        else:
+            # Default to UTC for the timezone object if not using custom timezone
+            self.qm_stats_tz = tz.UTC
 
         custom_tags = instance.get('tags', [])  # type: List[str]
         tags = [
@@ -161,9 +181,6 @@ class IBMMQConfig:
 
         pattern = instance.get('queue_manager_process', init_config.get('queue_manager_process', ''))
         if pattern:
-            if PY2:
-                raise ConfigurationError('The `queue_manager_process` option is only supported on Agent 7')
-
             pattern = pattern.replace('<queue_manager>', re.escape(self.queue_manager_name))
             self.queue_manager_process_pattern = re.compile(pattern)
 
@@ -172,7 +189,7 @@ class IBMMQConfig:
         else:
             self.queue_manager_process_pattern = None
 
-        self.instance_creation_datetime = dt.datetime.now(UTC)
+        self.instance_creation_datetime = dt.datetime.now(tz.UTC)
 
     def add_queues(self, new_queues):
         # add queues without duplication
@@ -183,7 +200,7 @@ class IBMMQConfig:
         Compile regex strings from queue_tag_re option and return list of compiled regex/tag pairs
         """
         queue_tag_list = []
-        for regex_str, tags in iteritems(self._queue_tag_re):
+        for regex_str, tags in self._queue_tag_re.items():
             try:
                 queue_tag_list.append([re.compile(regex_str), [t.strip() for t in tags.split(',')]])
             except TypeError:

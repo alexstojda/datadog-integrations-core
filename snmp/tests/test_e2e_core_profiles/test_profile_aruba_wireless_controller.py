@@ -16,7 +16,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_aruba_wireless_controller(dd_agent_check):
@@ -28,8 +28,12 @@ def test_e2e_profile_aruba_wireless_controller(dd_agent_check):
     common_tags = [
         'snmp_profile:aruba-wireless-controller',
         'snmp_host:aruba-wireless-controller.device.name',
+        'device_hostname:aruba-wireless-controller.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + [
         'wlsx_model_name:their driving kept their kept',
         'wlsx_switch_license_serial_number:forward kept forward',
@@ -164,6 +168,7 @@ def test_e2e_profile_aruba_wireless_controller(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.14823.1.1.1',
         'vendor': 'aruba',
         'device_type': 'wlc',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

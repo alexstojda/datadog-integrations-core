@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "0e1f1ef2-ea62-4ae4-a99f-8c40171b729c",
   "app_id": "ignite",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -18,7 +19,8 @@
       "Category::Network",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -49,9 +51,6 @@
     },
     "dashboards": {
       "Ignite Overview": "assets/dashboards/ignite_overview.json"
-    },
-    "logs": {
-      "source": "ignite"
     }
   }
 }

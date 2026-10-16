@@ -1,0 +1,11 @@
+name: suricata
+fleet_configurable: true
+files:
+- name: suricata.yaml
+  options:
+  - template: logs
+    example:
+    - type: file
+      path: /var/log/suricata/eve.json
+      source: suricata
+      service: suricata

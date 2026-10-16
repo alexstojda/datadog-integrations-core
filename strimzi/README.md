@@ -4,6 +4,8 @@
 
 This check monitors [Strimzi][1] through the Datadog Agent.
 
+**Minimum Agent version:** 7.47.0
+
 ## Setup
 
 ### Installation
@@ -223,9 +225,15 @@ See [service_checks.json][8] for a list of service checks provided by this integ
 
 Need help? Contact [Datadog support][9].
 
+## Further Reading
+
+Additional helpful documentation, links, and articles:
+
+- [Monitoring your container-native technologies][18]
+
 
 [1]: https://strimzi.io/
-[2]: https://app.datadoghq.com/account/settings/agent/latest
+[2]: /account/settings/agent/latest
 [3]: https://docs.datadoghq.com/agent/kubernetes/integrations/
 [4]: https://github.com/DataDog/integrations-core/blob/master/strimzi/datadog_checks/strimzi/data/conf.yaml.example
 [5]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
@@ -241,3 +249,4 @@ Need help? Contact [Datadog support][9].
 [15]: https://strimzi.io/docs/operators/0.20.0/full/using.html#assembly-jmx-options-deployment-configuration-kafka
 [16]: https://docs.datadoghq.com/agent/kubernetes/log/
 [17]: https://docs.datadoghq.com/integrations/kafka/?tab=host#kafka-consumer-integration
+[18]: https://www.datadoghq.com/blog/container-native-integrations/#messaging-and-streaming-with-strimzi

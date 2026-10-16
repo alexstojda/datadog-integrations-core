@@ -13,7 +13,8 @@ SHELL ["cmd", "/S", "/C"]
 
 # https://learn.microsoft.com/en-us/visualstudio/install/build-tools-container#create-and-build-the-dockerfile
 # https://learn.microsoft.com/en-us/visualstudio/install/workload-component-id-vs-build-tools
-RUN curl -SL --output vs_buildtools.exe https://aka.ms/vs/17/release/vs_buildtools.exe `
+# Bootstrapper version pinned to 17.12.36227.10 (taken from learn.microsoft.com/en-us/visualstudio/releases/2022/release-history#fixed-version-bootstrappers)
+RUN curl -SL --output vs_buildtools.exe https://download.visualstudio.microsoft.com/download/pr/87b94407-0aa3-45fc-b53f-d224027a42b3/00e8cad9ef34839c57f9be8bc4f93c517804777bdef770e8dbdc8ba0e06bc348/vs_BuildTools.exe `
  && (start /w vs_buildtools.exe --quiet --wait --norestart --nocache `
      --installPath "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools" `
      --add Microsoft.VisualStudio.Component.VC.140 `
@@ -26,6 +27,8 @@ RUN curl -SL --output vs_buildtools.exe https://aka.ms/vs/17/release/vs_buildtoo
      || IF "%ERRORLEVEL%"=="3010" EXIT 0) `
  && del /q vs_buildtools.exe
 
+ ENV VCVARSALL_BAT="C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
+
 # Upgrade PowerShell
 ENV POWERSHELL_VERSION="7.4.0"
 RUN curl -SL --output PowerShell-%POWERSHELL_VERSION%-win-x64.msi https://github.com/PowerShell/PowerShell/releases/download/v%POWERSHELL_VERSION%/PowerShell-%POWERSHELL_VERSION%-win-x64.msi `
@@ -34,6 +37,15 @@ RUN curl -SL --output PowerShell-%POWERSHELL_VERSION%-win-x64.msi https://github
 
 COPY helpers.ps1 C:\helpers.ps1
 SHELL ["pwsh", "-Command", ". C:\\helpers.ps1;"]
+
+# Enable long paths
+# https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=powershell#registry-setting-to-enable-long-paths
+RUN New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+ -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+# Reduce the chance of hitting path limits (the MSVC compiler cl.exe doesn't seem to respect that optioin)
+# This variable is honored by pip
+ENV TMP="C:\tmp" `
+    TEMP="C:\tmp"
 
 # Install 7-Zip ZS
 ENV 7ZIP_VERSION="22.01" `
@@ -61,7 +73,7 @@ RUN Get-RemoteFile `
     git config --global user.email 'agent-integrations-builder@datadoghq.com'
 
 # Install Rust
-ENV RUST_VERSION="1.74.1" `
+ENV RUST_VERSION="1.91.0" `
     RUSTUP_VERSION="1.26.0" `
     RUSTC_HASH="365d072ac4ef47f8774f4d2094108035e2291a0073702db25fa7797a30861fc9"
 RUN Get-RemoteFile `
@@ -73,35 +85,17 @@ RUN Get-RemoteFile `
     Approve-File -Path $($Env:USERPROFILE + '\.cargo\bin\rustc.exe') -Hash $Env:RUSTC_HASH
 
 # Install Python 3
-ENV PYTHON_VERSION="3.11.7"
+ENV PYTHON_VERSION="3.13.16"
 RUN Get-RemoteFile `
       -Uri https://www.python.org/ftp/python/$Env:PYTHON_VERSION/python-$Env:PYTHON_VERSION-amd64.exe `
       -Path python-$Env:PYTHON_VERSION-amd64.exe `
-      -Hash 'c117c6444494bbe4cc937e8a5a61899d53f7f5c5bc573c5d130304e457d54024'; `
+      -Hash 'fb4f9f5d438b2396da0086dc70b935c530cb578e37adc6d354f7ad2037fee83b'; `
     Start-Process -Wait python-$Env:PYTHON_VERSION-amd64.exe -ArgumentList '/quiet', 'InstallAllUsers=1'; `
     Remove-Item python-$Env:PYTHON_VERSION-amd64.exe; `
-    & 'C:\Program Files\Python311\python.exe' -m pip install --no-warn-script-location --upgrade pip; `
-    & 'C:\Program Files\Python311\python.exe' -m pip install --no-warn-script-location virtualenv; `
-    & 'C:\Program Files\Python311\python.exe' -m virtualenv 'C:\py3'; `
-    Add-ToPath -Append 'C:\Program Files\Python311'
-
-# Install Python 2
-ENV PYTHON_VERSION="2.7.18"
-RUN Get-RemoteFile `
-      -Uri https://www.python.org/ftp/python/$Env:PYTHON_VERSION/python-$Env:PYTHON_VERSION.amd64.msi `
-      -Path python-$Env:PYTHON_VERSION.amd64.msi `
-      -Hash 'b74a3afa1e0bf2a6fc566a7b70d15c9bfabba3756fb077797d16fffa27800c05'; `
-    Start-Process -Wait -FilePath msiexec -ArgumentList '/i', python-$Env:PYTHON_VERSION.amd64.msi, '/quiet', '/norestart', 'InstallAllUsers=1'; `
-    Remove-Item python-$Env:PYTHON_VERSION.amd64.msi; `
-    & 'C:\Python27\python.exe' -m pip install --no-warn-script-location --upgrade pip; `
-    & 'C:\Python27\python.exe' -m pip install --no-python-version-warning --no-warn-script-location virtualenv; `
-    & 'C:\Python27\python.exe' -m virtualenv 'C:\py2'
-RUN Get-RemoteFile `
-      -Uri https://s3.amazonaws.com/dd-agent-omnibus/VCForPython27.msi `
-      -Path VCForPython27.msi `
-      -Hash '070474db76a2e625513a5835df4595df9324d820f9cc97eab2a596dcbc2f5cbf'; `
-    Start-Process -Wait -FilePath msiexec -ArgumentList '/i', VCForPython27.msi, '/quiet'; `
-    Remove-Item VCForPython27.msi
+    & 'C:\Program Files\Python313\python.exe' -m pip install --no-warn-script-location --upgrade pip; `
+    & 'C:\Program Files\Python313\python.exe' -m pip install --no-warn-script-location virtualenv; `
+    & 'C:\Program Files\Python313\python.exe' -m virtualenv 'C:\py3'; `
+    Add-ToPath -Append 'C:\Program Files\Python313'
 
 # Install IBM MQ
 ENV IBM_MQ_VERSION="9.2.4.0"
@@ -113,9 +107,88 @@ RUN Get-RemoteFile `
     Remove-Item $Env:IBM_MQ_VERSION-IBM-MQC-Redist-Win64.zip; `
     setx /M MQ_FILE_PATH 'C:\ibm_mq'
 
+# Perl
+ENV PERL_VERSION="5.40.0.1"
+RUN Get-RemoteFile `
+      -Uri https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_54001_64bit_UCRT/strawberry-perl-$Env:PERL_VERSION-64bit-portable.zip `
+      -Path "strawberry-perl-$Env:PERL_VERSION-64bit.zip" `
+    -Hash '754f3e2a8e473dc68d1540c7802fb166a025f35ef18960c4564a31f8b5933907' && `
+    7z x "strawberry-perl-$Env:PERL_VERSION-64bit.zip" -o"C:\perl" && `
+    Add-ToPath -Append "C:\perl\perl\bin" && `
+    Remove-Item "strawberry-perl-$Env:PERL_VERSION-64bit.zip"
+
+# Nasm
+ENV NASM_VERSION="2.16.03"
+RUN Get-RemoteFile `
+      -Uri https://www.nasm.us/pub/nasm/releasebuilds/$Env:NASM_VERSION/win64/nasm-$Env:NASM_VERSION-win64.zip `
+      -Path "nasm-$Env:NASM_VERSION-win64.zip" `
+    -Hash '3ee4782247bcb874378d02f7eab4e294a84d3d15f3f6ee2de2f47a46aa7226e6' && `
+    7z x "nasm-$Env:NASM_VERSION-win64.zip" -o"C:\nasm" && `
+    Add-ToPath -Append "C:\nasm\nasm-$Env:NASM_VERSION" && `
+    Remove-Item "nasm-$Env:NASM_VERSION-win64.zip"
+
+ENV OPENSSL_VERSION="3.6.4"
+RUN Get-RemoteFile `
+      -Uri https://www.openssl.org/source/openssl-$Env:OPENSSL_VERSION.tar.gz `
+      -Path openssl-$Env:OPENSSL_VERSION.tar.gz `
+      -Hash '9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef'; `
+    7z x openssl-$Env:OPENSSL_VERSION.tar.gz -r -y && `
+    7z x openssl-$Env:OPENSSL_VERSION.tar -oC:\openssl_3 && `
+    cd C:\openssl_3\openssl-$Env:OPENSSL_VERSION && `
+    RunOnVSConsole -Command `
+    'C:\perl\perl\bin\perl.exe Configure && `
+    nmake && `
+    nmake install_sw'
+# flex and bison are required for building PostgreSQL from source
+ENV WINFLEXBISON_VERSION="2.5.25"
+RUN Get-RemoteFile `
+      -Uri https://github.com/lexxmark/winflexbison/releases/download/v$Env:WINFLEXBISON_VERSION/win_flex_bison-$Env:WINFLEXBISON_VERSION.zip `
+      -Path win_flex_bison-$Env:WINFLEXBISON_VERSION.zip `
+      -Hash '8d324b62be33604b2c45ad1dd34ab93d722534448f55a16ca7292de32b6ac135'; `
+    7z x win_flex_bison-$Env:WINFLEXBISON_VERSION.zip -oC:\winflexbison && `
+    Remove-Item win_flex_bison-$Env:WINFLEXBISON_VERSION.zip && `
+    Add-ToPath -Append 'C:\winflexbison'
+# Meson + Ninja for building PostgreSQL 18+ on Windows
+# renovate: datasource=pypi depName=meson
+ENV MESON_VERSION="1.11.1"
+# renovate: datasource=pypi depName=ninja
+ENV NINJA_VERSION="1.13.0"
+RUN python -m pip install --no-warn-script-location meson==$Env:MESON_VERSION ninja==$Env:NINJA_VERSION && `
+    Add-ToPath -Append 'C:\Program Files\Python313\Scripts'
+# libpq and pg_config as needed by psycopg
+ENV PG_VERSION="18.6"
+RUN Get-RemoteFile `
+      -Uri https://ftp.postgresql.org/pub/source/v$Env:PG_VERSION/postgresql-$Env:PG_VERSION.tar.bz2 `
+      -Path postgresql-$Env:PG_VERSION.tar.bz2 `
+      -Hash '555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f'; `
+    7z x postgresql-$Env:PG_VERSION.tar.bz2 -r -y && `
+    7z x postgresql-$Env:PG_VERSION.tar -oC:\postgresql_src
+RUN New-Item -ItemType Junction -Path C:\OpenSSL -Target 'C:\Program Files\OpenSSL'; `
+    $mesonCmd = 'meson setup C:\pgbuild C:\postgresql_src\postgresql-' + $Env:PG_VERSION + ' --prefix=C:\postgresql -Dssl=openssl -Dextra_include_dirs=C:\OpenSSL\include -Dextra_lib_dirs=C:\OpenSSL\lib -Dgssapi=disabled -Dreadline=disabled -Dicu=disabled -Dnls=disabled -Dlz4=disabled -Dzstd=disabled -Dlibxml=disabled -Dlibxslt=disabled -Dllvm=disabled'; `
+    RunOnVSConsole -Command $mesonCmd && `
+    RunOnVSConsole -Command 'ninja -C C:\pgbuild' && `
+    RunOnVSConsole -Command 'ninja -C C:\pgbuild install' && `
+    Add-ToPath -Append "C:\postgresql\bin"
+
+ENV CURL_VERSION="8.21.0"
+
 # Set up runner
 COPY runner_dependencies.txt C:\runner_dependencies.txt
 RUN python -m pip install --no-warn-script-location -r C:\runner_dependencies.txt
+
+COPY build_script.ps1 C:\build_script.ps1
+COPY update_librdkafka_manifest.py C:\update_librdkafka_manifest.py
+ENV DD_BUILD_COMMAND="pwsh C:\build_script.ps1"
+
+# Python packages that we want to build regardless of whether prebuilt versions exist on PyPI
+ENV PIP_NO_BINARY="confluent_kafka"
+# Where to find native dependencies when building extensions and for wheel repairing
+RUN New-Item -Path "C:\include" -ItemType Directory
+RUN New-Item -Path "C:\lib" -ItemType Directory
+RUN New-Item -Path "C:\bin" -ItemType Directory
+ENV INCLUDE="C:\include"
+ENV LIB="C:\lib"
+RUN Add-ToPath -Append "C:\bin"
 
 # Restore the default Windows shell for correct batch processing.
 SHELL ["cmd", "/S", "/C"]

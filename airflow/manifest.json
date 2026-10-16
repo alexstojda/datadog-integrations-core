@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "ed426432-3df4-4ab8-ab2f-a5a85900c59b",
   "app_id": "airflow",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,8 @@
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -32,7 +34,7 @@
         "spec": "assets/configuration/spec.yaml"
       },
       "events": {
-        "creates_events": false
+        "creates_events": true
       },
       "metrics": {
         "prefix": "airflow.",
@@ -51,12 +53,12 @@
     "dashboards": {
       "Airflow Overview": "assets/dashboards/overview.json"
     },
-    "monitors": {
-      "Heartbeat Failure": "assets/monitors/heartbeat_failures.json",
-      "Ongoing Duration": "assets/monitors/ongoing_duration.json"
+    "saved_views": {
+      "airflow_overview": "assets/saved_views/airflow_overview.json"
     },
-    "logs": {
-      "source": "airflow"
+    "monitors": {
+      "Task instances are failing": "assets/monitors/heartbeat_failures.json",
+      "DAG task ongoing duration is high": "assets/monitors/ongoing_duration.json"
     }
   }
 }

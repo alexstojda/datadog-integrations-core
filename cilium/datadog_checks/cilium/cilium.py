@@ -1,10 +1,9 @@
 # (C) Datadog, Inc. 2019-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
-from six import PY2
-
 from datadog_checks.base import ConfigurationError, OpenMetricsBaseCheck, is_affirmative
 
+from .check import CiliumCheckV2
 from .metrics import AGENT_METRICS, OPERATOR_METRICS
 
 
@@ -18,16 +17,7 @@ class CiliumCheck(OpenMetricsBaseCheck):
     def __new__(cls, name, init_config, instances):
         instance = instances[0]
 
-        if is_affirmative(instance.get('use_openmetrics', False)):
-            if PY2:
-                raise ConfigurationError(
-                    "This version of the integration is only available when using py3. "
-                    "Check https://docs.datadoghq.com/agent/guide/agent-v6-python-3 "
-                    "for more information or use the older style config."
-                )
-            # TODO: when we drop Python 2 move this import up top
-            from .check import CiliumCheckV2
-
+        if is_affirmative(instance.get("use_openmetrics", False)):
             return CiliumCheckV2(name, init_config, instances)
         else:
             return super(CiliumCheck, cls).__new__(cls)
@@ -35,8 +25,8 @@ class CiliumCheck(OpenMetricsBaseCheck):
     def __init__(self, name, init_config, instances):
         instance = instances[0]
 
-        agent_endpoint = instance.get('agent_endpoint')
-        operator_endpoint = instance.get('operator_endpoint')
+        agent_endpoint = instance.get("agent_endpoint")
+        operator_endpoint = instance.get("operator_endpoint")
 
         # Cannot have both cilium-agent and cilium-operator metrics enabled
         if agent_endpoint and operator_endpoint:
@@ -53,15 +43,15 @@ class CiliumCheck(OpenMetricsBaseCheck):
             endpoint = agent_endpoint
             metrics = [AGENT_METRICS]
 
-        metrics.extend(instance.get('metrics', []))
+        metrics.extend(instance.get("metrics", []))
         instance.update(
             {
-                'prometheus_url': endpoint,
-                'namespace': 'cilium',
-                'metrics': metrics,
-                'prometheus_timeout': instance.get('timeout', 10),
-                'metadata_metric_name': 'cilium_version',
-                'metadata_label_map': {'version': 'version'},
+                "prometheus_url": endpoint,
+                "namespace": "cilium",
+                "metrics": metrics,
+                "prometheus_timeout": instance.get("timeout", 10),
+                "metadata_metric_name": "cilium_version",
+                "metadata_label_map": {"version": "version"},
             }
         )
 

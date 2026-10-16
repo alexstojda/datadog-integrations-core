@@ -2,6 +2,51 @@
 
 <!-- towncrier release notes start -->
 
+## 3.4.0 / 2026-08-05 / Agent 7.83.0
+
+***Added***:
+
+* Add container-based config discovery support. ([#24485](https://github.com/DataDog/integrations-core/pull/24485))
+
+***Fixed***:
+
+* Require `datadog-checks-base>=37.41.0` since config discovery relies on it. ([#24545](https://github.com/DataDog/integrations-core/pull/24545))
+
+## 3.3.0 / 2026-07-08 / Agent 7.82.0
+
+***Added***:
+
+* Add OpenMetrics-based collection mode that scrapes Flink's flink-metrics-prometheus reporter, as an alternative to the existing Datadog HTTP Reporter push-based mode. Keeps the Datadog API key with the Agent rather than in Flink configuration, making the integration usable in GitOps/Kubernetes deployments where flink-conf.yaml is mounted read-only from a ConfigMap. ([#23857](https://github.com/DataDog/integrations-core/pull/23857))
+
+## 3.2.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 3.1.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 3.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+## 2.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
 ## 1.5.0 / 2024-01-05 / Agent 7.51.0
 
 ***Added***:

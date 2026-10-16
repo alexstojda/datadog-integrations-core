@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "d29a1df9-6038-41f5-b017-82bf45f58767",
   "app_id": "ibm-mq",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -17,7 +18,15 @@
       "Category::Network",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Supported OS::AIX",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-ibmmq-with-datadog"
+      }
     ]
   },
   "author": {
@@ -48,9 +57,6 @@
     },
     "dashboards": {
       "IBM MQ": "assets/dashboards/overview.json"
-    },
-    "logs": {
-      "source": "ibm_mq"
     }
   }
 }

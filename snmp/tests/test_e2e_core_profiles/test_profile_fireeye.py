@@ -16,7 +16,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_fireeye(dd_agent_check):
@@ -28,11 +28,15 @@ def test_e2e_profile_fireeye(dd_agent_check):
     common_tags = [
         'snmp_profile:fireeye',
         'snmp_host:fireeye.device.name',
+        'device_hostname:fireeye.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + [
         'fe_hardware_model:but but their driving acted forward forward their zombies',
-        'fe_serial_number:zombies driving quaintly Jaded their zombies driving but ' 'Jaded',
+        'fe_serial_number:zombies driving quaintly Jaded their zombies driving but Jaded',
     ]
 
     # --- TEST EXTENDED METRICS ---
@@ -89,6 +93,7 @@ def test_e2e_profile_fireeye(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.25597.1',
         'vendor': 'fireeye',
         'device_type': 'other',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

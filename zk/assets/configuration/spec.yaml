@@ -1,7 +1,17 @@
 name: ZooKeeper
+fleet_configurable: true
 
 files:
   - name: zk.yaml
+    discovery:
+      strategies:
+      - strategy: from_ports
+        port_hints:
+        - 2181
+        fallback: false
+        candidates:
+        - host: "{service.host!s}"
+          port: "{port.number}"
 
     options:
       - template: init_config
@@ -11,6 +21,7 @@ files:
       - template: instances
         options:
           - name: host
+            fleet_configurable: true
             required: true
             description: Zookeeper host to connect to.
             value:
@@ -19,12 +30,14 @@ files:
 
           - name: port
             description: Zookeeper port to connect to.
+            fleet_configurable: true
             value:
               example: 2181
               type: integer
 
           - name: timeout
             description: The read timeout in seconds.
+            fleet_configurable: true
             value:
               example: 3
               type: integer
@@ -32,10 +45,14 @@ files:
           - name: expected_mode
             description: |
               If `expected_mode` is defined, a service check is sent where the
-              status is determined by whether the current mode matches the expected.
+              status is determined by whether the current mode matches the expected mode.
 
               Available options are: `leader`, `follower`, `standalone` or an array of one or more of these.
+            fleet_configurable: true
             value:
+              example:
+                - leader
+                - follower
               anyOf:
                 - type: string
                 - type: array
@@ -45,8 +62,9 @@ files:
           - name: report_instance_mode
             description: |
               Whether to report the current instance mode as a 0/1 gauge.
-              For example if the current instance mode is `observer` - `zookeeper.instances.observer` reports as 1.
+              For example, if the current instance mode is `observer`, `zookeeper.instances.observer` reports as 1,
               and `zookeeper.instances.(leader|follower|standalone|etc.)` reports as 0.
+            fleet_configurable: true
             value:
               example: true
               type: boolean
@@ -55,6 +73,7 @@ files:
           - name: use_tls
             description: |
               This instructs the Zookeeper check to connect using TLS.
+            fleet_configurable: true
             value:
               example: false
               type: boolean
@@ -70,3 +89,14 @@ files:
           - type: multi_line
             name: start_with_date
             pattern: \d{4}\-(0?[1-9]|1[012])\-(0?[1-9]|[12][0-9]|3[01])
+
+  - name: auto_conf.yaml
+    options:
+    - template: ad_identifiers
+      overrides:
+        value.example:
+        - zookeeper
+    - template: auto_conf/discovery
+      overrides:
+        discovery.example:
+          metrics_prefix: zookeeper

@@ -1,6 +1,17 @@
 name: "Strimzi"
+fleet_configurable: true
 files:
 - name: strimzi.yaml
+  discovery:
+    strategies:
+    - strategy: local:from_strimzi_kube_container_name
+      provides:
+      - endpoints
+      inputs: {}
+      candidates:
+      - cluster_operator_endpoint: "{endpoints.cluster_operator_endpoint}"
+        topic_operator_endpoint: "{endpoints.topic_operator_endpoint}"
+        user_operator_endpoint: "{endpoints.user_operator_endpoint}"
   options:
   - template: init_config
     options:
@@ -8,22 +19,28 @@ files:
   - template: instances
     options:
     - name: cluster_operator_endpoint
+      display_priority: 5
       description: |
         Endpoint exposing the Cluster Operator's Prometheus metrics.
+      fleet_configurable: true
       value:
         display_default: null
         example: http://cluster-operator-address:8080/metrics
         type: string
     - name: topic_operator_endpoint
+      display_priority: 4
       description: |
         Endpoint exposing the Topic Operator's Prometheus metrics.
+      fleet_configurable: true
       value:
         display_default: null
         example: http://topic-operator-address:8080/metrics
         type: string
     - name: user_operator_endpoint
+      display_priority: 3
       description: |
         Endpoint exposing the User Operator's Prometheus metrics.
+      fleet_configurable: true
       value:
         display_default: null
         example: http://user-operator-address:8081/metrics
@@ -32,3 +49,17 @@ files:
       overrides:
         openmetrics_endpoint.required: false
         openmetrics_endpoint.hidden: true
+- name: auto_conf.yaml
+  options:
+  - template: ad_identifiers
+    overrides:
+      value.example:
+      - operator
+  - template: auto_conf/cel_selector
+    overrides:
+      cel_selector.example:
+        containers:
+        # Narrow down matching containers since the short image name "operator" is generic
+        # and doesn't identify the container as being part of Strimzi.
+        - container.image.reference.contains("strimzi/operator")
+  - template: auto_conf/discovery

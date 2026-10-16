@@ -6,7 +6,6 @@ from collections import defaultdict
 from typing import Any, Dict, Iterator, List, Set  # noqa: F401
 
 from pyVmomi import vim
-from six import iteritems
 
 from datadog_checks.base.log import CheckLoggingAdapter  # noqa: F401
 from datadog_checks.base.utils.http import RequestsWrapper
@@ -24,7 +23,7 @@ MOR_TYPE_MAPPING_FROM_STRING = {
     'ClusterComputeResource': vim.ClusterComputeResource,
 }
 
-MOR_TYPE_MAPPING_TO_STRING = {v: k for k, v in iteritems(MOR_TYPE_MAPPING_FROM_STRING)}
+MOR_TYPE_MAPPING_TO_STRING = {v: k for k, v in MOR_TYPE_MAPPING_FROM_STRING.items()}
 
 
 class VSphereRestAPI(object):
@@ -81,9 +80,7 @@ class VSphereRestAPI(object):
         self.log.debug("Fetched tag associations: %s", tag_associations)
 
         # Initialise resource_tags
-        resource_tags = {
-            resource_type: defaultdict(list) for resource_type in ALL_RESOURCES_WITH_METRICS
-        }  # type: ResourceTags
+        resource_tags = {resource_type: defaultdict(list) for resource_type in ALL_RESOURCES_WITH_METRICS}  # type: ResourceTags
 
         all_tag_ids = set()
         for tag_asso in tag_associations:

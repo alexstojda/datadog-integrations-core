@@ -1,0 +1,11 @@
+name: Ivanti Connect Secure
+fleet_configurable: true
+files:
+- name: ivanti_connect_secure.yaml
+  options:
+  - template: logs
+    example:
+    - type: tcp # or 'udp'
+      port: <PORT>
+      source: ivanti-connect-secure
+      service: ivanti-connect-secure

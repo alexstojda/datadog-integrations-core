@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "827ff57e-83db-45b4-8a59-2f0270d389e8",
   "app_id": "hive",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -15,7 +16,8 @@
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -46,9 +48,6 @@
     },
     "dashboards": {
       "Hive Overview": "assets/dashboards/overview.json"
-    },
-    "logs": {
-      "source": "hive"
     }
   }
 }

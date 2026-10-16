@@ -24,12 +24,20 @@ def instance_auth_type():
     return 'basic'
 
 
+def instance_collect_ongoing_duration():
+    return True
+
+
 def instance_disable_generic_tags():
     return False
 
 
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
 
 
 def instance_kerberos_auth():

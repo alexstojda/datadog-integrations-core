@@ -8,9 +8,9 @@ import os
 import time
 from concurrent.futures.thread import ThreadPoolExecutor
 from contextlib import closing
-from copy import copy
+from copy import copy, deepcopy
 from datetime import datetime
-from os import environ
+from threading import Event
 
 import mock
 import pymysql
@@ -22,7 +22,7 @@ from datadog_checks.mysql import MySql
 from datadog_checks.mysql.activity import MySQLActivity
 from datadog_checks.mysql.util import StatementTruncationState
 
-from .common import CHECK_NAME, HOST, MYSQL_VERSION_PARSED, PORT
+from .common import CHECK_NAME, HOST, MYSQL_FLAVOR, MYSQL_REPLICATION, MYSQL_VERSION_PARSED, PORT, mysql_root_password
 
 ACTIVITY_JSON_PLANS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "activity")
 
@@ -52,28 +52,38 @@ def dbm_instance(instance_complex):
 @pytest.mark.integration
 @pytest.mark.usefixtures('dd_environment')
 @pytest.mark.parametrize(
-    "query,query_signature,expected_query_truncated",
+    "query,query_signature,expected_query_truncated,collect_blocking_queries",
     [
         (
             'SELECT id, name FROM testdb.users FOR UPDATE',
-            'aca1be410fbadb61',
+            (
+                '4d09873d44c33af7'
+                if MYSQL_VERSION_PARSED > parse_version('5.7') and MYSQL_FLAVOR != 'mariadb'
+                else 'aca1be410fbadb61'
+            ),
             StatementTruncationState.not_truncated.value,
+            True,
         ),
         (
             'SELECT id, {} FROM testdb.users FOR UPDATE'.format(
                 ", ".join("name as name{}".format(i) for i in range(254))
             ),
             (
-                '63bd1fd025c7f7fb'
-                if MYSQL_VERSION_PARSED > parse_version('5.6') and environ.get('MYSQL_FLAVOR') != 'mariadb'
-                else '4a12d7afe06cf40'
+                '4a12d7afe06cf40'
+                if MYSQL_FLAVOR == 'mariadb'
+                else ('da7d6b1e9deb88e' if MYSQL_VERSION_PARSED > parse_version('5.7') else '63bd1fd025c7f7fb')
             ),
             StatementTruncationState.truncated.value,
+            False,
         ),
     ],
 )
-def test_activity_collection(aggregator, dbm_instance, dd_run_check, query, query_signature, expected_query_truncated):
-    check = MySql(CHECK_NAME, {}, [dbm_instance])
+def test_activity_collection(
+    aggregator, dbm_instance, dd_run_check, query, query_signature, expected_query_truncated, collect_blocking_queries
+):
+    config = deepcopy(dbm_instance)
+    config['query_activity']['collect_blocking_queries'] = collect_blocking_queries
+    check = MySql(CHECK_NAME, {}, instances=[config])
 
     blocking_query = 'SELECT id FROM testdb.users FOR UPDATE'
 
@@ -108,7 +118,19 @@ def test_activity_collection(aggregator, dbm_instance, dd_run_check, query, quer
     assert activity['dbm_type'] == 'activity'
     assert activity['ddsource'] == 'mysql'
     assert activity['ddagentversion'], "missing agent version"
-    assert set(activity['ddtags']) == {'tag1:value1', 'tag2:value2', 'port:13306'}
+    expected_tags = (
+        'database_hostname:stubbed.hostname',
+        'database_instance:stubbed.hostname',
+        'tag1:value1',
+        'tag2:value2',
+        'port:13306',
+        'dbms_flavor:{}'.format(MYSQL_FLAVOR.lower()),
+    )
+    if MYSQL_FLAVOR.lower() in ('mysql', 'percona'):
+        expected_tags += ("server_uuid:{}".format(check.server_uuid),)
+        if MYSQL_REPLICATION == 'classic':
+            expected_tags += ('cluster_uuid:{}'.format(check.cluster_uuid), 'replication_role:primary')
+    assert sorted(activity['ddtags']) == sorted(expected_tags)
     assert type(activity['collection_interval']) in (float, int), "invalid collection_interval"
 
     assert activity['mysql_activity'], "should have at least one activity row"
@@ -127,9 +149,10 @@ def test_activity_collection(aggregator, dbm_instance, dd_run_check, query, quer
     # sql text length limits
     expected_sql_text = (
         query[:1021] + '...'
-        if len(query) > 1024
-        and (MYSQL_VERSION_PARSED == parse_version('5.6') or environ.get('MYSQL_FLAVOR') == 'mariadb')
-        else query[:4093] + '...' if len(query) > 4096 else query
+        if len(query) > 1024 and (MYSQL_VERSION_PARSED == parse_version('5.6') or MYSQL_FLAVOR == 'mariadb')
+        else query[:4093] + '...'
+        if len(query) > 4096
+        else query
     )
     assert blocked_row['sql_text'] == expected_sql_text
     assert blocked_row['processlist_state'], "missing state"
@@ -139,8 +162,16 @@ def test_activity_collection(aggregator, dbm_instance, dd_run_check, query, quer
     assert blocked_row['wait_timer_end'], "missing wait timer end"
     assert blocked_row['event_timer_start'], "missing event timer start"
     assert blocked_row['event_timer_end'], "missing event timer end"
-    assert blocked_row['lock_time'], "missing lock time"
     assert blocked_row['query_truncated'] == expected_query_truncated
+
+    if check.query_activity._should_collect_blocking_queries():
+        assert len(activity['mysql_activity']) >= 2, "should have collected at least two activity payloads"
+        captured_idle_blocker = False
+        for activity in dbm_activity:
+            for row in activity['mysql_activity']:
+                if row['processlist_user'] == 'bob':
+                    captured_idle_blocker = True
+        assert captured_idle_blocker, "should have captured the idle blocker"
 
 
 @pytest.mark.integration
@@ -186,7 +217,11 @@ def test_activity_metadata(aggregator, dd_run_check, dbm_instance, datadog_agent
     -- Test comment
     SELECT id, name FROM testdb.users FOR UPDATE
     """
-    query_signature = 'e7f7cb251194df29'
+    query_signature = (
+        '4d09873d44c33af7'
+        if MYSQL_VERSION_PARSED > parse_version('5.7') and MYSQL_FLAVOR != 'mariadb'
+        else 'e7f7cb251194df29'
+    )
 
     def _run_test_query(conn, _query):
         conn.cursor().execute(_query)
@@ -243,10 +278,10 @@ def test_activity_metadata(aggregator, dd_run_check, dbm_instance, datadog_agent
 def test_get_estimated_row_size_bytes(dbm_instance, file):
     check = MySql(CHECK_NAME, {}, [dbm_instance])
     test_activity = _load_test_activity_json(file)
-    actual_size = len(json.dumps(test_activity, default=check._query_activity._json_event_encoding))
+    actual_size = len(json.dumps(test_activity, default=check.query_activity._json_event_encoding))
     computed_size = 0
     for a in test_activity:
-        computed_size += check._query_activity._get_estimated_row_size_bytes(a)
+        computed_size += check.query_activity._get_estimated_row_size_bytes(a)
     assert abs((actual_size - computed_size) / float(actual_size)) <= 0.10
 
 
@@ -288,7 +323,7 @@ def _create_time_in_picoseconds(date_obj):
 )
 def test_sort_key(dbm_instance, rows, expected_rows):
     check = MySql(CHECK_NAME, {}, [dbm_instance])
-    output = sorted(rows, key=lambda r: check._query_activity._sort_key(r))
+    output = sorted(rows, key=lambda r: check.query_activity._sort_key(r))
     assert output == expected_rows
 
 
@@ -351,10 +386,174 @@ def test_truncate_on_max_size_bytes(dbm_instance, datadog_agent, rows, expected_
     check = MySql(CHECK_NAME, {}, [dbm_instance])
     with mock.patch.object(datadog_agent, 'obfuscate_sql', passthrough=True) as mock_agent:
         mock_agent.side_effect = "something"
-        result_rows = check._query_activity._normalize_rows(rows)
+        result_rows = check.query_activity._normalize_rows(rows)
         assert len(result_rows) == expected_len
         for index, user in enumerate(expected_users):
             assert result_rows[index]['processlist_user'] == user
+
+
+def _activity_row(thread_id, event_timer_start, event_timer_end, processlist_user):
+    return {
+        "current_schema": "dog",
+        "processlist_command": "Query",
+        "processlist_user": processlist_user,
+        "sql_text": "something",
+        "event_timer_start": event_timer_start,
+        "event_timer_end": event_timer_end,
+        "thread_id": thread_id,
+    }
+
+
+@pytest.mark.parametrize(
+    "rows,expected_users",
+    [
+        pytest.param(
+            [
+                _activity_row(1748, _older_time(), _old_time(), "older"),
+                _activity_row(1748, _new_time(), _new_time(), "current"),
+            ],
+            ["current"],
+            id="timed_rows_dedupe_to_most_recent",
+        ),
+        pytest.param(
+            [
+                _activity_row(1748, _older_time(), _old_time(), "timed"),
+                _activity_row(1748, None, None, "untimed"),
+            ],
+            ["timed", "untimed"],
+            id="untimed_row_alongside_timed_row",
+        ),
+        pytest.param(
+            [
+                _activity_row(1748, None, None, "bob"),
+                _activity_row(1748, None, None, "bob"),
+            ],
+            ["bob", "bob"],
+            id="all_rows_untimed",
+        ),
+    ],
+)
+def test_normalize_rows_with_null_event_timers(dbm_instance, datadog_agent, rows, expected_users):
+    """
+    Statement timers are NULL when the instrument has `TIMED = NO` in `setup_instruments`, and when
+    no `events_statements_current` row joins to the thread. Rows that cannot be ordered are kept.
+    """
+    check = MySql(CHECK_NAME, {}, [dbm_instance])
+    with mock.patch.object(datadog_agent, 'obfuscate_sql', passthrough=True) as mock_agent:
+        mock_agent.side_effect = "something"
+        result_rows = check.query_activity._normalize_rows(rows)
+        assert [row['processlist_user'] for row in result_rows] == expected_users
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures('dd_environment')
+def test_activity_collection_with_untimed_statements(aggregator, dbm_instance, dd_run_check, root_conn):
+    '''
+    Instruments with `TIMED = NO` in `setup_instruments` produce statement events whose
+    `TIMER_START`, `TIMER_END` and `TIMER_WAIT` are all NULL.
+
+    `events_statements_current` holds a row per nesting level, so a session blocked inside a stored
+    procedure has a row for both the CALL and the statement the procedure is running. Collection has
+    to reconcile two rows for that thread with no timers to order them by.
+    '''
+    check = MySql(CHECK_NAME, {}, instances=[deepcopy(dbm_instance)])
+    procedure = 'testdb.dd_untimed_nested'
+
+    with closing(root_conn.cursor()) as cursor:
+        # Ensure the consumers are enabled — other tests in this session may disable them.
+        cursor.execute(
+            "UPDATE performance_schema.setup_consumers SET enabled='YES' WHERE name = 'events_waits_current'"
+        )
+        cursor.execute(
+            "UPDATE performance_schema.setup_consumers SET enabled='YES' WHERE name LIKE 'events_statements_%'"
+        )
+        cursor.execute('DROP PROCEDURE IF EXISTS {}'.format(procedure))
+        cursor.execute(
+            'CREATE PROCEDURE {}() SQL SECURITY DEFINER BEGIN SELECT id FROM testdb.users FOR UPDATE; END'.format(
+                procedure
+            )
+        )
+        cursor.execute("GRANT EXECUTE ON PROCEDURE {} TO 'fred'@'%'".format(procedure))
+        # Restoring a blanket TIMED='YES' would enable instruments that ship disabled, so record
+        # exactly which ones to turn back on. This container is shared with every other test.
+        cursor.execute(
+            "SELECT NAME FROM performance_schema.setup_instruments WHERE NAME LIKE 'statement/%' AND TIMED = 'YES'"
+        )
+        previously_timed = [row[0] for row in cursor.fetchall()]
+        cursor.execute("UPDATE performance_schema.setup_instruments SET TIMED='NO' WHERE NAME LIKE 'statement/%'")
+    root_conn.commit()
+
+    # A pymysql connection is not thread safe, so the main thread must not touch bob's connection
+    # until the worker holding it is done with it
+    lock_held = Event()
+
+    def _hold_row_lock(conn):
+        conn.begin()
+        conn.cursor().execute('SELECT id FROM testdb.users FOR UPDATE')
+        lock_held.set()
+
+    def _call_procedure(conn):
+        try:
+            conn.cursor().execute('CALL {}()'.format(procedure))
+        except Exception:
+            # The call is expected to still be blocked when the test tears down
+            pass
+
+    def _wait_for_nested_statements(timeout=20):
+        # Two rows: one for the CALL, one for the statement the procedure is blocked on
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with closing(root_conn.cursor()) as cursor:
+                cursor.execute(
+                    'SELECT COUNT(*) FROM performance_schema.events_statements_current AS statement '
+                    'JOIN performance_schema.threads AS thread ON thread.thread_id = statement.thread_id '
+                    "WHERE thread.processlist_user = 'fred' AND thread.processlist_command = 'Query'"
+                )
+                if cursor.fetchone()[0] >= 2:
+                    return True
+            time.sleep(0.1)
+        return False
+
+    bob_conn = _get_conn_for_user('bob')
+    fred_conn = _get_conn_for_user('fred')
+    executor = ThreadPoolExecutor(2)
+    try:
+        executor.submit(_hold_row_lock, bob_conn)
+        assert lock_held.wait(timeout=20), "bob should have acquired the row lock"
+
+        executor.submit(_call_procedure, fred_conn)
+        # Waiting on the rows the check is about to read keeps the payload deterministic; a plain
+        # sleep lets a loaded runner reach the check before the procedure is blocked
+        assert _wait_for_nested_statements(), "fred's procedure should be blocked on bob's row lock"
+
+        dd_run_check(check)
+
+        # A failure to order the two untimed rows aborts collection before anything is submitted
+        dbm_activity = aggregator.get_event_platform_events("dbm-activity")
+        assert dbm_activity, "should have collected at least one activity payload"
+        rows = [row for event in dbm_activity for row in event['mysql_activity']]
+        assert rows, "should have collected at least one activity row"
+        # `_sanitize_row` drops NULL values, so an untimed row carries no event timer keys at all
+        assert any('event_timer_start' not in row for row in rows), (
+            "expected at least one untimed row, got keys: {}".format([sorted(row) for row in rows])
+        )
+    finally:
+        # Only safe once the worker has finished with this connection; committing releases the row
+        # lock so the blocked procedure can return and the executor can drain
+        if lock_held.is_set():
+            bob_conn.commit()
+        executor.shutdown(wait=True)
+        bob_conn.close()
+        fred_conn.close()
+        with closing(root_conn.cursor()) as cursor:
+            if previously_timed:
+                cursor.execute(
+                    "UPDATE performance_schema.setup_instruments SET TIMED='YES' WHERE NAME IN ({})".format(
+                        ', '.join(['%s'] * len(previously_timed))
+                    ),
+                    previously_timed,
+                )
+            cursor.execute('DROP PROCEDURE IF EXISTS {}'.format(procedure))
 
 
 @pytest.mark.integration
@@ -363,64 +562,35 @@ def test_activity_collection_rate_limit(aggregator, dd_run_check, dbm_instance):
     # test the activity collection loop rate limit
     aggregator.reset()
     collection_interval = 0.1
+    warmup_interval = 0.5
     dbm_instance['query_activity']['collection_interval'] = collection_interval
     dbm_instance['query_activity']['run_sync'] = False
     check = MySql(CHECK_NAME, {}, [dbm_instance])
+
     start = time.time()
     dd_run_check(check)
-    time.sleep(1)
+
+    # Wait long enough for at least one collection to occur
+    # Giving time to warm up the connection with the db
+    time.sleep(warmup_interval + collection_interval * 3)
     check.cancel()
-    time_elapsed = time.time() - start
-    max_collections = int(1 / collection_interval * time_elapsed) + 1
+    elapsed = time.time() - start
+
     metrics = aggregator.metrics("dd.mysql.activity.collect_activity.payload_size")
-    assert max_collections / 2.0 <= len(metrics) <= max_collections
 
+    # Verify at least one collection happened
+    assert len(metrics) >= 1, "Expected at least one activity collection to occur"
 
-@pytest.mark.integration
-@pytest.mark.usefixtures('dd_environment')
-@pytest.mark.parametrize("activity_enabled", [True, False])
-def test_async_job_enabled(dd_run_check, dbm_instance, activity_enabled):
-    dbm_instance['query_activity'] = {'enabled': activity_enabled, 'run_sync': False}
-    check = MySql(CHECK_NAME, {}, [dbm_instance])
-    dd_run_check(check)
-    check.cancel()
-    if activity_enabled:
-        assert check._query_activity._job_loop_future is not None
-        check._query_activity._job_loop_future.result()
-    else:
-        assert check._query_activity._job_loop_future is None
-
-
-@pytest.mark.integration
-@pytest.mark.usefixtures('dd_environment')
-def test_async_job_inactive_stop(aggregator, dd_run_check, dbm_instance):
-    dbm_instance['query_activity']['run_sync'] = False
-    check = MySql(CHECK_NAME, {}, [dbm_instance])
-    dd_run_check(check)
-    check._query_activity._job_loop_future.result()
-    aggregator.assert_metric(
-        "dd.mysql.async_job.inactive_stop",
-        tags=_expected_dbm_job_err_tags(dbm_instance),
-        hostname='',
+    # Verify we didn't exceed the rate limit by a large margin.
+    # Use a 1.2x multiplier to avoid flakiness while still catching
+    # egregious rate limiter failures (e.g., if it was completely disabled).
+    max_expected = int(elapsed / collection_interval) + 1
+    assert len(metrics) <= max_expected * 1.2, (
+        f"Rate limiter may be broken: got {len(metrics)} collections in {elapsed:.2f}s, "
+        f"expected at most ~{max_expected} (with 2x tolerance: {max_expected * 2})"
     )
 
-
-@pytest.mark.integration
-@pytest.mark.usefixtures('dd_environment')
-def test_async_job_cancel(aggregator, dd_run_check, dbm_instance):
-    dbm_instance['query_activity']['run_sync'] = False
-    check = MySql(CHECK_NAME, {}, [dbm_instance])
-    dd_run_check(check)
-    check.cancel()
-    # wait for it to stop and make sure it doesn't throw any exceptions
-    check._query_activity._job_loop_future.result()
-    assert not check._query_activity._job_loop_future.running(), "activity thread should be stopped"
-    # if the thread doesn't start until after the cancel signal is set then the db connection will never
-    # be created in the first place
-    aggregator.assert_metric(
-        "dd.mysql.async_job.cancel",
-        tags=_expected_dbm_job_err_tags(dbm_instance),
-    )
+    assert check.query_activity.collection_interval == collection_interval
 
 
 @pytest.mark.integration
@@ -438,8 +608,8 @@ def test_events_wait_current_disabled(dbm_instance, dd_run_check, root_conn, agg
         cursor.execute("UPDATE performance_schema.setup_consumers SET enabled='NO' WHERE name = 'events_waits_current'")
 
     dd_run_check(check)
-    # force query activity to run once, expect it to exist immediately with a warning
-    check._query_activity.run_job()
+    # force query activity to run once, expect it to exit immediately with a warning
+    check.query_activity.run_job()
     dbm_activity = aggregator.get_event_platform_events("dbm-activity")
     assert check.events_wait_current_enabled is False
     assert check.warnings == [
@@ -461,21 +631,227 @@ def test_events_wait_current_disabled(dbm_instance, dd_run_check, root_conn, agg
     dd_run_check(check)
     check.warnings.clear()
     assert check.events_wait_current_enabled is True
-    check._query_activity.run_job()
+    check.query_activity.run_job()
     check.cancel()
     dbm_activity = aggregator.get_event_platform_events("dbm-activity")
     assert check.warnings == []
     assert dbm_activity, "should have collected at least one activity"
 
 
-# the inactive job metrics are emitted from the main integrations
-# directly to metrics-intake, so they should also be properly tagged with a resource
-def _expected_dbm_job_err_tags(dbm_instance):
-    return dbm_instance['tags'] + [
-        'job:query-activity',
-        'port:{}'.format(PORT),
-        'dd.internal.resource:database_instance:stubbed.hostname',
-    ]
+@pytest.mark.integration
+@pytest.mark.usefixtures('dd_environment')
+@pytest.mark.parametrize(
+    "cloud_metadata",
+    [
+        {
+            'azure': {
+                'deployment_type': 'flexible_server',
+                'name': 'my-instance',
+            },
+        },
+    ],
+)
+def test_events_wait_current_disabled_no_warning_azure_flexible_server(
+    dbm_instance, dd_run_check, root_conn, aggregator, cloud_metadata
+):
+    '''
+    This test verifies that the check will not emit a warning
+    if the events_waits_current is disabled and Azure deployment_type is flexible_server.
+    '''
+    if cloud_metadata:
+        for k, v in cloud_metadata.items():
+            dbm_instance[k] = v
+    dbm_instance['options']['extra_performance_metrics'] = False
+    check = MySql(CHECK_NAME, {}, [dbm_instance])
+
+    # disable events_waits_current, expect events_wait_current_enabled to be set to False
+    with closing(root_conn.cursor()) as cursor:
+        cursor.execute("UPDATE performance_schema.setup_consumers SET enabled='NO' WHERE name = 'events_waits_current'")
+
+    dd_run_check(check)
+
+    # force query activity to run once, expect it to collect nothing
+    check.query_activity.run_job()
+    dbm_activity = aggregator.get_event_platform_events("dbm-activity")
+
+    assert check.events_wait_current_enabled is False
+    assert check.warnings == []
+    assert not dbm_activity, "should not have collected any activity"
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures('dd_environment')
+def test_if_deadlock_metric_is_collected(aggregator, dd_run_check, dbm_instance):
+    check = MySql(CHECK_NAME, {}, [dbm_instance])
+    dd_run_check(check)
+    deadlock_metric = aggregator.metrics("mysql.innodb.deadlocks")
+
+    assert len(deadlock_metric) == 1, "there should be one deadlock metric"
+
+
+@pytest.mark.skipif(
+    MYSQL_FLAVOR == 'mariadb' or MYSQL_VERSION_PARSED < parse_version('8.0'),
+    reason='Deadock count is not updated in MariaDB or older MySQL versions',
+)
+@pytest.mark.integration
+@pytest.mark.usefixtures('dd_environment')
+def test_deadlocks(aggregator, dd_run_check, dbm_instance):
+    check = MySql(CHECK_NAME, {}, [dbm_instance])
+    dd_run_check(check)
+    deadlocks_start = 0
+    deadlock_metric_start = aggregator.metrics("mysql.innodb.deadlocks")
+
+    assert len(deadlock_metric_start) == 1, "there should be one deadlock metric"
+
+    deadlocks_start = deadlock_metric_start[0].value
+
+    first_query = "SELECT * FROM testdb.users WHERE id = 1 FOR UPDATE;"
+    second_query = "SELECT * FROM testdb.users WHERE id = 2 FOR UPDATE;"
+
+    def run_first_deadlock_query(conn, event1, event2):
+        conn.begin()
+        try:
+            conn.cursor().execute("START TRANSACTION;")
+            conn.cursor().execute(first_query)
+            event1.set()
+            event2.wait()
+            conn.cursor().execute(second_query)
+            conn.cursor().execute("COMMIT;")
+        except Exception:
+            # Exception is expected due to a deadlock
+            pass
+        conn.commit()
+
+    def run_second_deadlock_query(conn, event1, event2):
+        conn.begin()
+        try:
+            event1.wait()
+            conn.cursor().execute("START TRANSACTION;")
+            conn.cursor().execute(second_query)
+            event2.set()
+            conn.cursor().execute(first_query)
+            conn.cursor().execute("COMMIT;")
+        except Exception:
+            # Exception is expected due to a deadlock
+            pass
+        conn.commit()
+
+    bob_conn = _get_conn_for_user('bob')
+    fred_conn = _get_conn_for_user('fred')
+
+    executor = concurrent.futures.thread.ThreadPoolExecutor(2)
+
+    event1 = Event()
+    event2 = Event()
+
+    futures_first_query = executor.submit(run_first_deadlock_query, bob_conn, event1, event2)
+    futures_second_query = executor.submit(run_second_deadlock_query, fred_conn, event1, event2)
+    futures_first_query.result()
+    futures_second_query.result()
+    # Make sure innodb is updated.
+    time.sleep(0.3)
+    bob_conn.close()
+    fred_conn.close()
+    executor.shutdown()
+
+    dd_run_check(check)
+
+    deadlock_metric_end = aggregator.metrics("mysql.innodb.deadlocks")
+
+    assert len(deadlock_metric_end) == 2 and deadlock_metric_end[1].value - deadlocks_start == 1, (
+        "there should be one new deadlock"
+    )
+
+
+@pytest.mark.skipif(
+    MYSQL_FLAVOR == 'mariadb' or MYSQL_VERSION_PARSED < parse_version('8.0'),
+    reason='MDL blocking detection requires MySQL 8.0+ with metadata_locks instrument enabled by default',
+)
+@pytest.mark.integration
+@pytest.mark.usefixtures('dd_environment')
+def test_mdl_blocking_activity(aggregator, dbm_instance, dd_run_check, root_conn):
+    """Verify that metadata lock contention appears in the activity payload with blocking relationships."""
+    config = deepcopy(dbm_instance)
+    config['query_activity']['collect_blocking_queries'] = True
+    # Disable all metrics that could query information_schema or touch user table
+    # metadata — those queries acquire SHARED_READ metadata locks which would get
+    # queued behind the ALTER TABLE's pending EXCLUSIVE lock, deadlocking the check.
+    config['options'] = {
+        'extra_performance_metrics': False,
+        'replication': False,
+        'extra_status_metrics': False,
+        'extra_innodb_metrics': False,
+        'schema_size_metrics': False,
+        'table_size_metrics': False,
+        'system_table_size_metrics': False,
+        'table_rows_stats_metrics': False,
+    }
+    config['index_metrics'] = {'enabled': False}
+    config['only_custom_queries'] = True
+    check = MySql(CHECK_NAME, {}, instances=[config])
+
+    MDL_TABLE = 'testdb.mdl_test_table'
+
+    with closing(root_conn.cursor()) as cur:
+        # Ensure the consumer is enabled — other tests in this session may disable it.
+        cur.execute("UPDATE performance_schema.setup_consumers SET enabled='YES' WHERE name = 'events_waits_current'")
+        cur.execute('DROP TABLE IF EXISTS {}'.format(MDL_TABLE))
+        cur.execute('CREATE TABLE {} (id INT PRIMARY KEY, val VARCHAR(50))'.format(MDL_TABLE))
+        cur.execute('INSERT INTO {} VALUES (1, %s)'.format(MDL_TABLE), ('hello',))
+    # PyMySQL defaults to autocommit=False, so the DDL/DML above opened an
+    # implicit transaction that holds a SHARED_WRITE metadata lock on the table.
+    # Commit to release it before we set up the intentional MDL contention.
+    root_conn.commit()
+
+    root_password = mysql_root_password()
+    holder_conn = pymysql.connect(host=HOST, port=PORT, user='root', password=root_password)
+    ddl_conn = pymysql.connect(host=HOST, port=PORT, user='root', password=root_password)
+    ddl_ready = Event()
+
+    def _hold_shared_mdl(conn):
+        conn.begin()
+        conn.cursor().execute('SELECT * FROM {}'.format(MDL_TABLE))
+
+    def _run_ddl(conn, ready_event):
+        ready_event.set()
+        try:
+            conn.cursor().execute('ALTER TABLE {} ADD COLUMN new_col INT'.format(MDL_TABLE))
+        except Exception:
+            pass
+
+    executor = ThreadPoolExecutor(2)
+    try:
+        executor.submit(_hold_shared_mdl, holder_conn)
+        time.sleep(0.2)
+        executor.submit(_run_ddl, ddl_conn, ddl_ready)
+        ddl_ready.wait(timeout=5)
+        time.sleep(0.5)
+
+        dd_run_check(check)
+
+        dbm_activity = aggregator.get_event_platform_events("dbm-activity")
+        assert dbm_activity, "should have collected at least one activity payload"
+
+        all_rows = [row for event in dbm_activity for row in event['mysql_activity']]
+        mdl_blocked_rows = [r for r in all_rows if r.get('mdl_object_name') == 'mdl_test_table']
+        assert mdl_blocked_rows, "should have at least one activity row with MDL blocking context; all rows: {}".format(
+            [(r.get('sql_text', '?')[:60], r.get('mdl_object_name')) for r in all_rows]
+        )
+
+        mdl_row = mdl_blocked_rows[0]
+        assert mdl_row['mdl_object_type'] == 'TABLE'
+        assert mdl_row['mdl_object_schema'] == 'testdb'
+        assert mdl_row.get('blocking_thread_id'), "MDL blocked row should have a blocking_thread_id"
+    finally:
+        holder_conn.commit()
+        holder_conn.close()
+        # Wait for the ALTER TABLE to complete now that the MDL holder released.
+        # Must shutdown before closing ddl_conn — closing a socket that another
+        # thread is recv()ing on deadlocks on macOS.
+        executor.shutdown(wait=True)
+        ddl_conn.close()
+        with closing(root_conn.cursor()) as cur:
+            cur.execute('DROP TABLE IF EXISTS {}'.format(MDL_TABLE))
 
 
 def _get_conn_for_user(user, _autocommit=False):

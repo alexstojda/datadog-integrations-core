@@ -1,7 +1,10 @@
 # (C) Datadog, Inc. 2021-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
+import gc
+import inspect
 import subprocess
+import weakref
 
 import mock
 import psutil
@@ -9,14 +12,16 @@ import pymysql
 import pytest
 
 from datadog_checks.mysql import MySql
-from datadog_checks.mysql.version_utils import get_version
+from datadog_checks.mysql.activity import MySQLActivity
+from datadog_checks.mysql.util import supports_explain_json_format_version
+from datadog_checks.mysql.version_utils import parse_version
 
 from . import common
 
 pytestmark = pytest.mark.unit
 
 
-def test__get_runtime_aurora_tags():
+def test__get_aurora_replication_role():
     mysql_check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
 
     class MockCursor:
@@ -47,27 +52,27 @@ def test__get_runtime_aurora_tags():
     reader_row = ('reader',)
     writer_row = ('writer',)
 
-    tags = mysql_check._get_runtime_aurora_tags(MockDatabase(MockCursor(rows=[reader_row])))
-    assert tags == ['replication_role:reader']
+    role = mysql_check._get_aurora_replication_role(MockDatabase(MockCursor(rows=[reader_row])))
+    assert role == 'reader'
 
-    tags = mysql_check._get_runtime_aurora_tags(MockDatabase(MockCursor(rows=[writer_row])))
-    assert tags == ['replication_role:writer']
+    role = mysql_check._get_aurora_replication_role(MockDatabase(MockCursor(rows=[writer_row])))
+    assert role == 'writer'
 
-    tags = mysql_check._get_runtime_aurora_tags(MockDatabase(MockCursor(rows=[(1, 'reader')])))
-    assert tags == []
+    role = mysql_check._get_aurora_replication_role(MockDatabase(MockCursor(rows=[(1, 'reader')])))
+    assert role is None
 
     # Error cases for non-aurora databases; any error should be caught and not fail the check
 
-    tags = mysql_check._get_runtime_aurora_tags(
+    role = mysql_check._get_aurora_replication_role(
         MockDatabase(
             MockCursor(
                 rows=[], side_effect=pymysql.err.InternalError(pymysql.constants.ER.UNKNOWN_TABLE, 'Unknown Table')
             )
         )
     )
-    assert tags == []
+    assert role is None
 
-    tags = mysql_check._get_runtime_aurora_tags(
+    role = mysql_check._get_aurora_replication_role(
         MockDatabase(
             MockCursor(
                 rows=[],
@@ -75,7 +80,7 @@ def test__get_runtime_aurora_tags():
             )
         )
     )
-    assert tags == []
+    assert role is None
 
 
 def test__get_server_pid():
@@ -111,29 +116,73 @@ def test__get_server_pid():
             assert mysql_check.log.exception.call_count == 0
 
 
-def test_parse_get_version():
-    class MockCursor:
-        version = (b'5.5.12-log',)
+@pytest.mark.parametrize(
+    'raw_version, version_comment, expected_version, expected_flavor, expected_build',
+    [
+        # MySQL versions
+        ('5.5.12-log', None, '5.5.12', 'MySQL', 'log'),
+        ('5.7.30-standard', None, '5.7.30', 'MySQL', 'standard'),
+        ('8.0.25-debug', None, '8.0.25', 'MySQL', 'debug'),
+        ('8.0.33-valgrind', None, '8.0.33', 'MySQL', 'valgrind'),
+        ('8.0.35-embedded', None, '8.0.35', 'MySQL', 'embedded'),
+        ('5.6.51', None, '5.6.51', 'MySQL', 'unspecified'),
+        ('8.0.35', None, '8.0.35', 'MySQL', 'unspecified'),
+        # MariaDB versions
+        ('10.3.34-MariaDB', None, '10.3.34', 'MariaDB', 'unspecified'),
+        ('10.4.24-MariaDB-log', None, '10.4.24', 'MariaDB', 'log'),
+        ('11.0.2-MariaDB', None, '11.0.2', 'MariaDB', 'unspecified'),
+        # Percona versions
+        ('5.7.39-42', 'Percona Server (GPL), Release 42, Revision 8b0a379', '5.7.39', 'Percona', 'unspecified'),
+        ('8.4.5-5', 'Percona Server (GPL), Release 5, Revision 3d3abca6', '8.4.5', 'Percona', 'unspecified'),
+        ('5.7.40-43-standard', 'Percona Server (GPL), Release 43, Revision 1a2b3c4', '5.7.40', 'Percona', 'standard'),
+    ],
+)
+def test_parse_version(raw_version, version_comment, expected_version, expected_flavor, expected_build):
+    """Test parsing of MySQL, MariaDB, and Percona versions."""
+    result = parse_version(raw_version, version_comment)
 
-        def execute(self, command):
-            pass
+    assert result.version == expected_version
+    assert result.flavor == expected_flavor
+    assert result.build == expected_build
 
-        def close(self):
-            return MockCursor()
 
-        def fetchone(self):
-            return self.version
+@pytest.mark.parametrize(
+    'version, compat_version, expected_compatible',
+    [
+        # Basic version compatibility scenarios
+        ('5.5.12', (5, 4, 0), True),  # older major.minor
+        ('5.5.12', (5, 5, 15), False),  # newer patch
+        ('5.5.12', (5, 6, 0), False),  # newer minor
+        ('5.5.12', (8, 0, 0), False),  # newer major
+        ('5.7.30', (5, 6, 0), True),  # older minor
+        ('5.7.30', (5, 7, 35), False),  # newer patch
+        ('5.7.30', (8, 0, 0), False),  # newer major
+        ('8.0.25', (5, 7, 0), True),  # older major
+        ('8.0.25', (8, 0, 30), False),  # newer patch
+        ('8.0.25', (8, 1, 0), False),  # newer minor
+        # MariaDB version compatibility
+        ('10.3.34', (10, 3, 30), True),  # older patch
+        ('10.3.34', (10, 3, 40), False),  # newer patch
+        ('10.3.34', (10, 4, 0), False),  # newer minor
+        # Edge cases - versions with letters in patch level
+        ('5.0.51a', (5, 0, 50), True),  # patchlevel extracted as 51
+        ('5.0.51a', (5, 0, 55), False),  # patchlevel extracted as 51
+        ('5.7.30b', (5, 7, 25), True),  # patchlevel extracted as 30
+        ('5.7.30b', (5, 7, 35), False),  # patchlevel extracted as 30
+    ],
+)
+def test_version_compatible(version, compat_version, expected_compatible):
+    """Test version compatibility checks - flavor and build don't affect compatibility."""
+    from datadog_checks.mysql.version_utils import MySQLVersion
 
-    class MockDatabase:
-        def cursor(self):
-            return MockCursor()
+    # Use a single flavor/build since they don't affect version compatibility
+    mysql_version = MySQLVersion(version, 'MySQL', 'unspecified')
+    actual_compatible = mysql_version.version_compatible(compat_version)
 
-    mocked_db = MockDatabase()
-    for mocked_db.version in [(b'5.5.12-log',), ('5.5.12-log',)]:
-        v = get_version(mocked_db)
-        assert v.version == '5.5.12'
-        assert v.flavor == 'MySQL'
-        assert v.build == 'log'
+    assert actual_compatible == expected_compatible, (
+        f"Version {mysql_version.version} compatibility with {compat_version} "
+        f"expected {expected_compatible}, got {actual_compatible}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -191,9 +240,9 @@ def test_replication_check_status(
 ):
     mysql_check = MySql(common.CHECK_NAME, {}, instances=[instance_basic])
     mysql_check.service_check_tags = ['foo:bar']
+    mysql_check.global_variables._variables = {'log_bin': 'ON'}  # Set binlog enabled to True for the test
     mocked_results = {
         'Slaves_connected': slaves_connected,
-        'Binlog_enabled': True,
     }
     if replica_io_running[1] is not None:
         mocked_results[replica_io_running[0]] = replica_io_running[1]
@@ -232,76 +281,51 @@ def test_replication_check_status(
     assert len(aggregator.service_checks('mysql.replication.slave_running')) == expected_service_check_len
 
 
-def test__get_is_aurora():
-    def new_check():
-        return MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
-
-    class MockCursor:
-        def __init__(self, rows, side_effect=None):
-            self.rows = rows
-            self.side_effect = side_effect
-
-        def __call__(self, *args, **kwargs):
-            return self
-
-        def execute(self, command):
-            if self.side_effect:
-                raise self.side_effect
-
-        def close(self):
-            return MockCursor([])
-
-        def fetchall(self):
-            return self.rows
-
-    class MockDatabase:
-        def __init__(self, cursor):
-            self.cursor = cursor
-
-        def cursor(self):
-            return self.cursor
-
-    check = new_check()
-    assert True is check._get_is_aurora(MockDatabase(MockCursor(rows=[('1.72.1',)])))
-    assert True is check._get_is_aurora(None)
-    assert True is check._is_aurora
-
-    check = new_check()
-    assert True is check._get_is_aurora(
-        MockDatabase(
-            MockCursor(
-                rows=[
-                    ('1.72.1',),
-                    ('1.72.1',),
-                ]
-            )
-        )
-    )
-    assert True is check._get_is_aurora(None)
-    assert True is check._is_aurora
-
-    check = new_check()
-    assert False is check._get_is_aurora(MockDatabase(MockCursor(rows=[])))
-    assert False is check._get_is_aurora(None)
-    assert False is check._is_aurora
-
-    check = new_check()
-    assert False is check._get_is_aurora(MockDatabase(MockCursor(rows=None, side_effect=ValueError())))
-    assert None is check._is_aurora
-    assert False is check._get_is_aurora(None)
-
-
 @pytest.mark.parametrize(
     'disable_generic_tags, hostname, expected_tags',
     [
-        (True, None, {'port:unix_socket', 'dd.internal.resource:database_instance:stubbed.hostname'}),
+        (
+            True,
+            None,
+            {
+                'port:unix_socket',
+                'database_hostname:stubbed.hostname',
+                'database_instance:stubbed.hostname',
+                'dd.internal.resource:database_instance:stubbed.hostname',
+            },
+        ),
         (
             False,
             None,
-            {'port:unix_socket', 'server:localhost', 'dd.internal.resource:database_instance:stubbed.hostname'},
+            {
+                'port:unix_socket',
+                'server:localhost',
+                'database_hostname:stubbed.hostname',
+                'database_instance:stubbed.hostname',
+                'dd.internal.resource:database_instance:stubbed.hostname',
+            },
         ),
-        (True, 'foo', {'port:unix_socket', 'dd.internal.resource:database_instance:stubbed.hostname'}),
-        (False, 'foo', {'port:unix_socket', 'server:foo', 'dd.internal.resource:database_instance:stubbed.hostname'}),
+        (
+            True,
+            'foo',
+            {
+                'port:unix_socket',
+                'database_hostname:stubbed.hostname',
+                'database_instance:stubbed.hostname',
+                'dd.internal.resource:database_instance:stubbed.hostname',
+            },
+        ),
+        (
+            False,
+            'foo',
+            {
+                'port:unix_socket',
+                'server:foo',
+                'database_hostname:stubbed.hostname',
+                'database_instance:stubbed.hostname',
+                'dd.internal.resource:database_instance:stubbed.hostname',
+            },
+        ),
     ],
 )
 def test_service_check(disable_generic_tags, expected_tags, hostname):
@@ -309,3 +333,623 @@ def test_service_check(disable_generic_tags, expected_tags, hostname):
     check = MySql(common.CHECK_NAME, {}, instances=[config])
 
     assert set(check._service_check_tags(hostname)) == expected_tags
+
+
+def test_update_aurora_replication_role():
+    mysql_check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
+
+    # Initial state - no tags
+    assert 'replication_role:writer' not in mysql_check.tag_manager.get_tags()
+    assert 'replication_role:reader' not in mysql_check.tag_manager.get_tags()
+
+    # First check - writer role
+    role = 'writer'
+    mysql_check._update_aurora_replication_role(role)
+    assert 'replication_role:writer' in mysql_check.tag_manager.get_tags()
+    assert len([t for t in mysql_check.tag_manager.get_tags() if t.startswith('replication_role:')]) == 1
+
+    # Simulate failover - reader role
+    role = 'reader'
+    mysql_check._update_aurora_replication_role(role)
+    assert 'replication_role:reader' in mysql_check.tag_manager.get_tags()
+    assert 'replication_role:writer' not in mysql_check.tag_manager.get_tags()
+    assert len([t for t in mysql_check.tag_manager.get_tags() if t.startswith('replication_role:')]) == 1
+
+
+@pytest.mark.parametrize(
+    'template, expected, tags',
+    [
+        ('$resolved_hostname', 'stubbed.hostname', ['env:prod']),
+        ('$env-$resolved_hostname:$port', 'prod-stubbed.hostname:5432', ['env:prod', 'port:1']),
+        ('$env-$resolved_hostname', 'prod-stubbed.hostname', ['env:prod']),
+        ('$env-$resolved_hostname', '$env-stubbed.hostname', []),
+        ('$env-$resolved_hostname', 'prod,staging-stubbed.hostname', ['env:prod', 'env:staging']),
+    ],
+)
+def test_database_identifier(template, expected, tags):
+    """
+    Test functionality of calculating database_identifier
+    """
+    config = {'host': 'stubbed.hostname', 'user': 'datadog', 'port': 5432, 'tags': tags}
+    config['database_identifier'] = {'template': template}
+    check = MySql(common.CHECK_NAME, {}, instances=[config])
+
+    assert check.database_identifier == expected
+
+
+@pytest.mark.parametrize(
+    'rows,second_pass,expected',
+    [
+        pytest.param(
+            [
+                {'thread_id': 1, 'event_timer_start': 1000, 'event_timer_end': 2000, 'sql_text': 'SELECT 1'},
+                {'thread_id': 1, 'event_timer_start': 2001, 'event_timer_end': 3000, 'sql_text': 'SELECT 1'},
+            ],
+            {1: {'event_timer_start': 2001}},
+            [{'thread_id': 1, 'event_timer_start': 2001, 'event_timer_end': 3000, 'sql_text': 'SELECT 1'}],
+            id='drops_statement_that_ended_before_the_newest_one_started',
+        ),
+        pytest.param(
+            [
+                {'thread_id': 1, 'event_timer_start': 1000, 'event_timer_end': 2000, 'sql_text': 'SELECT 1'},
+                {'thread_id': 1, 'event_timer_start': 2001, 'sql_text': 'SELECT 1'},
+            ],
+            {1: {'event_timer_start': 2001}},
+            [{'thread_id': 1, 'event_timer_start': 2001, 'sql_text': 'SELECT 1'}],
+            id='keeps_row_missing_event_timer_end',
+        ),
+        pytest.param(
+            [{'thread_id': 2, 'sql_text': 'SELECT 2'}],
+            {2: {'event_timer_start': None}},
+            [{'thread_id': 2, 'sql_text': 'SELECT 2'}],
+            id='keeps_row_with_no_timers_at_all',
+        ),
+    ],
+)
+def test__eliminate_duplicate_rows(rows, second_pass, expected):
+    # `_sanitize_row` drops keys whose value is NULL before rows reach `_eliminate_duplicate_rows`,
+    # so rows produced by an instrument with `TIMED = NO` arrive without any event timer at all
+    assert MySQLActivity._eliminate_duplicate_rows(rows, second_pass) == expected
+
+
+@pytest.mark.parametrize(
+    (
+        'replication_enabled, is_mariadb, group_replication_active, replica_status, '
+        'binlog_enabled, server_uuid, expected_cluster_uuid, expected_replication_role'
+    ),
+    [
+        # Test case 1: Replication not enabled - should return early
+        (False, False, False, None, False, None, None, None),
+        # Test case 2: MariaDB - should return early
+        (True, True, False, None, False, None, None, None),
+        # Test case 3: Group replication active - should return early
+        (True, False, True, None, False, None, None, None),
+        # Test case 4: Replica with Source_UUID (mysql 8.0.22+)
+        (
+            True,
+            False,
+            False,
+            [{'Source_UUID': 'source-uuid-123', 'Master_UUID': None}],
+            False,
+            'server-uuid-456',
+            'source-uuid-123',
+            'replica',
+        ),
+        # Test case 5: Replica with Master_UUID (mysql < 8.0.22)
+        (
+            True,
+            False,
+            False,
+            [{'Master_UUID': 'master-uuid-789'}],
+            False,
+            'server-uuid-456',
+            'master-uuid-789',
+            'replica',
+        ),
+        # Test case 6: Replica with Source_UUID as None (should not fallback to Master_UUID)
+        (
+            True,
+            False,
+            False,
+            [{'Source_UUID': None, 'Master_UUID': 'master-uuid-789'}],
+            False,
+            'server-uuid-456',
+            None,
+            None,
+        ),
+        # Test case 7: Primary with binlog enabled
+        (True, False, False, [], True, 'server-uuid-456', 'server-uuid-456', 'primary'),
+        # Test case 8: No replica status and binlog disabled
+        (True, False, False, None, False, 'server-uuid-456', None, None),
+        # Test case 9: Empty replica status dict
+        (True, False, False, [], False, 'server-uuid-456', None, None),
+    ],
+)
+def test_set_cluster_tags(
+    replication_enabled,
+    is_mariadb,
+    group_replication_active,
+    replica_status,
+    binlog_enabled,
+    server_uuid,
+    expected_cluster_uuid,
+    expected_replication_role,
+):
+    """Test the set_cluster_tags method with various scenarios."""
+    mysql_check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
+
+    # Set up the check instance state
+    mysql_check._config.replication_enabled = replication_enabled
+    mysql_check.is_mariadb = is_mariadb
+    mysql_check._group_replication_active = group_replication_active
+    mysql_check.global_variables._variables = {'log_bin': 'ON' if binlog_enabled else 'OFF'}
+    mysql_check.server_uuid = server_uuid
+
+    # Mock the _get_replica_replication_status method
+    mysql_check._get_replica_replication_status = mock.MagicMock(return_value=replica_status)
+
+    # Mock the database connection
+    mock_db = mock.MagicMock()
+
+    # Call the method under test
+    mysql_check.set_cluster_tags(mock_db)
+
+    # Verify the cluster_uuid attribute is set correctly
+    if expected_cluster_uuid is not None:
+        assert mysql_check.cluster_uuid == expected_cluster_uuid
+    else:
+        # If expected_cluster_uuid is None, cluster_uuid should either be None or not set
+        assert getattr(mysql_check, 'cluster_uuid', None) is None or mysql_check.cluster_uuid is None
+
+    # Verify the tags are set correctly
+    tags = mysql_check.tag_manager.get_tags()
+
+    if expected_cluster_uuid is not None:
+        assert f'cluster_uuid:{expected_cluster_uuid}' in tags
+    else:
+        # Check that no cluster_uuid tag is present
+        cluster_uuid_tags = [tag for tag in tags if tag.startswith('cluster_uuid:')]
+        assert len(cluster_uuid_tags) == 0
+
+    if expected_replication_role is not None:
+        assert f'replication_role:{expected_replication_role}' in tags
+    else:
+        # Check that no replication_role tag is present
+        replication_role_tags = [tag for tag in tags if tag.startswith('replication_role:')]
+        assert len(replication_role_tags) == 0
+
+
+def test_collect_replication_metrics_returns_empty_for_pure_group_replication():
+    """Test that _collect_replication_metrics returns {} for a pure group replication node."""
+    mysql_check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
+
+    mysql_check._group_replication_active = True
+    mysql_check._get_replica_stats = mock.MagicMock(return_value={})
+    mysql_check._get_replicas_connected_count = mock.MagicMock(return_value={'Replicas_connected': 0})
+
+    results = {}
+    replication_metrics = mysql_check._collect_replication_metrics(mock.MagicMock(), results, above_560=True)
+
+    assert replication_metrics == {}
+    assert results == {}
+
+
+def test_collect_replication_metrics_returns_vars_for_traditional_source_with_zero_replicas():
+    """Test that a traditional source with 0 connected replicas still returns REPLICA_VARS
+    so _check_replication_status can emit a WARNING for replica-loss detection."""
+    from datadog_checks.mysql.const import REPLICA_VARS
+
+    mysql_check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
+
+    mysql_check._group_replication_active = False
+    mysql_check._get_replica_stats = mock.MagicMock(return_value={})
+    mysql_check._get_replicas_connected_count = mock.MagicMock(return_value={'Replicas_connected': 0})
+
+    results = {}
+    replication_metrics = mysql_check._collect_replication_metrics(mock.MagicMock(), results, above_560=True)
+
+    assert replication_metrics == REPLICA_VARS
+    assert results.get('Replicas_connected') == 0
+
+
+def test_collect_replication_metrics_returns_vars_when_replica():
+    """Test that _collect_replication_metrics returns REPLICA_VARS when this node is a replica."""
+    from datadog_checks.mysql.const import REPLICA_VARS
+
+    mysql_check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
+
+    replica_stats = {
+        'Seconds_Behind_Source': {'channel:default': 5},
+        'Slave_IO_Running': {'channel:default': 'Yes'},
+        'Slave_SQL_Running': {'channel:default': 'Yes'},
+    }
+    mysql_check._get_replica_stats = mock.MagicMock(return_value=replica_stats)
+    mysql_check._get_replicas_connected_count = mock.MagicMock(return_value={'Replicas_connected': 0})
+
+    results = {}
+    replication_metrics = mysql_check._collect_replication_metrics(mock.MagicMock(), results, above_560=True)
+
+    assert replication_metrics == REPLICA_VARS
+    assert 'Seconds_Behind_Source' in results
+
+
+def test_collect_replication_metrics_returns_vars_when_has_replicas_connected():
+    """Test that _collect_replication_metrics returns REPLICA_VARS when replicas are connected."""
+    from datadog_checks.mysql.const import REPLICA_VARS
+
+    mysql_check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
+
+    mysql_check._get_replica_stats = mock.MagicMock(return_value={})
+    mysql_check._get_replicas_connected_count = mock.MagicMock(return_value={'Replicas_connected': 2})
+
+    results = {}
+    replication_metrics = mysql_check._collect_replication_metrics(mock.MagicMock(), results, above_560=True)
+
+    assert replication_metrics == REPLICA_VARS
+    assert results.get('Replicas_connected') == 2
+
+
+def test_get_replica_stats_tags_each_mariadb_connection():
+    """Each MariaDB Connection_name maps to its own channel tag in _get_replica_stats."""
+    mysql_check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog'}])
+    mysql_check._config.replication_enabled = True
+    mysql_check._get_replica_replication_status = mock.MagicMock(
+        return_value=[
+            {'Connection_name': 'conn_a', 'Seconds_Behind_Master': 1},
+            {'Connection_name': 'conn_b', 'Seconds_Behind_Master': 2},
+        ]
+    )
+    results = mysql_check._get_replica_stats(mock.MagicMock())
+    assert results['Seconds_Behind_Master'] == {'channel:conn_a': 1, 'channel:conn_b': 2}
+
+
+def test_source_with_zero_replicas_emits_warning_service_check(aggregator, instance_basic):
+    """Test that a source with 0 connected replicas emits WARNING for replica-loss detection."""
+    mysql_check = MySql(common.CHECK_NAME, {}, instances=[instance_basic])
+    mysql_check.service_check_tags = ['foo:bar']
+    mysql_check.global_variables._variables = {'log_bin': 'ON'}
+
+    mocked_results = {
+        'Replicas_connected': 0,
+    }
+
+    mysql_check._check_replication_status(mocked_results)
+
+    aggregator.assert_service_check(
+        'mysql.replication.slave_running',
+        status=MySql.WARNING,
+        tags=['foo:bar', 'replication_mode:source'],
+        count=1,
+    )
+    aggregator.assert_service_check(
+        'mysql.replication.replica_running',
+        status=MySql.WARNING,
+        tags=['foo:bar', 'replication_mode:source'],
+        count=1,
+    )
+
+
+@pytest.mark.parametrize(
+    'exclude_hostname, expected_hostname',
+    [
+        (False, 'resolved.hostname'),
+        (True, None),
+    ],
+)
+def test_debug_stats_kwargs_respects_exclude_hostname(exclude_hostname, expected_hostname):
+    instance = {'server': 'localhost', 'user': 'datadog', 'exclude_hostname': exclude_hostname}
+    with mock.patch('datadog_checks.mysql.MySql.resolve_db_host', return_value='resolved.hostname'):
+        mysql_check = MySql(common.CHECK_NAME, {}, instances=[instance])
+    assert mysql_check.debug_stats_kwargs()['hostname'] == expected_hostname
+
+
+class TestShowReplicaStatusQuery:
+    """Tests for show_replica_status_query ensuring parameterized query construction."""
+
+    @pytest.mark.parametrize(
+        'raw_version,version_comment,is_mariadb,channel,expected_query,expected_params',
+        [
+            pytest.param('5.7.30', 'MySQL', False, '', 'SHOW SLAVE STATUS', (), id='mysql_legacy_no_channel'),
+            pytest.param('8.0.22', 'MySQL', False, '', 'SHOW REPLICA STATUS', (), id='mysql_modern_no_channel'),
+            pytest.param(
+                '5.7.30',
+                'MySQL',
+                False,
+                'my-channel',
+                'SHOW SLAVE STATUS FOR CHANNEL %s',
+                ('my-channel',),
+                id='mysql_legacy_with_channel',
+            ),
+            pytest.param(
+                '8.0.22',
+                'MySQL',
+                False,
+                'my-channel',
+                'SHOW REPLICA STATUS FOR CHANNEL %s',
+                ('my-channel',),
+                id='mysql_modern_with_channel',
+            ),
+            pytest.param(
+                '10.5.1-MariaDB',
+                'MariaDB',
+                True,
+                'my-channel',
+                'SHOW REPLICA STATUS',
+                (),
+                id='mariadb_modern_with_channel',
+            ),
+            pytest.param(
+                '10.5.1-MariaDB',
+                'MariaDB',
+                True,
+                '',
+                'SHOW ALL REPLICAS STATUS',
+                (),
+                id='mariadb_modern_no_channel',
+            ),
+            pytest.param(
+                '10.4.0-MariaDB', 'MariaDB', True, '', 'SHOW ALL SLAVES STATUS', (), id='mariadb_legacy_no_channel'
+            ),
+            pytest.param(
+                '10.4.0-MariaDB',
+                'MariaDB',
+                True,
+                'my-channel',
+                'SHOW SLAVE STATUS',
+                (),
+                id='mariadb_legacy_with_channel',
+            ),
+        ],
+    )
+    def test_query_construction(
+        self, raw_version, version_comment, is_mariadb, channel, expected_query, expected_params
+    ):
+        from datadog_checks.mysql.queries import show_replica_status_query
+
+        version = parse_version(raw_version, version_comment)
+        query, params = show_replica_status_query(version, is_mariadb=is_mariadb, channel=channel)
+        assert query == expected_query
+        assert params == expected_params
+        if is_mariadb:
+            assert 'CHANNEL' not in query
+
+
+class TestReplicaReplicationStatusParameterized:
+    """Tests that _get_replica_replication_status uses parameterized queries."""
+
+    def _make_check(self, replication_channel=None):
+        options = {'replication': True}
+        if replication_channel:
+            options['replication_channel'] = replication_channel
+        instance = {'server': 'localhost', 'user': 'datadog', 'options': options}
+        check = MySql(common.CHECK_NAME, {}, instances=[instance])
+        return check
+
+    def _make_mock_db(self):
+        mock_cursor = mock.MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_db = mock.MagicMock()
+        mock_db.cursor.return_value = mock_cursor
+        return mock_db, mock_cursor
+
+    @pytest.mark.parametrize(
+        'channel,raw_version,version_comment,is_mariadb,expected_query,expected_params,call_index',
+        [
+            pytest.param(
+                'test-channel',
+                '10.5.1-MariaDB',
+                'MariaDB',
+                True,
+                'SET @@default_master_connection = %s',
+                ('test-channel',),
+                0,
+                id='mariadb_set_connection',
+            ),
+            pytest.param(
+                'test-channel',
+                '8.0.22',
+                'MySQL',
+                False,
+                'SHOW REPLICA STATUS FOR CHANNEL %s',
+                ('test-channel',),
+                0,
+                id='mysql_for_channel',
+            ),
+        ],
+    )
+    def test_channel_uses_parameterized_query(
+        self, channel, raw_version, version_comment, is_mariadb, expected_query, expected_params, call_index
+    ):
+        check = self._make_check(replication_channel=channel)
+        check.is_mariadb = is_mariadb
+        check.version = parse_version(raw_version, version_comment)
+
+        mock_db, mock_cursor = self._make_mock_db()
+        check._get_replica_replication_status(mock_db)
+
+        call = mock_cursor.execute.call_args_list[call_index]
+        assert call[0][0] == expected_query
+        assert call[0][1] == expected_params
+
+    def test_mariadb_set_connection_not_called_without_channel(self):
+        check = self._make_check()
+        check.is_mariadb = True
+        check.version = parse_version('10.5.1-MariaDB', 'MariaDB')
+
+        mock_db, mock_cursor = self._make_mock_db()
+        check._get_replica_replication_status(mock_db)
+
+        assert mock_cursor.execute.call_count == 1
+        assert 'default_master_connection' not in mock_cursor.execute.call_args_list[0][0][0]
+
+    def test_special_characters_in_channel_stay_in_params(self):
+        """Channel values with special characters must be passed as params, not interpolated."""
+        channel = "'; SELECT 1; --"
+        check = self._make_check(replication_channel=channel)
+        check.is_mariadb = True
+        check.version = parse_version('10.11.0-MariaDB', 'MariaDB')
+
+        mock_db, mock_cursor = self._make_mock_db()
+        check._get_replica_replication_status(mock_db)
+
+        for call in mock_cursor.execute.call_args_list:
+            query_str = call[0][0]
+            assert channel not in query_str
+
+
+class TestSupportsExplainJsonFormatVersion:
+    """The explain_json_format_version variable only exists on MySQL/Percona 8.3.0 and above."""
+
+    @pytest.mark.parametrize(
+        'raw_version,version_comment,expected',
+        [
+            pytest.param('5.7.30', 'MySQL Community Server', False, id='mysql_5_7'),
+            pytest.param('8.0.36', 'MySQL Community Server', False, id='mysql_8_0'),
+            pytest.param('8.2.0', 'MySQL Community Server', False, id='mysql_8_2'),
+            pytest.param('8.3.0', 'MySQL Community Server', True, id='mysql_8_3'),
+            pytest.param('8.4.0', 'MySQL Community Server', True, id='mysql_8_4'),
+            pytest.param('9.7.2', 'MySQL Community Server', True, id='mysql_9_7'),
+            pytest.param('8.0.42', 'Percona Server (GPL)', False, id='percona_8_0'),
+            pytest.param('8.4.0', 'Percona Server (GPL)', True, id='percona_8_4'),
+            # MariaDB never has the variable, even though its version numbers sort above 8.3.0
+            pytest.param('10.11.0-MariaDB', 'MariaDB', False, id='mariadb_10_11'),
+            pytest.param('11.4.0-MariaDB', 'MariaDB', False, id='mariadb_11_4'),
+        ],
+    )
+    def test_supported_versions(self, raw_version, version_comment, expected):
+        version = parse_version(raw_version, version_comment)
+        assert supports_explain_json_format_version(version) is expected
+
+    def test_unknown_version(self):
+        """The variable cannot be set safely before the server version has been detected."""
+        assert supports_explain_json_format_version(None) is False
+
+
+DBM_JOBS = ['statement-metrics', 'statement-samples', 'query-activity', 'database-metadata']
+
+
+@pytest.mark.parametrize(
+    'dbm, data_observability, expected_jobs',
+    [
+        pytest.param(False, False, [], id='neither'),
+        pytest.param(True, False, DBM_JOBS, id='dbm'),
+        pytest.param(False, True, ['database-metadata', 'data-observability'], id='data_observability'),
+        pytest.param(True, True, DBM_JOBS + ['data-observability'], id='both'),
+    ],
+)
+def test_async_job_registry_matches_config(dbm, data_observability, expected_jobs):
+    """Only the jobs enabled by the instance config are built and registered.
+
+    Each job's own enabled flag defaults to true, so a registered job starts collecting. Data
+    Observability relies on the metadata job for schema collection, so either feature registers it.
+    """
+    instance = {
+        'server': 'localhost',
+        'user': 'datadog',
+        'dbm': dbm,
+        'data_observability': {'enabled': data_observability},
+    }
+
+    check = MySql(common.CHECK_NAME, {}, instances=[instance])
+
+    registered = check._async_job_registry
+    assert list(registered) == expected_jobs
+    assert check.statement_metrics is registered.get('statement-metrics')
+    assert check.statement_samples is registered.get('statement-samples')
+    assert check.mysql_metadata is registered.get('database-metadata')
+    assert check.query_activity is registered.get('query-activity')
+    assert check.data_observability is registered.get('data-observability')
+
+
+@pytest.mark.parametrize(
+    'job_attr',
+    ['statement_metrics', 'statement_samples', 'mysql_metadata', 'query_activity', 'data_observability'],
+)
+def test_job_shutdown_closes_connection(job_attr):
+    """Each job must close its own connection on shutdown; the GC test would not catch a leak."""
+    instance = {
+        'server': 'localhost',
+        'user': 'datadog',
+        'dbm': True,
+        'data_observability': {'enabled': True},
+    }
+    check = MySql(common.CHECK_NAME, {}, instances=[instance])
+    job = getattr(check, job_attr)
+    conn = mock.MagicMock()
+    job._db = conn
+
+    job.shutdown()
+
+    conn.close.assert_called_once()
+    assert job._db is None
+
+
+@pytest.mark.parametrize(
+    'job_attr, invoke',
+    [
+        ('statement_samples', lambda job, cursor: job._cursor_run(cursor, 'SELECT 1')),
+        ('mysql_metadata', lambda job, cursor: job._cursor_run(cursor, 'SELECT 1')),
+        ('statement_metrics', lambda job, cursor: job._get_statement_count([])),
+        ('query_activity', lambda job, cursor: job._get_activity(cursor)),
+    ],
+)
+def test_job_aborts_query_when_cancelled(job_attr, invoke):
+    """Cancelling a job must stop collection queries before they hit the database."""
+    check = MySql(common.CHECK_NAME, {}, instances=[{'server': 'localhost', 'user': 'datadog', 'dbm': True}])
+    job = getattr(check, job_attr)
+    job.cancel()
+    job._get_db_connection = mock.MagicMock()
+    cursor = mock.MagicMock()
+
+    with pytest.raises(Exception, match='cancelled'):
+        invoke(job, cursor)
+
+    job._get_db_connection.assert_not_called()
+    cursor.execute.assert_not_called()
+
+
+def test_check_gc_after_cancel():
+    """Verify cancel() breaks all reference cycles so refcount alone reclaims the check.
+
+    If this test fails, the assertion message lists the types still holding a
+    reference to the check. To fix it:
+
+    1. Identify the referrer type in the failure message (e.g. ``QueryManager``).
+    2. Find which attribute on that object points back to the check (usually
+       ``self.check`` or ``self._check``).
+    3. Null that attribute in the check's ``shutdown()`` or in the relevant job's
+       ``shutdown()``.
+    4. If the referrer is a closure or ``functools.partial``, find the
+       registration site and null or clear the container that holds it.
+    """
+    instance = {
+        'server': 'localhost',
+        'user': 'datadog',
+        'dbm': True,
+        'query_samples': {'enabled': True, 'run_sync': True, 'collection_interval': 1},
+        'query_metrics': {'enabled': True, 'run_sync': True, 'collection_interval': 10},
+        'query_activity': {'enabled': True, 'run_sync': True, 'collection_interval': 1},
+        'collect_settings': {'enabled': True, 'run_sync': True, 'collection_interval': 1},
+        'data_observability': {'enabled': True, 'run_sync': True, 'collection_interval': 1},
+        'collect_schemas': {'enabled': True, 'run_sync': True, 'collection_interval': 1},
+    }
+
+    check = MySql(common.CHECK_NAME, {}, instances=[instance])
+    ref = weakref.ref(check)
+
+    check.cancel()
+
+    gc.collect()
+    gc.disable()
+    try:
+        del check
+        obj = ref()
+        if obj is not None:
+            referrers = [
+                f"bound method {r.__qualname__}" if inspect.ismethod(r) else type(r).__name__
+                for r in gc.get_referrers(obj)
+            ]
+            del obj
+            pytest.fail(f"Check still alive after cancel() + del -- pinned by: {referrers}")
+    finally:
+        gc.enable()

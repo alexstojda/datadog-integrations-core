@@ -9,6 +9,8 @@ This check monitors [SingleStore][1] through the Datadog Agent. SingleStore offe
 - Improve resource utilization efficiency.
 
 
+**Minimum Agent version:** 7.32.0
+
 ## Setup
 
 Follow the instructions below to install and configure this check for an Agent running on a host. For containerized environments, see the [Autodiscovery Integration Templates][2] for guidance on applying these instructions.
@@ -19,6 +21,10 @@ The SingleStore check is included in the [Datadog Agent][3] package.
 No additional installation is needed on your server.
 
 ### Configuration
+
+#### Prepare SingleStore
+
+As a best practice, Datadog recommends using a read-only user to monitor your SingleStore instance. This limits the access granted to the Datadog Agent.
 
 #### Host
 
@@ -110,7 +116,7 @@ Need help? Contact [Datadog support][10].
 
 [1]: https://www.singlestore.com/
 [2]: https://docs.datadoghq.com/getting_started/agent/autodiscovery#integration-templates
-[3]: https://app.datadoghq.com/account/settings/agent/latest
+[3]: /account/settings/agent/latest
 [4]: https://github.com/DataDog/integrations-core/blob/master/singlestore/datadog_checks/singlestore/data/conf.yaml.example
 [5]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
 [6]: https://docs.datadoghq.com/agent/kubernetes/log/

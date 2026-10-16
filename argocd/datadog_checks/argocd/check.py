@@ -3,8 +3,6 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 from collections import defaultdict
 
-from six import PY2
-
 from datadog_checks.base import ConfigurationError, OpenMetricsBaseCheckV2
 from datadog_checks.base.constants import ServiceCheck
 
@@ -13,9 +11,11 @@ from .metrics import (
     API_SERVER_METRICS,
     APPLICATION_CONTROLLER_METRICS,
     APPSET_CONTROLLER_METRICS,
+    COMMIT_SERVER_METRICS,
     NOTIFICATIONS_CONTROLLER_METRICS,
     REPO_SERVER_METRICS,
 )
+from .resources import ArgocdResourceCollector
 
 (
     API_SERVER_NAMESPACE,
@@ -23,12 +23,14 @@ from .metrics import (
     APPSET_CONTROLLER_NAMESPACE,
     REPO_SERVER_NAMESPACE,
     NOTIFICATIONS_CONTROLLER_NAMESPACE,
+    COMMIT_SERVER_NAMESPACE,
 ) = [
     'argocd.api_server',
     'argocd.app_controller',
     'argocd.appset_controller',
     'argocd.repo_server',
     'argocd.notifications_controller',
+    'argocd.commit_server',
 ]
 
 
@@ -36,61 +38,50 @@ class ArgocdCheck(OpenMetricsBaseCheckV2, ConfigMixin):
     DEFAULT_METRIC_LIMIT = 0
 
     def __init__(self, name, init_config, instances):
-        if PY2:
-            raise ConfigurationError(
-                "This version of the integration is only available when using py3. "
-                "Check https://docs.datadoghq.com/agent/guide/agent-v6-python-3 "
-                "for more information."
-            )
         super(ArgocdCheck, self).__init__(name, init_config, instances)
         self.check_initializations.appendleft(self.parse_config)
         self.check_initializations.append(self.configure_additional_transformers)
+        self._resource_collector: ArgocdResourceCollector | None = None
+
+    def check(self, instance):
+        if self.config.collect_genresources:
+            if self._resource_collector is None:
+                self._resource_collector = ArgocdResourceCollector(self)
+            try:
+                self._resource_collector.collect()
+            except Exception:
+                self.log.exception("genresources: collection cycle failed")
+        if self.config.collect_openmetrics:
+            super().check(instance)
+
+    def cancel(self):
+        if self._resource_collector is not None:
+            self._resource_collector.stop()
+        super().cancel()
 
     def parse_config(self):
         self.scraper_configs = []
-        app_controller_endpoint = self.instance.get("app_controller_endpoint")
-        appset_controller_endpoint = self.instance.get("appset_controller_endpoint")
-        api_server_endpoint = self.instance.get("api_server_endpoint")
-        repo_server_endpoint = self.instance.get("repo_server_endpoint")
-        notifications_controller_endpoint = self.instance.get("notifications_controller_endpoint")
+        if not self.instance.get("collect_openmetrics", True):
+            if not self.instance.get("collect_genresources", False):
+                raise ConfigurationError("Enable at least one of `collect_openmetrics` or `collect_genresources`.")
+            return
 
-        if (
-            not app_controller_endpoint
-            and not appset_controller_endpoint
-            and not repo_server_endpoint
-            and not api_server_endpoint
-            and not notifications_controller_endpoint
-        ):
-            raise ConfigurationError(
-                "Must specify at least one of the following:"
-                "`app_controller_endpoint`, `appset_controller_endpoint`, `repo_server_endpoint`, `api_server_endpoint`"
-                " or `notifications_controller_endpoint`."
-            )
+        endpoint_configs = [
+            ("app_controller_endpoint", APP_CONTROLLER_NAMESPACE, APPLICATION_CONTROLLER_METRICS),
+            ("appset_controller_endpoint", APPSET_CONTROLLER_NAMESPACE, APPSET_CONTROLLER_METRICS),
+            ("api_server_endpoint", API_SERVER_NAMESPACE, API_SERVER_METRICS),
+            ("repo_server_endpoint", REPO_SERVER_NAMESPACE, REPO_SERVER_METRICS),
+            ("notifications_controller_endpoint", NOTIFICATIONS_CONTROLLER_NAMESPACE, NOTIFICATIONS_CONTROLLER_METRICS),
+            ("commit_server_endpoint", COMMIT_SERVER_NAMESPACE, COMMIT_SERVER_METRICS),
+        ]
+        for endpoint_key, namespace, metrics in endpoint_configs:
+            if endpoint := self.instance.get(endpoint_key):
+                config = self.generate_config(endpoint, namespace, metrics)
+                self.scraper_configs.append(config)
 
-        if app_controller_endpoint:
-            self.scraper_configs.append(
-                self.generate_config(app_controller_endpoint, APP_CONTROLLER_NAMESPACE, APPLICATION_CONTROLLER_METRICS)
-            )
-        if appset_controller_endpoint:
-            self.scraper_configs.append(
-                self.generate_config(appset_controller_endpoint, APPSET_CONTROLLER_NAMESPACE, APPSET_CONTROLLER_METRICS)
-            )
-        if api_server_endpoint:
-            self.scraper_configs.append(
-                self.generate_config(api_server_endpoint, API_SERVER_NAMESPACE, API_SERVER_METRICS)
-            )
-        if repo_server_endpoint:
-            self.scraper_configs.append(
-                self.generate_config(repo_server_endpoint, REPO_SERVER_NAMESPACE, REPO_SERVER_METRICS)
-            )
-        if notifications_controller_endpoint:
-            self.scraper_configs.append(
-                self.generate_config(
-                    notifications_controller_endpoint,
-                    NOTIFICATIONS_CONTROLLER_NAMESPACE,
-                    NOTIFICATIONS_CONTROLLER_METRICS,
-                )
-            )
+        if not self.scraper_configs:
+            expected_endpoints_str = "`, `".join([endpoint_key[0] for endpoint_key in endpoint_configs])
+            raise ConfigurationError(f"Must specify at least one of the following: `{expected_endpoints_str}`")
 
     def generate_config(self, endpoint, namespace, metrics):
         config = {
@@ -128,7 +119,7 @@ class ArgocdCheck(OpenMetricsBaseCheckV2, ConfigMixin):
         return argocd_cluster_connection_status_transformer
 
     def configure_additional_transformers(self):
-        endpoints = [key for key in self.instance.keys() if "_endpoint" in key]
+        endpoints = [key for key in self.instance.keys() if "_endpoint" in key and self.instance[key] in self.scrapers]
         for endpoint in endpoints:
             if endpoint == "app_controller_endpoint":
                 self.scrapers[self.instance[endpoint]].metric_transformer.add_custom_transformer(

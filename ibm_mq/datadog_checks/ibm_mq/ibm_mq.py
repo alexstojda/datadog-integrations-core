@@ -3,8 +3,6 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 import threading
 
-from six import iteritems
-
 from datadog_checks.base import AgentCheck
 from datadog_checks.ibm_mq.collectors.stats_collector import StatsCollector
 from datadog_checks.ibm_mq.metrics import COUNT, GAUGE
@@ -96,7 +94,12 @@ class IbmMqCheck(AgentCheck):
             self.channel_metric_collector.get_pcf_channel_metrics(queue_manager)
             self.queue_metric_collector.collect_queue_metrics(queue_manager)
             if self._config.collect_statistics_metrics:
-                self.stats_collector.collect(queue_manager)
+                filtered_queue_names = (
+                    self.queue_metric_collector.filtered_queues
+                    if self._config.filter_queue_statistics_metrics
+                    else None
+                )
+                self.stats_collector.collect(queue_manager, filtered_queue_names=filtered_queue_names)
         finally:
             queue_manager.disconnect()
 
@@ -121,7 +124,7 @@ class IbmMqCheck(AgentCheck):
 
     def send_metrics_from_properties(self, properties, metrics_map, prefix, tags):
         # type: (Dict, Dict, str, List[str]) -> None
-        for metric_name, (pymqi_type, metric_type) in iteritems(metrics_map):
+        for metric_name, (pymqi_type, metric_type) in metrics_map.items():
             metric_full_name = '{}.{}'.format(prefix, metric_name)
             if pymqi_type not in properties:
                 self.log.debug("MQ type `%s` not found in properties for metric `%s` and tags `%s`", metric_name, tags)

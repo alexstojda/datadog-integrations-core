@@ -20,6 +20,10 @@ def instance_db():
     return 0
 
 
+def instance_disable_config_get():
+    return False
+
+
 def instance_disable_connection_cache():
     return False
 
@@ -30,6 +34,10 @@ def instance_disable_generic_tags():
 
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
 
 
 def instance_min_collection_interval():
@@ -50,6 +58,10 @@ def instance_ssl():
 
 def instance_ssl_cert_reqs():
     return 2
+
+
+def instance_ssl_check_hostname():
+    return True
 
 
 def instance_warn_on_missing_keys():

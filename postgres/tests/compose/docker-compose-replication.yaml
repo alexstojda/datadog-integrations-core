@@ -1,7 +1,5 @@
-version: '3'
 networks:
   pg-net:
-
 services:
   postgres:
     image: "postgres:${POSTGRES_IMAGE}"
@@ -11,6 +9,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -U datadog -d datadog_test && if [[ ! -e /tmp/container_ready.txt ]]; then exit 1; fi"]
       interval: 1s
       timeout: 5s
+      start_period: 60s
       retries: 5
     networks:
       - pg-net
@@ -19,6 +18,7 @@ services:
       - ./etc/postgresql:/etc/postgresql/
     environment:
       POSTGRES_PASSWORD: datad0g
+      POSTGRES_INITDB_ARGS: "--data-checksums --locale=${POSTGRES_LOCALE}"
     command: postgres -c 'config_file=/etc/postgresql/postgresql.conf' -c 'hba_file=/etc/postgresql/pg_hba.conf'
 
   postgres_replica:
@@ -29,6 +29,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -p 5433 -U datadog -d datadog_test && if [[ ! -e /tmp/container_ready.txt ]]; then exit 1; fi"]
       interval: 1s
       timeout: 5s
+      start_period: 60s
       retries: 5
     networks:
       - pg-net
@@ -37,6 +38,7 @@ services:
       - ./etc/postgresql_replica:/etc/postgresql/
     environment:
       POSTGRES_PASSWORD: datad0g
+      POSTGRES_INITDB_ARGS: "--data-checksums --locale=${POSTGRES_LOCALE}"
     command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
 
   postgres_replica2:
@@ -47,6 +49,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -p 5434 -U datadog -d datadog_test && if [[ ! -e /tmp/container_ready.txt ]]; then exit 1; fi"]
       interval: 1s
       timeout: 5s
+      start_period: 60s
       retries: 5
     networks:
       - pg-net
@@ -55,6 +58,7 @@ services:
       - ./etc/postgresql_replica2:/etc/postgresql/
     environment:
       POSTGRES_PASSWORD: datad0g
+      POSTGRES_INITDB_ARGS: "--data-checksums --locale=${POSTGRES_LOCALE}"
     command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
 
   postgres_logical_replica:
@@ -65,6 +69,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -p 5435 -U datadog -d datadog_test && if [[ ! -e /tmp/container_ready.txt ]]; then exit 1; fi"]
       interval: 1s
       timeout: 5s
+      start_period: 60s
       retries: 5
     networks:
       - pg-net
@@ -73,4 +78,5 @@ services:
       - ./etc/postgresql_logical_replica:/etc/postgresql/
     environment:
       POSTGRES_PASSWORD: datad0g
+      POSTGRES_INITDB_ARGS: "--data-checksums --locale=${POSTGRES_LOCALE}"
     command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'

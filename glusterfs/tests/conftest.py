@@ -2,14 +2,16 @@
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
 import copy
+import json
 import os
-import time
+import pathlib
+from unittest import mock
 
-import mock
 import pytest
 
 from datadog_checks.base.utils.common import get_docker_hostname
 from datadog_checks.dev import WaitFor, docker_run, run_command
+from datadog_checks.glusterfs.metrics import BRICK_STATS
 
 from .common import CONFIG, INSTANCE
 
@@ -30,7 +32,7 @@ def dd_environment():
     compose_file = os.path.join(HERE, 'docker', 'docker-compose.yaml')
     with docker_run(
         compose_file=compose_file,
-        conditions=[WaitFor(create_volume)],
+        conditions=[WaitFor(create_volume), WaitFor(gstatus_ready)],
         down=delete_volume,
     ):
         yield CONFIG, E2E_METADATA
@@ -48,30 +50,73 @@ def config():
 
 @pytest.fixture()
 def mock_gstatus_data():
-    f_name = os.path.join(os.path.dirname(__file__), 'fixtures', 'gstatus.json')
-    with open(f_name) as f:
-        data = f.read()
-    with mock.patch('datadog_checks.glusterfs.check.get_subprocess_output', return_value=(data, '', 0)):
+    f_name = os.path.join(os.path.dirname(__file__), 'fixtures', 'gstatus.txt')
+    data = pathlib.Path(f_name).read_text()
+    with mock.patch('datadog_checks.glusterfs.check.GlusterfsCheck.get_gstatus_output', return_value=(data, "", 0)):
         yield
 
 
 def create_volume():
-    run_command("docker exec gluster-node-2 mkdir -p /export-test", capture=True, check=True)
+    # The image for some reason doesn't actually start glusterd. So the below two lines will start it manually.
+    # Tried also adding the command to the Dockerfile, but that didn't work either. So leaving this here for now.
+    run_command(
+        "docker exec gluster-node-2 /usr/sbin/glusterd -p /var/run/glusterd.pid --log-level INFO",
+        capture=True,
+        check=False,
+    )
+    run_command(
+        "docker exec gluster-node-1 /usr/sbin/glusterd -p /var/run/glusterd.pid --log-level INFO",
+        capture=True,
+        check=False,
+    )
 
-    for command in (
-        'gluster peer probe gluster-node-2',
-        'mkdir -p /export-test',
-        'gluster volume create gv0 replica 2 gluster-node-1:/export-test gluster-node-2:/export-test force',
-        'gluster volume start gv0',
-        'yum update -y',
-        'yum install -y python3',
-        'curl -LO https://github.com/gluster/gstatus/releases/download/v1.0.5/gstatus',
-        'chmod +x ./gstatus',
-        'mv ./gstatus /usr/local/bin/gstatus',
-    ):
-        run_command("docker exec gluster-node-1 {}".format(command), capture=True, check=True)
-        time.sleep(10)
+    commands = [
+        "node-2 mkdir -p /export-test",
+        "node-1 mkdir -p /export-test",
+        "node-1 gluster peer probe gluster-node-2",
+        "node-1 gluster volume create gv0 replica 2 gluster-node-1:/export-test gluster-node-2:/export-test force",
+        "node-1 gluster volume start gv0",
+    ]
+
+    for command in commands:
+        run_command(f"docker exec gluster-{command}", capture=True, check=True)
+
+
+def gstatus_ready():
+    result = run_command(
+        "docker exec gluster-node-1 gstatus -a -o json -u g",
+        capture=True,
+        check=True,
+    )
+    stdout = result.stdout
+    if not stdout.lstrip().startswith('{'):
+        stdout = stdout.split('\n', 1)[-1]
+    data = json.loads(stdout)
+    volume_summary = data.get('data', {}).get('volume_summary', [])
+    if not volume_summary:
+        raise Exception("No volume data from gstatus yet")
+    for vol in volume_summary:
+        healinfo = vol.get('healinfo', [])
+        if all(h.get('status', '').lower() != 'connected' for h in healinfo):
+            raise Exception("Heal info not ready yet")
+        subvols = vol.get('subvols', [])
+        if not subvols:
+            raise Exception("No subvols data yet")
+        for subvol in subvols:
+            bricks = subvol.get('bricks', [])
+            if not bricks:
+                raise Exception("No brick data yet")
+            for brick in bricks:
+                if not brick.get('online'):
+                    raise Exception(f"Brick {brick.get('name')} is not online yet")
+                # gstatus reports filesystem-derived stats as 'N/A' until it can stat the brick's
+                # backing device. The check skips 'N/A' values, so the metric would never be
+                # submitted and the E2E assertions would fail.
+                unpopulated = [field for field in BRICK_STATS if str(brick.get(field)).lower() in ('none', 'n/a')]
+                if unpopulated:
+                    raise Exception(f"Brick {brick.get('name')} stats not populated yet: {unpopulated}")
 
 
 def delete_volume():
+    run_command("docker exec gluster-node-1 gluster volume stop gv0 force", capture=True, check=False)
     run_command("docker exec gluster-node-1 gluster volume delete gv0", capture=True, check=True)

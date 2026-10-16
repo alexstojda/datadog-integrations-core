@@ -3,10 +3,17 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 from concurrent.futures import as_completed
 
-from confluent_kafka import Consumer, ConsumerGroupTopicPartitions, KafkaException, TopicPartition
-from confluent_kafka.admin import AdminClient
+from confluent_kafka import Consumer, ConsumerGroupTopicPartitions, IsolationLevel, KafkaException, TopicPartition
+from confluent_kafka.admin import AdminClient, OffsetSpec
 
-from datadog_checks.kafka_consumer.constants import KAFKA_INTERNAL_TOPICS, OFFSET_INVALID
+# AWS MSK IAM authentication support
+try:
+    import boto3
+    from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
+
+    AWS_MSK_IAM_AVAILABLE = True
+except ImportError:
+    AWS_MSK_IAM_AVAILABLE = False
 
 
 class KafkaClient:
@@ -14,24 +21,30 @@ class KafkaClient:
         self.config = config
         self.log = log
         self._kafka_client = None
-        self.topic_partition_cache = {}
+        self._consumer = None
+        self._cluster_metadata = None
 
     @property
     def kafka_client(self):
         if self._kafka_client is None:
             config = {
                 "bootstrap.servers": self.config._kafka_connect_str,
-                "socket.timeout.ms": self.config._request_timeout_ms,
+                # Set socket timeout higher than operation timeout to allow broker to return
+                # actual error messages (e.g., SASL auth errors) before the socket is closed
+                "socket.timeout.ms": self.config._request_timeout_ms + 2000,
                 "client.id": "dd-agent",
                 "log_level": self.config._librdkafka_log_level,
             }
             config.update(self.__get_authentication_config())
 
-            self._kafka_client = AdminClient(config)
+            self._kafka_client = AdminClient(config, logger=self.log)
 
         return self._kafka_client
 
-    def __create_consumer(self, consumer_group):
+    def open_consumer(self, consumer_group):
+        if self._consumer is not None:
+            return
+
         config = {
             "bootstrap.servers": self.config._kafka_connect_str,
             "group.id": consumer_group,
@@ -41,7 +54,15 @@ class KafkaClient:
         }
         config.update(self.__get_authentication_config())
 
-        return Consumer(config, logger=self.log)
+        self._consumer = Consumer(config, logger=self.log)
+        self.log.debug("Consumer instance %s created for group %s", self._consumer, consumer_group)
+
+    def close_consumer(self):
+        if self._consumer is None:
+            return
+        self.log.debug("Closing consumer instance %s", self._consumer)
+        self._consumer.close()
+        self._consumer = None
 
     def __get_authentication_config(self):
         config = {
@@ -65,12 +86,55 @@ class KafkaClient:
         }
 
         if self.config._sasl_mechanism == "OAUTHBEARER":
-            extras_parameters['sasl.oauthbearer.method'] = "oidc"
-            extras_parameters["sasl.oauthbearer.client.id"] = self.config._sasl_oauth_token_provider.get("client_id")
-            extras_parameters["sasl.oauthbearer.token.endpoint.url"] = self.config._sasl_oauth_token_provider.get("url")
-            extras_parameters["sasl.oauthbearer.client.secret"] = self.config._sasl_oauth_token_provider.get(
-                "client_secret"
-            )
+            # Default to 'oidc' for backwards compatibility with existing configs
+            method = self.config._sasl_oauth_token_provider.get("method", "oidc")
+
+            if method == "aws_msk_iam":
+                if not AWS_MSK_IAM_AVAILABLE:
+                    raise Exception(
+                        "AWS MSK IAM authentication requires 'aws-msk-iam-sasl-signer-python' library. "
+                        "Install it with: pip install aws-msk-iam-sasl-signer-python"
+                    )
+
+                def _aws_msk_iam_oauth_cb(oauth_config):
+                    """OAuth callback that generates AWS MSK IAM authentication tokens."""
+                    try:
+                        region = self.config._sasl_oauth_token_provider.get("aws_region")
+                        if not region:
+                            region = boto3.session.Session().region_name
+
+                        if not region:
+                            raise Exception(
+                                "AWS region could not be determined. Please specify 'aws_region' in "
+                                "sasl_oauth_token_provider configuration."
+                            )
+
+                        auth_token, expiry_ms = MSKAuthTokenProvider.generate_auth_token(region)
+                        self.log.debug("Generated AWS MSK IAM token for region %s, expires in %s ms", region, expiry_ms)
+                        return auth_token, expiry_ms / 1000  # Convert to seconds
+                    except Exception as e:
+                        self.log.error("Failed to generate AWS MSK IAM token: %s", e)
+                        raise
+
+                extras_parameters['oauth_cb'] = _aws_msk_iam_oauth_cb
+
+            elif method == "oidc":
+                extras_parameters['sasl.oauthbearer.method'] = "oidc"
+                extras_parameters["sasl.oauthbearer.client.id"] = self.config._sasl_oauth_token_provider.get(
+                    "client_id"
+                )
+                extras_parameters["sasl.oauthbearer.token.endpoint.url"] = self.config._sasl_oauth_token_provider.get(
+                    "url"
+                )
+                extras_parameters["sasl.oauthbearer.client.secret"] = self.config._sasl_oauth_token_provider.get(
+                    "client_secret"
+                )
+                extras_parameters["sasl.oauthbearer.scope"] = self.config._sasl_oauth_token_provider.get("scope")
+                extras_parameters["sasl.oauthbearer.extensions"] = self.config._sasl_oauth_token_provider.get(
+                    "extensions"
+                )
+                if self.config._sasl_oauth_tls_ca_cert:
+                    extras_parameters["https.ca.location"] = self.config._sasl_oauth_tls_ca_cert
 
         for key, value in extras_parameters.items():
             # Do not add the value if it's not specified
@@ -79,217 +143,164 @@ class KafkaClient:
 
         return config
 
-    def get_highwater_offsets(self, consumer_offsets):
-        self.log.debug('Getting highwater offsets')
+    def consumer_get_cluster_id_and_list_topics(self, consumer_group):
+        cluster_metadata = self._consumer.list_topics(timeout=self.config._request_timeout)
+        try:
+            # TODO: remove this try-except, the attribute is always present.
+            cluster_id = cluster_metadata.cluster_id
+        except AttributeError:
+            self.log.error("Failed to get cluster metadata for consumer group %s", consumer_group)
+            return "", []
+        return (cluster_id, [(name, list(metadata.partitions)) for name, metadata in cluster_metadata.topics.items()])
 
-        highwater_offsets = {}
-        topics_with_consumer_offset = set()
-        topic_partition_with_consumer_offset = set()
+    def get_partition_offsets(self, partitions, offset=-1):
+        """Return (topic, partition, offset) tuples, skipping partitions that can't be queried.
 
-        if not self.config._monitor_all_broker_highwatermarks:
-            for _, topic, partition in consumer_offsets:
-                topics_with_consumer_offset.add(topic)
-                topic_partition_with_consumer_offset.add((topic, partition))
+        A request-level failure (the batched list_offsets call itself raising, as opposed to an
+        individual partition's future) is not swallowed here: it propagates so the caller aborts
+        highwater collection instead of silently treating every partition as missing.
+        """
+        offset_spec = OffsetSpec.earliest() if offset == 0 else OffsetSpec.latest()
+        request = {TopicPartition(topic=topic, partition=partition): offset_spec for topic, partition in partitions}
+        if not request:
+            return []
 
-        topic_partition_checked = set()
+        futures = self.kafka_client.list_offsets(
+            request,
+            isolation_level=IsolationLevel.READ_UNCOMMITTED,
+            request_timeout=self.config._request_timeout,
+        )
 
-        for consumer_group, _topic, _partition in consumer_offsets:
-            self.log.debug('CONSUMER GROUP: %s', consumer_group)
-            if (_topic, _partition) in topic_partition_checked:
-                self.log.debug('Highwater offset already collected for topic %s with partition %s', _topic, _partition)
+        results = []
+        negative = []
+        for tp, future in futures.items():
+            try:
+                partition_offset = future.result().offset
+            except Exception as e:
+                self.log.debug("Skipping offsets for %s/%s: %s", tp.topic, tp.partition, e)
                 continue
+            if partition_offset < 0:
+                negative.append((tp.topic, tp.partition, partition_offset))
+                continue
+            results.append((tp.topic, tp.partition, partition_offset))
+        if negative:
+            # A Kafka offset is never negative, so the client library mangled these: it narrows
+            # ListOffsets results through a C long, which is 32 bits wide on Windows x64.
+            # https://github.com/confluentinc/confluent-kafka-python/issues/1696
+            self.log.warning(
+                "Discarding %d/%d negative offset(s): broker_offset and consumer_lag will be "
+                "missing for those partitions (up to 5 shown): %s",
+                len(negative),
+                len(request),
+                negative[:5],
+            )
+        return results
 
-            topic_partitions_for_highwater_offsets = set()
-
-            consumer = self.__create_consumer(consumer_group)
-            self.log.debug("Consumer instance %s created for group %s", consumer, consumer_group)
-            cluster_metadata = consumer.list_topics(timeout=self.config._request_timeout)
-            topics = cluster_metadata.topics
-
-            for topic in topics:
-                if topic in KAFKA_INTERNAL_TOPICS:
-                    self.log.debug("Skipping internal topic %s", topic)
-                    continue
-                if not self.config._monitor_all_broker_highwatermarks and topic not in topics_with_consumer_offset:
-                    self.log.debug("Skipping non-relevant topic %s", topic)
-                    continue
-
-                for partition in topics[topic].partitions:
-                    if (
-                        self.config._monitor_all_broker_highwatermarks
-                        or (topic, partition) in topic_partition_with_consumer_offset
-                    ):
-                        # Setting offset to -1 will return the latest highwater offset while calling offsets_for_times
-                        #   Reference: https://github.com/fede1024/rust-rdkafka/issues/460
-                        topic_partitions_for_highwater_offsets.add(
-                            TopicPartition(topic=topic, partition=partition, offset=-1)
-                        )
-                        self.log.debug('TOPIC: %s', topic)
-                        self.log.debug('PARTITION: %s', partition)
-                    else:
-                        self.log.debug("Skipping non-relevant partition %s of topic %s", partition, topic)
-
-            if len(topic_partitions_for_highwater_offsets) > 0:
-                self.log.debug(
-                    'Querying %s highwater offsets for consumer group %s',
-                    len(topic_partitions_for_highwater_offsets),
-                    consumer_group,
-                )
-                for topic_partition_with_highwater_offset in consumer.offsets_for_times(
-                    partitions=list(topic_partitions_for_highwater_offsets),
-                    timeout=self.config._request_timeout,
-                ):
-                    self.log.debug('Topic partition with highwater offset: %s', topic_partition_with_highwater_offset)
-                    topic = topic_partition_with_highwater_offset.topic
-                    partition = topic_partition_with_highwater_offset.partition
-                    offset = topic_partition_with_highwater_offset.offset
-                    highwater_offsets[(topic, partition)] = offset
-                    self.log.debug("Adding %s %s to checked set to facilitate early exit", topic, partition)
-                    topic_partition_checked.add((topic, partition))
-            else:
-                self.log.debug('No new highwater offsets to query for consumer group %s', consumer_group)
-
-            self.log.debug("Closing consumer instance %s", consumer)
-            consumer.close()
-
-        self.log.debug('Got %s highwater offsets', len(highwater_offsets))
-        return highwater_offsets
-
-    def get_partitions_for_topic(self, topic):
-        if partitions := self.topic_partition_cache.get(topic):
-            return partitions
+    def _list_topics(self):
+        if self._cluster_metadata:
+            return self._cluster_metadata
 
         try:
-            cluster_metadata = self.kafka_client.list_topics(topic, timeout=self.config._request_timeout)
+            self.request_metadata_update()
+
+        except KafkaException as e:
+            self.log.error("Received exception when listing topics: %s", e)
+
+        return self._cluster_metadata
+
+    def get_topic_partitions(self):
+        topic_partitions = {}
+        try:
+            cluster_metadata = self._list_topics()
+            for topic in cluster_metadata.topics:
+                topic_metadata = cluster_metadata.topics[topic]
+                partitions = list(topic_metadata.partitions)
+                topic_partitions[topic] = partitions
+
+        except KafkaException as e:
+            self.log.error("Received exception when listing topics: %s", e)
+
+        return topic_partitions
+
+    def get_partitions_for_topic(self, topic):
+        partitions = []
+        try:
+            cluster_metadata = self._list_topics()
         except KafkaException as e:
             self.log.error("Received exception when getting partitions for topic %s: %s", topic, e)
-            return None
-        else:
+            return []
+
+        if topic in cluster_metadata.topics:
             topic_metadata = cluster_metadata.topics[topic]
-            partitions = list(topic_metadata.partitions.keys())
-            self.topic_partition_cache[topic] = partitions
-            return partitions
+            partitions = list(topic_metadata.partitions)
+        return partitions
 
     def request_metadata_update(self):
         # https://github.com/confluentinc/confluent-kafka-python/issues/594
-        self.kafka_client.list_topics(None, timeout=self.config._request_timeout)
+        try:
+            self._cluster_metadata = self.kafka_client.list_topics(None, timeout=self.config._request_timeout)
+        except KafkaException:
+            # Flush pending log messages to surface the actual error details
+            # https://github.com/confluentinc/confluent-kafka-python/issues/1699
+            self.kafka_client.poll(1)
+            raise
 
-    def get_consumer_offsets(self):
-        # {(consumer_group, topic, partition): offset}
-        self.log.debug('Getting consumer offsets')
-        consumer_offsets = {}
+    def list_consumer_groups(self):
+        groups = []
+        try:
+            groups_res = self.kafka_client.list_consumer_groups().result()
+            for valid_group in groups_res.valid:
+                self.log.debug("Discovered consumer group: %s", valid_group.group_id)
+                groups.append(valid_group.group_id)
+        except Exception as e:
+            self.log.error("Failed to collect consumer groups: %s", e)
+        return groups
 
-        consumer_groups = self._get_consumer_groups()
-        self.log.debug('Identified %s consumer groups', len(consumer_groups))
+    def list_consumer_group_offsets(self, groups):
+        """
+        For every group and (optionally) its topics and partitions retrieve consumer offsets.
 
-        futures = self._get_consumer_offset_futures(consumer_groups)
-        self.log.debug('%s futures to be waited on', len(futures))
+        As input expects a list of tuples: (consumer_group_id, topic_partitions).
+        topic_partitions are either None to indicate we want all topics and partitions OR a list of (topic, partition).
 
-        for future in as_completed(futures):
+        Returns a list of tuples with members:
+        1. group id
+        2. list of tuples: (topic, partition, offset)
+        """
+        futures = []
+        for consumer_group, topic_partitions in groups:
+            topic_partitions = (
+                topic_partitions if topic_partitions is None else [TopicPartition(t, p) for t, p in topic_partitions]
+            )
+            futures.append(
+                self.kafka_client.list_consumer_group_offsets(
+                    [ConsumerGroupTopicPartitions(group_id=consumer_group, topic_partitions=topic_partitions)]
+                )[consumer_group]
+            )
+        offsets = []
+        for completed in as_completed(futures):
             try:
-                response_offset_info = future.result()
+                response_offset_info = completed.result()
             except KafkaException as e:
-                self.log.debug("Failed to read consumer offsets for future %s: %s", future, e)
-            else:
-                consumer_group = response_offset_info.group_id
-                topic_partitions = response_offset_info.topic_partitions
+                self.log.debug("Failed to read consumer offsets for future %s: %s", completed, e)
+                continue
+            tpo = []
+            for tp in response_offset_info.topic_partitions:
+                if tp.error:
+                    self.log.debug(
+                        "Encountered error: %s. Occurred with topic: %s; partition: [%s]",
+                        tp.error.str(),
+                        tp.topic,
+                        str(tp.partition),
+                    )
+                    continue
+                tpo.append((tp.topic, tp.partition, tp.offset))
+            offsets.append((response_offset_info.group_id, tpo))
+        return offsets
 
-                self.log.debug('RESULT CONSUMER GROUP: %s', consumer_group)
-                self.log.debug('RESULT TOPIC PARTITIONS: %s', topic_partitions)
-
-                for topic_partition in topic_partitions:
-                    topic = topic_partition.topic
-                    partition = topic_partition.partition
-                    offset = topic_partition.offset
-
-                    self.log.debug('RESULTS TOPIC: %s', topic)
-                    self.log.debug('RESULTS PARTITION: %s', partition)
-                    self.log.debug('RESULTS OFFSET: %s', offset)
-
-                    if topic_partition.error:
-                        self.log.debug(
-                            "Encountered error: %s. Occurred with topic: %s; partition: [%s]",
-                            topic_partition.error.str(),
-                            topic_partition.topic,
-                            str(topic_partition.partition),
-                        )
-                        continue
-
-                    if offset == OFFSET_INVALID:
-                        continue
-
-                    if self.config._monitor_unlisted_consumer_groups or not self.config._consumer_groups_compiled_regex:
-                        consumer_offsets[(consumer_group, topic, partition)] = offset
-                    else:
-                        to_match = f"{consumer_group},{topic},{partition}"
-                        if self.config._consumer_groups_compiled_regex.match(to_match):
-                            consumer_offsets[(consumer_group, topic, partition)] = offset
-
-        self.log.debug('Got %s consumer offsets', len(consumer_offsets))
-        return consumer_offsets
-
-    def _get_consumer_groups(self):
-        # Get all consumer groups to monitor
-        consumer_groups = []
-        if self.config._monitor_unlisted_consumer_groups or self.config._consumer_groups_compiled_regex:
-            consumer_groups_future = self.kafka_client.list_consumer_groups()
-            try:
-                list_consumer_groups_result = consumer_groups_future.result()
-                for valid_consumer_group in list_consumer_groups_result.valid:
-                    self.log.debug("Discovered consumer group: %s", valid_consumer_group.group_id)
-
-                consumer_groups.extend(
-                    valid_consumer_group.group_id
-                    for valid_consumer_group in list_consumer_groups_result.valid
-                    if valid_consumer_group.group_id != ""
-                )
-            except Exception as e:
-                self.log.error("Failed to collect consumer groups: %s", e)
-            return consumer_groups
-        else:
-            return self.config._consumer_groups
-
-    def _list_consumer_group_offsets(self, cg_tp):
-        return self.kafka_client.list_consumer_group_offsets([cg_tp])
+    def describe_consumer_group(self, consumer_group):
+        desc = self.kafka_client.describe_consumer_groups([consumer_group])[consumer_group].result()
+        return desc.state.name
 
     def close_admin_client(self):
         self._kafka_client = None
-
-    def _get_consumer_offset_futures(self, consumer_groups):
-        futures = []
-
-        # If either monitoring all consumer groups or regex, return all consumer group offsets (can filter later)
-        if self.config._monitor_unlisted_consumer_groups or self.config._consumer_groups_compiled_regex:
-            for consumer_group in consumer_groups:
-                futures.append(
-                    self._list_consumer_group_offsets(ConsumerGroupTopicPartitions(consumer_group))[consumer_group]
-                )
-            return futures
-
-        for consumer_group in consumer_groups:
-            # If topics are specified
-            topics = consumer_groups.get(consumer_group)
-            if not topics:
-                futures.append(
-                    self._list_consumer_group_offsets(ConsumerGroupTopicPartitions(consumer_group))[consumer_group]
-                )
-                continue
-
-            for topic in topics:
-                # If partitions are defined
-                if partitions := topics[topic]:
-                    topic_partitions = [TopicPartition(topic, partition) for partition in partitions]
-                # If partitions are not defined
-                else:
-                    # get all the partitions for this topic
-                    partitions = self.get_partitions_for_topic(topic)
-
-                    topic_partitions = [TopicPartition(topic, partition) for partition in partitions]
-
-                futures.append(
-                    self._list_consumer_group_offsets(ConsumerGroupTopicPartitions(consumer_group, topic_partitions))[
-                        consumer_group
-                    ]
-                )
-
-        return futures

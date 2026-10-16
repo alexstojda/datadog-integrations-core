@@ -4,8 +4,7 @@
 import pytest
 from mock.mock import MagicMock
 
-from datadog_checks.base import AgentCheck, ConfigurationError
-from datadog_checks.dev.testing import requires_py2, requires_py3
+from datadog_checks.base import AgentCheck
 from datadog_checks.dev.utils import get_metadata_metrics
 from datadog_checks.gitlab.common import get_gitlab_version
 
@@ -13,9 +12,13 @@ from .common import (
     CUSTOM_TAGS,
     GITALY_METRICS,
     GITLAB_GITALY_PROMETHEUS_ENDPOINT,
+    GITLAB_SIDEKIQ_PROMETHEUS_ENDPOINT,
     GITLAB_TAGS,
+    GITLAB_WORKHORSE_PROMETHEUS_ENDPOINT,
+    SIDEKIQ_EXPORTER_METRICS,
     V1_METRICS,
     V2_METRICS,
+    WORKHORSE_METRICS,
     assert_check,
 )
 
@@ -33,7 +36,6 @@ def test_check(dd_run_check, aggregator, mock_data, gitlab_check, get_config, us
     aggregator.assert_metrics_using_metadata(get_metadata_metrics())
 
 
-@requires_py3
 def test_check_gitaly(dd_run_check, aggregator, mock_data, gitlab_check, get_config):
     from datadog_checks.gitlab.gitlab_v2 import GitlabCheckV2
 
@@ -56,12 +58,22 @@ def test_check_gitaly(dd_run_check, aggregator, mock_data, gitlab_check, get_con
     )
 
 
-@requires_py2
-def test_openmetrics_with_python2(gitlab_check, get_config):
-    with pytest.raises(
-        ConfigurationError, match="This version of the integration is only available when using Python 3."
-    ):
-        gitlab_check(get_config(True))
+def test_check_workhorse_and_sidekiq_given_endpoints_configured_collects_their_metrics(
+    dd_run_check, aggregator, mock_data, gitlab_check, get_config
+):
+    config = get_config(True)
+    instance = config['instances'][0]
+    instance["openmetrics_endpoint"] = instance["prometheus_url"]
+    instance["workhorse_endpoint"] = GITLAB_WORKHORSE_PROMETHEUS_ENDPOINT
+    instance["sidekiq_endpoint"] = GITLAB_SIDEKIQ_PROMETHEUS_ENDPOINT
+
+    check = gitlab_check(config)
+    dd_run_check(check)
+    dd_run_check(check)
+
+    assert_check(aggregator, V2_METRICS + WORKHORSE_METRICS + SIDEKIQ_EXPORTER_METRICS, True)
+    aggregator.assert_all_metrics_covered()
+    aggregator.assert_metrics_using_metadata(get_metadata_metrics())
 
 
 @pytest.mark.parametrize(
@@ -88,7 +100,6 @@ def test_get_gitlab_version_without_token():
     assert version is None
 
 
-@requires_py3
 def test_no_gitlab_url(dd_run_check, aggregator, mock_data, gitlab_check, get_config):
     config = get_config(True)
     del config['instances'][0]['gitlab_url']
@@ -97,7 +108,6 @@ def test_no_gitlab_url(dd_run_check, aggregator, mock_data, gitlab_check, get_co
     aggregator.assert_service_check('gitlab.openmetrics.health', status=AgentCheck.OK)
 
 
-@requires_py3
 def test_parse_readiness_service_checks_with_invalid_payload(
     dd_run_check, aggregator, mock_data, gitlab_check, get_config
 ):
@@ -159,7 +169,6 @@ def test_parse_readiness_service_checks_with_invalid_payload(
         ),
     ],
 )
-@requires_py3
 def test_parse_readiness_service_checks(
     dd_run_check, aggregator, mock_data, gitlab_check, get_config, service_check, expected_redis_status
 ):

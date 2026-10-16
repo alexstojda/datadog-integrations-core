@@ -2,6 +2,95 @@
 
 <!-- towncrier release notes start -->
 
+## 5.8.0 / 2026-10-01
+
+***Added***:
+
+* Document the mlx5_core RoCE/PFC ethtool metrics collected when GPU monitoring is enabled: per-priority PFC counters tagged `prio:<0-7>`, link-level 802.3x pause counters, PCIe health, FEC and cable health, pause storm, and module health counters, plus the per-ring queue traffic metrics emitted alongside them. ([#25276](https://github.com/DataDog/integrations-core/pull/25276))
+
+## 5.7.0 / 2026-04-01 / Agent 7.78.0
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 5.6.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+## 5.5.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 5.4.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 5.3.0 / 2025-07-10 / Agent 7.69.0
+
+***Added***:
+
+* Add support for mlx5_core drivers in ethtool integration [CMPT-3460] ([#20481](https://github.com/DataDog/integrations-core/pull/20481))
+
+## 5.2.0 / 2025-03-19 / Agent 7.65.0
+
+***Added***:
+
+* Add new system.net.iface.up metric ([#19853](https://github.com/DataDog/integrations-core/pull/19853))
+
+## 5.1.0 / 2024-10-31 / Agent 7.60.0
+
+***Added***:
+
+* Add mtu and speed tags to interfaces that support it ([#18819](https://github.com/DataDog/integrations-core/pull/18819))
+
+## 5.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 4.1.0 / 2024-10-04 / Agent 7.58.0
+
+***Fixed***:
+
+* Fix metric type in new network metrics ([#18764](https://github.com/DataDog/integrations-core/pull/18764))
+
+## 4.0.0 / 2024-10-01
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+* Upgrade psutil to 6.0.0 to fix performance issues addressed ([#18688](https://github.com/DataDog/integrations-core/pull/18688))
+
+## 3.4.0 / 2024-09-05
+
+***Added***:
+
+* Add new TCP metrics for Network integration on Windows ([#18294](https://github.com/DataDog/integrations-core/pull/18294))
+* Bump `psutil`  version to 5.9.6 ([#18491](https://github.com/DataDog/integrations-core/pull/18491))
+
+## 3.3.0 / 2024-03-08 / Agent 7.52.0
+
+***Added***:
+
+* Revert "Bump psutil version to 5.9.7 (#16547)" ([#17112](https://github.com/DataDog/integrations-core/pull/17112))
+
 ## 3.2.0 / 2024-02-16
 
 ***Added***:

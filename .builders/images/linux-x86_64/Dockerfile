@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/pypa/manylinux2010_x86_64
+ARG BASE_IMAGE=quay.io/pypa/manylinux2014_x86_64
 FROM ${BASE_IMAGE}
 
 ARG SOURCE_DATE_EPOCH
@@ -9,64 +9,52 @@ ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 COPY install-from-source.sh /
 
 ENV CFLAGS="-O2"
+ENV CXXFLAGS="${CFLAGS}"
 # Auditwheel will only set RPATH's for copied libs if an existing RPATH is found,
 # so we may as well set it to origin here anyway.
-ENV LDFLAGS="-Wl,-rpath,'\$\$ORIGIN'"
-
-# For Python 2, we get openssl(1) via yum just to get the necessary headers,
-# and we remove the package after compilation to prevent it from interfering
-# with the use of openssl3 everywhere else
-ENV PYTHON2_VERSION=2.7.18
-RUN yum install -y openssl-devel && \
- DOWNLOAD_URL="https://python.org/ftp/python/${PYTHON2_VERSION}/Python-${PYTHON2_VERSION}.tgz" \
- VERSION="${PYTHON2_VERSION}" \
- SHA256="da3080e3b488f648a3d7a4560ddee895284c3380b11d6de75edb986526b9a814" \
- RELATIVE_PATH=Python-{{version}} \
- bash install-from-source.sh \
- --prefix=/opt/python/${PYTHON2_VERSION} --with-ensurepip=yes --enable-shared --enable-ipv6 --enable-unicode=ucs4 \
- && yum remove -y openssl-devel
-
-ENV LD_LIBRARY_PATH="/opt/python/${PYTHON2_VERSION}/lib:${LD_LIBRARY_PATH}"
-# Set up virtual environment for Python 2
-RUN /opt/python/${PYTHON2_VERSION}/bin/python -m pip install --no-warn-script-location virtualenv \
- && /opt/python/${PYTHON2_VERSION}/bin/python -m virtualenv /py2
+# --strip-debug reduces binary sizes and improves reproducibility
+ENV LDFLAGS="-Wl,-rpath,'\$\$ORIGIN' -Wl,--strip-debug"
 
 # openssl
-RUN yum install -y perl-IPC-Cmd && \
+RUN yum install -y perl-IPC-Cmd perl-CPANPLUS perl-core && \
+ cpanp -i List::Util 1.66 && \
  DOWNLOAD_URL="https://www.openssl.org/source/openssl-{{version}}.tar.gz" \
- VERSION="3.0.12" \
- SHA256="f93c9e8edde5e9166119de31755fc87b4aa34863662f67ddfcba14d0b6b69b61" \
+ VERSION="3.6.4" \
+ SHA256="9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef" \
  RELATIVE_PATH="openssl-{{version}}" \
- # no-module prevents the creation of dynamically loaded modules that would be problematic to bundle into Python wheels
+ # https://docs.python.org/3/using/unix.html#custom-openssl
+ INSTALL_COMMAND="make install_sw" \
  CONFIGURE_SCRIPT="./config" \
  bash install-from-source.sh \
  -fPIC shared \
  # This prevents the creation of dynamically loaded modules that would be problematic to bundle into Python wheels
  no-module \
- no-comp no-idea no-mdc2 no-rc5 no-ssl3 no-gost
+ no-comp no-idea no-mdc2 no-rc5 no-ssl3 no-gost && \
+ echo /usr/local/lib >> /etc/ld.so.conf.d/lib.conf && \
+ echo /usr/local/ssl/lib >> /etc/ld.so.conf.d/openssl.conf && \
+ ldconfig
 
 # Compile and install Python 3
-ENV PYTHON3_VERSION=3.11.5
+ENV PYTHON3_VERSION=3.13.16
 RUN yum install -y libffi-devel && \
  DOWNLOAD_URL="https://python.org/ftp/python/{{version}}/Python-{{version}}.tgz" \
  VERSION="${PYTHON3_VERSION}" \
- SHA256="a12a0a013a30b846c786c010f2c19dd36b7298d888f7c4bd1581d90ce18b5e58" \
+ SHA256="cfac63bddf956deafb1172ca131ae5dcaafd6f95056086e233fca205593ed427" \
  RELATIVE_PATH="Python-{{version}}" \
- bash install-from-source.sh --prefix=/opt/python/${PYTHON_VERSION} --with-ensurepip=yes --enable-shared --enable-ipv6 --with-dbmliborder=
-ENV PATH="/opt/python/${PYTHON_VERSION}/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/opt/python/${PYTHON_VERSION}/lib:${LD_LIBRARY_PATH}"
+ bash install-from-source.sh --prefix=/opt/python/${PYTHON3_VERSION} --with-ensurepip=yes --enable-ipv6 --with-dbmliborder=
+ENV PATH="/opt/python/${PYTHON3_VERSION}/bin:${PATH}"
 # Set up virtual environment for Python 3
-RUN /opt/python/${PYTHON_VERSION}/bin/python3 -m pip install --no-warn-script-location --upgrade pip \
- && /opt/python/${PYTHON_VERSION}/bin/python3 -m pip install --no-warn-script-location virtualenv \
- && /opt/python/${PYTHON_VERSION}/bin/python3 -m virtualenv /py3
+RUN /opt/python/${PYTHON3_VERSION}/bin/python3 -m pip install --no-warn-script-location --upgrade pip \
+ && /opt/python/${PYTHON3_VERSION}/bin/python3 -m pip install --no-warn-script-location virtualenv \
+ && /opt/python/${PYTHON3_VERSION}/bin/python3 -m virtualenv /py3
 
-# Rust toolchain
-ENV RUST_VERSION="nightly-2022-05-15"
-ENV RUSTC_SHA256="3dc5ef50861ee18657f9db2eeb7392f9c2a6c95c90ab41e45ab4ca71476b4338"
-ENV RUSTUP_VERSION="1.24.3"
-ENV RUSTUP_SHA256="3dc5ef50861ee18657f9db2eeb7392f9c2a6c95c90ab41e45ab4ca71476b4338"
+# Rust toolchain (needed for cryptography)
+ENV RUST_VERSION="1.91.0"
+ENV RUSTC_SHA256="0b2f6c8f85a3d02fde2efc0ced4657869d73fccfce59defb4e8d29233116e6db"
+ARG RUSTUP_VERSION="1.26.0"
+ARG RUSTUP_SHA256="0b2f6c8f85a3d02fde2efc0ced4657869d73fccfce59defb4e8d29233116e6db"
 RUN curl -sSL -o rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
- && echo "${RUSTUP_SHA256}  rustup-init" | sha256sum --check \
+ && echo "${RUSTUP_SHA256} rustup-init" | sha256sum --check \
  && chmod +x ./rustup-init \
  && ./rustup-init -y --profile minimal --default-toolchain "${RUST_VERSION}" \
  && echo "${RUSTC_SHA256}  $HOME/.cargo/bin/rustc" | sha256sum --check \
@@ -84,7 +72,7 @@ RUN mkdir -p /opt/mqm \
 
 # krb5 for dependencies that require kerberos support
 RUN \
- DOWNLOAD_URL="https://kerberos.org/dist/krb5/1.20/krb5-{{version}}.tar.gz" \
+ DOWNLOAD_URL="https://web.mit.edu/kerberos/dist/krb5/1.20/krb5-1.20.1.tar.gz" \
  VERSION="1.20.1" \
  SHA256="704aed49b19eb5a7178b34b2873620ec299db08752d6a8574f95d41879ab8851" \
  RELATIVE_PATH="krb5-{{version}}/src" \
@@ -92,9 +80,9 @@ RUN \
 
 # libxml & libxslt for lxml
 RUN \
- DOWNLOAD_URL="https://download.gnome.org/sources/libxml2/2.10/libxml2-{{version}}.tar.xz" \
- VERSION="2.10.3" \
- SHA256="5d2cc3d78bec3dbe212a9d7fa629ada25a7da928af432c93060ff5c17ee28a9c" \
+ DOWNLOAD_URL="https://download.gnome.org/sources/libxml2/2.14/libxml2-{{version}}.tar.xz" \
+ VERSION="2.14.5" \
+ SHA256="03d006f3537616833c16c53addcdc32a0eb20e55443cba4038307e3fa7d8d44b" \
  RELATIVE_PATH="libxml2-{{version}}" \
  bash install-from-source.sh \
  --without-iconv \
@@ -110,8 +98,8 @@ RUN \
 
 RUN \
  DOWNLOAD_URL="https://download.gnome.org/sources/libxslt/1.1/libxslt-{{version}}.tar.xz" \
- VERSION="1.1.37" \
- SHA256="3a4b27dc8027ccd6146725950336f1ec520928f320f144eb5fa7990ae6123ab4" \
+ VERSION="1.1.43" \
+ SHA256="5a3d6b383ca5afc235b171118e90f5ff6aa27e9fea3303065231a6d403f0183a" \
  RELATIVE_PATH="libxslt-{{version}}" \
  bash install-from-source.sh \
  --without-python \
@@ -120,13 +108,13 @@ RUN \
  --without-debugger \
  --disable-static
 
-# libpq and pg_config as needed by psycopg2
-RUN \
+# libpq and pg_config as needed by psycopg
+RUN yum install -y flex && \
  DOWNLOAD_URL="https://ftp.postgresql.org/pub/source/v{{version}}/postgresql-{{version}}.tar.bz2" \
- VERSION="16.0" \
- SHA256="df9e823eb22330444e1d48e52cc65135a652a6fdb3ce325e3f08549339f51b99" \
+ VERSION="18.6" \
+ SHA256="555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f" \
  RELATIVE_PATH="postgresql-{{version}}" \
- bash install-from-source.sh --without-readline --with-openssl --without-icu
+ bash install-from-source.sh --without-readline --with-openssl --without-icu --with-gssapi
 # Add paths to pg_config and to the library
 ENV PATH="/usr/local/pgsql/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/pgsql/lib/:${LD_LIBRARY_PATH}"
@@ -137,7 +125,12 @@ RUN \
  VERSION="2.3.9" \
  SHA256="52833eac3d681c8b0c9a5a65f2ebd745b3a964f208fc748f977e44015a31b207" \
  RELATIVE_PATH=unixODBC-{{version}} \
- bash install-from-source.sh --disable-readline --with-included-ltdl --enable-ltdl-install
+ bash install-from-source.sh --disable-readline --with-included-ltdl --enable-ltdl-install \
+ # This is the folder where unixODBC searches for driver config and where we ask customers to copy their config to
+ --sysconfdir=/opt/datadog-agent/embedded/etc
+
+# zstd for librdkafka compression support
+RUN yum install -y epel-release && yum install -y libzstd-devel
 
 # Dependencies needed to build librdkafka (and thus, confluent-kafka) with kerberos support
 RUN \
@@ -168,8 +161,8 @@ RUN \
 # curl
 RUN \
  DOWNLOAD_URL="https://curl.haxx.se/download/curl-{{version}}.tar.gz" \
- VERSION="8.4.0" \
- SHA256="816e41809c043ff285e8c0f06a75a1fa250211bbfb2dc0a037eeef39f1a9e427" \
+ VERSION="8.21.0" \
+ SHA256="d9b327997999045a24cda50f3983e69e51c516bd8be6ef9842fc7f99135e33bb" \
  RELATIVE_PATH="curl-{{version}}" \
   bash install-from-source.sh \
     --disable-manual \
@@ -186,6 +179,7 @@ RUN \
     --without-gnutls \
     --without-librtmp \
     --without-libssh2 \
+    --without-libpsl \
     --with-ssl=/usr/local \
  && rm /usr/local/bin/curl
 
@@ -199,5 +193,7 @@ RUN python3 -m pip install --no-warn-script-location -r /runner_dependencies.txt
 
 COPY build_script.sh /build_script.sh
 ENV DD_BUILD_COMMAND="bash /build_script.sh"
+
+ENV MANYLINUX_POLICY="manylinux2014_x86_64"
 
 ENTRYPOINT ["python3", "/home/scripts/build_wheels.py"]

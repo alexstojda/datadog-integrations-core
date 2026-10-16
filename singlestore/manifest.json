@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "5e8c3b5f-278f-4423-90d9-969c06a478eb",
   "app_id": "singlestore",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -17,7 +18,8 @@
       "Category::Network",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -53,12 +55,9 @@
       "Singlestore Overview": "assets/dashboards/overview.json"
     },
     "monitors": {
-      "[SingleStore] License expiration": "assets/monitors/license_expiration.json",
-      "[SingleStore] Read failures rate": "assets/monitors/read_failures.json",
-      "[SingleStore] Write failures rate": "assets/monitors/write_failures.json"
-    },
-    "logs": {
-      "source": "singlestore"
+      "License will expire soon": "assets/monitors/license_expiration.json",
+      "Read queries failure rate is high": "assets/monitors/read_failures.json",
+      "Write queries failure rate is high": "assets/monitors/write_failures.json"
     }
   }
 }

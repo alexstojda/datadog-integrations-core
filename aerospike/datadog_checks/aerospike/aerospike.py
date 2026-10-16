@@ -10,10 +10,10 @@ import re
 from collections import defaultdict
 from typing import List  # noqa: F401
 
-from six import PY2, iteritems
-
-from datadog_checks.base import AgentCheck, ConfigurationError
+from datadog_checks.base import AgentCheck
 from datadog_checks.base.errors import CheckException
+
+from .check import AerospikeCheckV2
 
 try:
     import aerospike
@@ -78,15 +78,6 @@ class AerospikeCheck(AgentCheck):
         instance = instances[0]
 
         if 'openmetrics_endpoint' in instance:
-            if PY2:
-                raise ConfigurationError(
-                    "This version of the integration is only available when using py3. "
-                    "Check https://docs.datadoghq.com/agent/guide/agent-v6-python-3 "
-                    "for more information or use the older style config."
-                )
-            # TODO: when we drop Python 2 move this import up top
-            from .check import AerospikeCheckV2
-
             return AerospikeCheckV2(name, init_config, instances)
 
         else:
@@ -147,6 +138,9 @@ class AerospikeCheck(AgentCheck):
         # https://www.aerospike.com/docs/reference/info/#namespaces
         namespaces = self.get_namespaces()
 
+        # call the new function and print output
+        sindex_namespaces = self.parse_sindex_namespaces(self.get_info('sindex-list:'))
+
         for ns in namespaces:
             namespace_tags = ['namespace:{}'.format(ns)]
             namespace_tags.extend(self._tags)
@@ -160,11 +154,16 @@ class AerospikeCheck(AgentCheck):
             )
 
             # https://www.aerospike.com/docs/reference/info/#sindex
-            sindex = self.get_info('sindex/{}'.format(ns))
-            for idx in parse_namespace(sindex[:-1], ns, 'indexname'):
+            # https://aerospike.com/docs/database/reference/info?search=sindex-list
+            # https://aerospike.com/docs/database/reference/info?search=sindex-stat
+
+            for idx in sindex_namespaces.get(ns, []):
                 sindex_tags = ['sindex:{}'.format(idx)]
                 sindex_tags.extend(namespace_tags)
-                self.collect_info('sindex/{}/{}'.format(ns, idx), SINDEX_METRIC_TYPE, tags=sindex_tags)
+                # sindex-stat introduced in 3.3x so will safely work in 4x and above server versions
+                self.collect_info(
+                    'sindex-stat:ns={};indexname={}'.format(ns, idx), SINDEX_METRIC_TYPE, tags=sindex_tags
+                )
 
             # https://www.aerospike.com/docs/reference/info/#sets
             sets = self.get_info('sets/{}'.format(ns))
@@ -232,8 +231,32 @@ class AerospikeCheck(AgentCheck):
                 self.log.warning('Exceeded cap `%s` for metric type `%s` - please contact support', cap, metric_type)
                 return
 
-        for key, value in iteritems(required_data):
+        for key, value in required_data.items():
             self.send(metric_type, key, value, tags)
+
+    def parse_sindex_namespaces(self, data):
+        sindex_map = defaultdict(list)
+        if not data:
+            return {}
+
+        if isinstance(data, str):
+            if ';' in data:
+                chunks = data.strip().strip(';').split(';')
+                lines = [chunk.strip() for chunk in chunks if chunk.strip()]
+            else:
+                lines = [line.strip() for line in data.splitlines() if line.strip()]
+        else:
+            lines = list(data)
+
+        for line in lines:
+            match = re.match(r'^ns=([^:]+):.*indexname=([^:]+):', line)
+            if match is None:
+                continue
+            namespace, index_name = match.groups()
+            if index_name not in sindex_map[namespace]:
+                sindex_map[namespace].append(index_name)
+
+        return dict(sindex_map)
 
     def get_namespaces(self):
         namespaces = self.get_info('namespaces')
@@ -491,7 +514,7 @@ class AerospikeCheck(AgentCheck):
 
             ns_latencies[ns].setdefault("metric_names", []).extend(metric_names)
 
-        for ns, v in iteritems(ns_latencies):
+        for ns, v in ns_latencies.items():
             metric_names = v.get("metric_names", [])
             metric_values = v.get("metric_values", [])
             namespace_tags = ['namespace:{}'.format(ns)] if ns else []

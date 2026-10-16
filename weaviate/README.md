@@ -1,8 +1,19 @@
 # Agent Check: Weaviate
 
+![Weaviate Overview Dashboard][16]
+
 ## Overview
 
-This check monitors [Weaviate][1] through the Datadog Agent. For more information, see [Weaviate monitoring][10].
+Weaviate is an open source, AI-native vector database that helps create AI-powered applications. With Datadog's Weaviate integration, you can:
+
+- Monitor usage statistics (such as duration of insert, delete, and maintenance operations) to identify potential storage issues, bottlenecks, and assess the impact of data modifications on system responsiveness.
+- Track query latency, rate, and concurrent read/write requests to gain insight into the vector database's overall responsiveness and load handling capabilities.
+- Optimize write-heavy workloads with object statistics, like the average time taken for "put" (write) operations.
+- Ensure smooth and efficient data ingestion with import-related metrics that offer insights into operations like data loading process. 
+
+This check monitors [Weaviate][1] through the Datadog Agent. For more information, see [Weaviate monitoring][2]. To learn more about Datadog's suite of AI integrations, see this [blog][15].
+
+**Minimum Agent version:** 7.47.0
 
 ## Setup
 
@@ -28,7 +39,7 @@ In addition, a small subset of metrics can be collected by communicating with di
 #### Containerized
 ##### Metric collection
 
-Make sure that the Prometheus-formatted metrics are exposed in your Weaviate cluster. You can configure and customize this by following the instructions on the [Monitoring][10] page in the Weaviate documentation. For the Agent to start collecting metrics, the Weaviate pods need to be annotated. For more information about annotations, refer to the [Autodiscovery Integration Templates][3] for guidance. You can find additional configuration options by reviewing the [sample weaviate.d/conf.yaml][4]
+Make sure that the Prometheus-formatted metrics are exposed in your Weaviate cluster. You can configure and customize this by following the instructions on the [Monitoring][10] page in the Weaviate documentation. Configure the check with one of the Kubernetes Autodiscovery options below. You can find additional configuration options by reviewing the [sample weaviate.d/conf.yaml][4].
 
 **Note**: The listed metrics can only be collected if they are available. Some metrics are generated only when certain actions are performed. For example, the object deletion metric is exposed only when an object is deleted.
 
@@ -38,6 +49,9 @@ The two most important parameters for configuring the Weaviate check are as foll
 
 If authentication is required for the RESTful API endpoints, the check can be configured to provide an API key as part of the [request header][13].
 
+
+<!-- xxx tabs xxx -->
+<!-- xxx tab "Kubernetes annotations" xxx -->
 
 ```yaml
 apiVersion: v1
@@ -65,6 +79,36 @@ spec:
     - name: 'weaviate'
 # (...)
 ```
+<!-- xxz tab xxx -->
+<!-- xxx tab "DatadogInstrumentation CRD" xxx -->
+
+```yaml
+apiVersion: datadoghq.com/v1alpha1
+kind: DatadogInstrumentation
+metadata:
+  name: <CR_NAME>
+  namespace: <WORKLOAD_NAMESPACE>
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet # Or another target kind, if applicable.
+    name: <WEAVIATE_WORKLOAD_NAME>
+  config:
+    checks:
+      - integration: weaviate
+        containerName: weaviate
+        initConfig: {}
+        instances:
+          - openmetrics_endpoint: "http://%%host%%:2112/metrics"
+            weaviate_api_endpoint: "http://%%host%%:8080"
+            headers:
+              Authorization: "Bearer if_needed_for_auth"
+```
+
+For setup details, see [Configure Autodiscovery with the DatadogInstrumentation CRD][17].
+
+<!-- xxz tab xxx -->
+<!-- xxz tabs xxx -->
 
 **Note**: You can set these annotations directly in your [Weaviate Helm chart][14] using `annotations` key.
 
@@ -90,9 +134,15 @@ See [service_checks.json][8] for a list of service checks provided by this integ
 
 Need help? Contact [Datadog support][9].
 
+## Further Reading
+
+Additional helpful documentation, links, and articles:
+
+- [Integration roundup: Monitoring your AI stack][15]
+
 
 [1]: https://weaviate.io/developers/weaviate
-[2]: https://app.datadoghq.com/account/settings/agent/latest
+[2]: /account/settings/agent/latest
 [3]: https://docs.datadoghq.com/agent/kubernetes/integrations/
 [4]: https://github.com/DataDog/integrations-core/blob/master/weaviate/datadog_checks/weaviate/data/conf.yaml.example
 [5]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
@@ -105,3 +155,6 @@ Need help? Contact [Datadog support][9].
 [12]: https://docs.datadoghq.com/integrations/openmetrics/
 [13]: https://github.com/DataDog/integrations-core/blob/7.46.x/openmetrics/datadog_checks/openmetrics/data/conf.yaml.example#L544-L546
 [14]: https://github.com/weaviate/weaviate-helm/blob/576f613bad3f8e25015c61a7143800123ab378d3/weaviate/values.yaml#L1196
+[15]: https://www.datadoghq.com/blog/ai-integrations/
+[16]: https://raw.githubusercontent.com/DataDog/integrations-core/master/weaviate/images/weaviate_dashboard.png
+[17]: https://docs.datadoghq.com/containers/guide/configure-autodiscovery-with-the-datadoginstrumentation-crd/

@@ -2,13 +2,14 @@
   "manifest_version": "2.0.0",
   "app_uuid": "49ad19d0-1452-4275-b0fe-cbda3821807d",
   "app_id": "argocd",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
     "configuration": "README.md#Setup",
     "support": "README.md#Support",
     "changelog": "CHANGELOG.md",
-    "description": "Argo CD",
+    "description": "Monitor the health and performance of Argo CD",
     "title": "Argo CD",
     "media": [],
     "classifier_tags": [
@@ -16,7 +17,13 @@
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Category::Kubernetes",
+      "Category::Configuration & Deployment",
+      "Submitted Data Type::Metrics",
+      "Submitted Data Type::Logs",
+      "Submitted Data Type::Events",
+      "Offering::Integration"
     ]
   },
   "assets": {
@@ -26,7 +33,7 @@
         "spec": "assets/configuration/spec.yaml"
       },
       "events": {
-        "creates_events": false
+        "creates_events": true
       },
       "metrics": {
         "prefix": "argocd.",
@@ -52,14 +59,11 @@
       "source_type_id": 10314,
       "auto_install": true
     },
-    "logs": {
-      "source": "argocd"
-    },
     "dashboards": {
       "Argo CD Overview": "assets/dashboards/argo_cd_overview.json"
     },
     "monitors": {
-      "Sync Status": "assets/monitors/application_sync_status.json"
+      "Applications sync status": "assets/monitors/application_sync_status.json"
     }
   },
   "author": {

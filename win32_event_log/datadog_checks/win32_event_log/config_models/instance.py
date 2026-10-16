@@ -28,7 +28,22 @@ class Filters(BaseModel):
     id: Optional[tuple[int, ...]] = None
     source: Optional[tuple[str, ...]] = None
     type: Optional[
-        tuple[Literal['success', 'error', 'warning', 'information', 'success audit', 'failure audit'], ...]
+        tuple[
+            Literal[
+                'success',
+                'error',
+                'warning',
+                'information',
+                'success audit',
+                'failure audit',
+                'Success',
+                'Error',
+                'Warning',
+                'Information',
+                'Success Audit',
+                'Failure Audit',
+            ], ...
+        ]
     ] = None
 
 
@@ -49,9 +64,11 @@ class InstanceConfig(BaseModel):
     )
     auth_type: Optional[Literal['default', 'negotiate', 'kerberos', 'ntlm']] = None
     bookmark_frequency: Optional[int] = None
+    dd_security_events: Optional[Literal['high', 'low']] = None
     disable_generic_tags: Optional[bool] = None
     domain: Optional[str] = None
     empty_default_hostname: Optional[bool] = None
+    enable_legacy_tags_normalization: Optional[bool] = None
     event_format: Optional[tuple[str, ...]] = None
     event_id: Optional[tuple[str, ...]] = None
     event_priority: Optional[Literal['normal', 'low']] = None

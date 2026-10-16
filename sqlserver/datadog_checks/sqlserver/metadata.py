@@ -11,13 +11,13 @@ from datadog_checks.base.utils.db.utils import (
 from datadog_checks.base.utils.serialization import json
 from datadog_checks.base.utils.tracking import tracked_method
 from datadog_checks.sqlserver.config import SQLServerConfig
-
-try:
-    import datadog_agent
-except ImportError:
-    from ..stubs import datadog_agent
-
-from datadog_checks.sqlserver.const import STATIC_INFO_ENGINE_EDITION, STATIC_INFO_VERSION
+from datadog_checks.sqlserver.const import (
+    DEFAULT_SCHEMAS_COLLECTION_INTERVAL,
+    STATIC_INFO_ENGINE_EDITION,
+    STATIC_INFO_VERSION,
+)
+from datadog_checks.sqlserver.schemas import SQLServerSchemaCollector
+from datadog_checks.sqlserver.utils import raise_if_cancelled
 
 # default settings collection interval in seconds
 DEFAULT_SETTINGS_COLLECTION_INTERVAL = 600
@@ -57,8 +57,6 @@ class SqlserverMetadata(DBMAsyncJob):
     """
 
     def __init__(self, check, config: SQLServerConfig):
-        # do not emit any dd.internal metrics for DBM specific check code
-        self.tags = [t for t in check.tags if not t.startswith('dd.internal')]
         self.log = check.log
         self._config = config
         self.collection_interval = self._config.settings_config.get(
@@ -68,10 +66,10 @@ class SqlserverMetadata(DBMAsyncJob):
         super(SqlserverMetadata, self).__init__(
             check,
             run_sync=is_affirmative(self._config.settings_config.get('run_sync', False)),
-            enabled=is_affirmative(self._config.settings_config.get('enabled', False)),
+            enabled=is_affirmative(self._config.settings_config.get('enabled', True)),
             expected_db_exceptions=(),
             min_collection_interval=self._config.min_collection_interval,
-            dbms="sqlserver",
+            dbms=check.dbms,
             rate_limit=1 / float(self.collection_interval),
             job_name="database-metadata",
             shutdown_callback=self._close_db_conn,
@@ -83,6 +81,17 @@ class SqlserverMetadata(DBMAsyncJob):
         self._settings_query = None
         self._time_since_last_settings_query = 0
         self._max_query_metrics = self._config.statement_metrics_config.get("max_queries", 250)
+        self._schema_collector = SQLServerSchemaCollector(check)
+        self._schema_config = self._config.schema_config
+        self._schema_collection_interval = self._schema_config.get(
+            'collection_interval', DEFAULT_SCHEMAS_COLLECTION_INTERVAL
+        )
+        self._last_schemas_collection_time = 0
+
+    def shutdown(self) -> None:
+        # The schema collector holds the check too, so dropping it here releases both.
+        self._schema_collector = None
+        self._check = None
 
     def _close_db_conn(self):
         pass
@@ -131,22 +140,35 @@ class SqlserverMetadata(DBMAsyncJob):
 
     @tracked_method(agent_check_getter=agent_check_getter)
     def report_sqlserver_metadata(self):
-        with self._check.connection.open_managed_default_connection(key_prefix=self._conn_key_prefix):
-            with self._check.connection.get_managed_cursor(key_prefix=self._conn_key_prefix) as cursor:
+        raise_if_cancelled(self._cancel_event)
+
+        with self._check.connection.open_managed_default_connection(self._conn_key_prefix):
+            with self._check.connection.get_managed_cursor(self._conn_key_prefix) as cursor:
                 settings_rows = self._load_settings_rows(cursor)
                 event = {
-                    "host": self._check.resolved_hostname,
-                    "agent_version": datadog_agent.get_version(),
-                    "dbms": "sqlserver",
+                    "host": self._check.reported_hostname,
+                    "database_instance": self._check.database_identifier,
+                    "agent_version": self._check.agent_version,
+                    "dbms": self._check.dbms,
                     "kind": "sqlserver_configs",
                     "collection_interval": self.collection_interval,
                     'dbms_version': "{},{}".format(
                         self._check.static_info_cache.get(STATIC_INFO_VERSION, ""),
                         self._check.static_info_cache.get(STATIC_INFO_ENGINE_EDITION, ""),
                     ),
-                    "tags": self.tags,
+                    "tags": self._check.tag_manager.get_tags(),
                     "timestamp": time.time() * 1000,
-                    "cloud_metadata": self._config.cloud_metadata,
+                    "cloud_metadata": self._check.cloud_metadata,
                     "metadata": settings_rows,
                 }
                 self._check.database_monitoring_metadata(json.dumps(event, default=default_json_event_encoding))
+        self.collect_schemas()
+
+    def collect_schemas(self):
+        if not self._schema_config.get('enabled', False):
+            return
+        if time.time() - self._last_schemas_collection_time < self._schema_collection_interval:
+            return
+        raise_if_cancelled(self._cancel_event)
+        self._last_schemas_collection_time = time.time()
+        self._schema_collector.collect_schemas()

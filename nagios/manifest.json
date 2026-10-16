@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "7e61b923-1847-4c43-85cf-5f4c49ff4806",
   "app_id": "nagios",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,14 @@
       "Category::Notifications",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/nagios-monitoring"
+      }
     ]
   },
   "author": {
@@ -50,9 +58,6 @@
     },
     "saved_views": {
       "nagios_processes": "assets/saved_views/nagios_processes.json"
-    },
-    "logs": {
-      "source": "nagios"
     }
   }
 }

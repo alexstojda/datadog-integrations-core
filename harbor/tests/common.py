@@ -5,13 +5,15 @@ import os
 
 from datadog_checks.dev import get_docker_hostname
 
+VERSION_2_0 = [2, 0, 0]
 VERSION_2_2 = [2, 2, 0]
 
 HARBOR_COMPONENTS = ['chartmuseum', 'registry', 'redis', 'jobservice', 'registryctl', 'portal', 'core', 'database']
 
 HARBOR_VERSION = [int(i) for i in os.environ['HARBOR_VERSION'].split('.')]
 
-USERS_PATH = '/api/users/' if HARBOR_VERSION < VERSION_2_2 else '/api/v2.0/users/'
+# The v2.0 API, and with it this endpoint, landed in Harbor 2.0.
+USERS_PATH = '/api/users/' if HARBOR_VERSION < VERSION_2_0 else '/api/v2.0/users/'
 
 HARBOR_METRICS = [
     # Metric_name, requires admin privileges
@@ -23,8 +25,8 @@ HARBOR_METRICS = [
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 URL = 'http://{}'.format(get_docker_hostname())
-INSTANCE = {'url': URL, 'username': 'NotAnAdmin', 'password': 'Str0ngPassw0rd'}
-ADMIN_INSTANCE = {'url': URL, 'username': 'admin', 'password': 'Harbor12345'}
+INSTANCE = {'url': URL, 'username': 'NotAnAdmin', 'password': 'Str0ngPassw0rd', 'tags': ['environment:test']}
+ADMIN_INSTANCE = {'url': URL, 'username': 'admin', 'password': 'Harbor12345', 'tags': ['environment:test']}
 
 HEALTH_FIXTURE = {
     "status": "healthy",

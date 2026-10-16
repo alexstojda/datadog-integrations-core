@@ -16,7 +16,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_synology_disk_station(dd_agent_check):
@@ -28,8 +28,12 @@ def test_e2e_profile_synology_disk_station(dd_agent_check):
     common_tags = [
         'snmp_profile:synology-disk-station',
         'snmp_host:synology-disk-station.device.name',
+        'device_hostname:synology-disk-station.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + [
         'synology_model_name:quaintly quaintly their Jaded quaintly acted',
         'synology_serial_number:kept',
@@ -263,6 +267,7 @@ def test_e2e_profile_synology_disk_station(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.6574.1',
         'vendor': 'synology',
         'device_type': 'storage',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

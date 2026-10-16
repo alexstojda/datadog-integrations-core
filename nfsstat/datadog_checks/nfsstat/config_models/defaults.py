@@ -16,8 +16,16 @@ def instance_disable_generic_tags():
     return False
 
 
+def instance_disable_missing_mountpoints_warning():
+    return False
+
+
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
 
 
 def instance_min_collection_interval():

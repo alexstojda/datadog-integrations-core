@@ -1,38 +1,35 @@
 # (C) Datadog, Inc. 2018-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
-from six import iteritems
+import time
 
 from datadog_checks.base import AgentCheck, ConfigurationError
 from datadog_checks.base.config import _is_affirmative
 from datadog_checks.base.utils.containers import hash_mutable
-
-from . import aci_metrics
-from .api import Api
-from .capacity import Capacity
-from .fabric import Fabric
-from .tags import CiscoTags
-from .tenant import Tenant
-
-SOURCE_TYPE = 'cisco_aci'
+from datadog_checks.cisco_aci.aci_metrics import make_tenant_metrics
+from datadog_checks.cisco_aci.api import Api
+from datadog_checks.cisco_aci.capacity import Capacity
+from datadog_checks.cisco_aci.fabric import Fabric
+from datadog_checks.cisco_aci.faults import Faults
+from datadog_checks.cisco_aci.tags import CiscoTags
+from datadog_checks.cisco_aci.tenant import Tenant
 
 SERVICE_CHECK_NAME = 'cisco_aci.can_connect'
 
 
 class CiscoACICheck(AgentCheck):
-
     HTTP_CONFIG_REMAPPER = {'ssl_verify': {'name': 'tls_verify'}, 'pwd': {'name': 'password'}}
+    HA_SUPPORTED = True
 
     def __init__(self, name, init_config, instances):
         super(CiscoACICheck, self).__init__(name, init_config, instances)
-        self.tenant_metrics = aci_metrics.make_tenant_metrics()
-        self.last_events_ts = {}
-        self.external_host_tags = {}
+        self.tenant_metrics = make_tenant_metrics()
         self._api_cache = {}
         self.check_tags = ['cisco']
         self.tagger = CiscoTags(log=self.log)
 
     def check(self, _):
+        start_time = time.time()
         aci_url = self.instance.get('aci_url')
         aci_urls = self.instance.get('aci_urls', [])
         if aci_url:
@@ -109,7 +106,7 @@ class CiscoACICheck(AgentCheck):
             raise
 
         try:
-            fabric = Fabric(self, api, self.instance)
+            fabric = Fabric(self, api, self.instance, self.instance.get('namespace', 'default'))
             fabric.collect()
         except Exception as e:
             self.log.error('fabric collection failed: %s', e)
@@ -123,7 +120,14 @@ class CiscoACICheck(AgentCheck):
             raise
 
         try:
-            capacity = Capacity(api, self.instance, check_tags=self.check_tags, gauge=self.gauge, log=self.log)
+            capacity = Capacity(
+                api,
+                self.instance,
+                self.instance.get('namespace', 'default'),
+                check_tags=self.check_tags,
+                gauge=self.gauge,
+                log=self.log,
+            )
             capacity.collect()
         except Exception as e:
             self.log.error('capacity collection failed: %s', e)
@@ -136,34 +140,45 @@ class CiscoACICheck(AgentCheck):
             api.close()
             raise
 
+        try:
+            faults = Faults(self, api, self.instance, self.instance.get('namespace', 'default'))
+            faults.collect()
+        except Exception as e:
+            self.log.error('faults collection failed: %s', e)
+            self.service_check(
+                SERVICE_CHECK_NAME,
+                AgentCheck.CRITICAL,
+                message="aci faults operations failed, returning a status of {}".format(e),
+                tags=service_check_tags,
+            )
+            api.close()
+            raise
+
         self.service_check(SERVICE_CHECK_NAME, AgentCheck.OK, tags=service_check_tags)
 
-        self.set_external_tags(self.get_external_host_tags())
+        self.submit_telemetry_metrics(start_time, tags=self.check_tags)
 
         api.close()
 
-    def submit_metrics(self, metrics, tags, instance=None, obj_type="gauge", hostname=None):
+    def submit_metrics(self, metrics, tags, instance=None, obj_type="gauge"):
         if instance is None:
             instance = {}
 
         user_tags = instance.get('tags', [])
-        for mname, mval in iteritems(metrics):
+        for mname, mval in metrics.items():
             tags_to_send = []
             if mval:
-                if hostname:
-                    tags_to_send += self.check_tags
                 tags_to_send += user_tags + tags
                 if obj_type == "gauge":
-                    self.gauge(mname, float(mval), tags=tags_to_send, hostname=hostname)
+                    self.gauge(mname, float(mval), tags=tags_to_send)
                 elif obj_type == "rate":
-                    self.rate(mname, float(mval), tags=tags_to_send, hostname=hostname)
+                    self.rate(mname, float(mval), tags=tags_to_send)
                 else:
                     log_line = "Trying to submit metric: %s with unknown type: %s"
                     self.log.debug(log_line, mname, obj_type)
 
-    def get_external_host_tags(self):
-        external_host_tags = []
-        for hostname, tags in iteritems(self.external_host_tags):
-            host_tags = tags + self.check_tags
-            external_host_tags.append((hostname, {SOURCE_TYPE: host_tags}))
-        return external_host_tags
+    def submit_telemetry_metrics(self, start_time, tags):
+        current_time = time.time()
+        check_duration = current_time - start_time
+        self.monotonic_count('datadog.cisco_aci.check_interval', current_time, tags=tags)
+        self.gauge('datadog.cisco_aci.check_duration', check_duration, tags=tags)

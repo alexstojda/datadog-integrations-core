@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "344b37df-ba82-4352-b277-ba1f1ccf716f",
   "app_id": "snmp-chatsworth-products",
+  "owner": "network-device-monitoring-core",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -17,7 +18,14 @@
       "Category::SNMP",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-snmp-with-datadog/"
+      }
     ]
   },
   "assets": {

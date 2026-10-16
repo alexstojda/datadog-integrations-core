@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import re
 from functools import cached_property
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Iterator, cast
 
 from ddev.integration.metrics import Metric
 from ddev.repo.constants import NOT_SHIPPABLE
@@ -69,7 +69,11 @@ class Integration:
                     yield Path(root, f)
 
     def requires_changelog_entry(self, path: Path) -> bool:
-        return self.package_directory in path.parents or (self.is_package and path == (self.path / 'pyproject.toml'))
+        return (
+            self.package_directory in path.parents
+            or (self.is_package and path == (self.path / 'pyproject.toml'))
+            or path == self.example_config
+        )
 
     @property
     def release_tag_pattern(self) -> str:
@@ -94,11 +98,18 @@ class Integration:
 
     @cached_property
     def normalized_display_name(self) -> str:
-        display_name = self.manifest.get('/assets/integration/source_type_name', self.name)
+        display_name = self.display_name
         normalized_integration = re.sub("[^0-9A-Za-z-]", "_", display_name)
         normalized_integration = re.sub("_+", "_", normalized_integration)
         normalized_integration = normalized_integration.strip("_")
         return normalized_integration.lower()
+
+    @cached_property
+    def metadata_integration_name(self) -> str:
+        if name := cast(str, self.repo_config.get(f'/overrides/validate/metadata/integration/{self.name}', None)):
+            return name
+
+        return self.normalized_display_name
 
     @cached_property
     def project_file(self) -> Path:
@@ -135,6 +146,10 @@ class Integration:
     def config_spec(self) -> Path:
         relative_path = self.manifest.get('/assets/integration/configuration/spec', 'assets/configuration/spec.yaml')
         return self.path / relative_path
+
+    @cached_property
+    def example_config(self) -> Path:
+        return self.package_directory / 'data' / 'conf.yaml.example'
 
     @cached_property
     def minimum_base_package_version(self) -> str | None:
@@ -175,7 +190,13 @@ class Integration:
 
     @cached_property
     def is_integration(self) -> bool:
-        return (self.path / 'manifest.json').is_file()
+        if (self.path / 'manifest.json').is_file():
+            return True
+
+        # If the manifest.json file is not present check the respository configuration to
+        # get the is_integration flag for this particular integration.
+        # If the folder is not listed, it is assumed to be an integration.
+        return cast(bool, self.repo_config.get(f'/overrides/is-integration/{self.name}', default=True))
 
     @cached_property
     def has_metrics(self) -> bool:
@@ -190,9 +211,12 @@ class Integration:
         return self.is_integration and not self.is_package
 
     @cached_property
+    def has_hatch_config(self) -> bool:
+        return (self.path / 'hatch.toml').is_file()
+
+    @cached_property
     def is_testable(self) -> bool:
-        # TODO: remove tox when the Hatch migration is complete
-        return (self.path / 'hatch.toml').is_file() or (self.path / 'tox.ini').is_file()
+        return self.has_hatch_config and (self.path / 'tests').is_dir()
 
     @cached_property
     def is_shippable(self) -> bool:
@@ -210,8 +234,12 @@ class Integration:
         return contents.count('import ') > 1
 
     @cached_property
+    def jmx_metrics_file(self) -> Path:
+        return self.path / 'datadog_checks' / self.package_directory_name / 'data' / 'metrics.yaml'
+
+    @cached_property
     def is_jmx_check(self) -> bool:
-        return (self.path / 'datadog_checks' / self.package_directory_name / 'data' / 'metrics.yaml').is_file()
+        return self.jmx_metrics_file.is_file()
 
     def __eq__(self, other):
         return other.path == self.path

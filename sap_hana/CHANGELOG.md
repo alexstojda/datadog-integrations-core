@@ -2,6 +2,90 @@
 
 <!-- towncrier release notes start -->
 
+## 5.7.0 / 2026-08-05 / Agent 7.83.0
+
+***Added***:
+
+* Add Data Observability RC query actions support: execute Remote Configuration-delivered monitoring queries against SAP HANA and forward results as `do-query-results` events.
+  Bump the minimum `datadog-checks-base` requirement to 37.39.0 for the `CronScheduler` used to schedule Data Observability queries. ([#23965](https://github.com/DataDog/integrations-core/pull/23965))
+* Run SAP HANA schema collection in a background thread to avoid blocking the main check loop. ([#24128](https://github.com/DataDog/integrations-core/pull/24128))
+* Add a `database_identifier.template` option to control how the database is identified in Data Observability. ([#24146](https://github.com/DataDog/integrations-core/pull/24146))
+
+## 5.6.0 / 2026-07-08 / Agent 7.82.0
+
+***Added***:
+
+* Add Data Quality schema collection (schemas, tables, views, and columns) and startup diagnostics. ([#23934](https://github.com/DataDog/integrations-core/pull/23934))
+
+## 5.5.0 / 2026-04-01 / Agent 7.78.0
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 5.4.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+## 5.3.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 5.2.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 5.1.1 / 2025-08-07 / Agent 7.70.0
+
+***Fixed***:
+
+* Improve descriptions and examples in example configuration file ([#20878](https://github.com/DataDog/integrations-core/pull/20878))
+
+## 5.1.0 / 2025-01-16 / Agent 7.63.0
+
+***Added***:
+
+* Add `tls_ciphers` param to integration ([#19334](https://github.com/DataDog/integrations-core/pull/19334))
+
+## 5.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+## 4.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 3.3.0 / 2024-08-09 / Agent 7.57.0
+
+***Added***:
+
+* Collect audit logs ([#18193](https://github.com/DataDog/integrations-core/pull/18193))
+
+## 3.2.0 / 2024-03-22 / Agent 7.53.0
+
+***Added***:
+
+* Update custom_queries configuration to support optional collection_interval ([#16957](https://github.com/DataDog/integrations-core/pull/16957))
+
+***Fixed***:
+
+* Update the configuration to include the `metric_prefix` option ([#17065](https://github.com/DataDog/integrations-core/pull/17065))
+
 ## 3.1.0 / 2024-01-05 / Agent 7.51.0
 
 ***Added***:

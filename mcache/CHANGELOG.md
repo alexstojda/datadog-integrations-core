@@ -2,6 +2,71 @@
 
 <!-- towncrier release notes start -->
 
+## 6.6.0 / 2026-10-01
+
+***Added***:
+
+* Package the Memcache integration on Windows. ([#23738](https://github.com/DataDog/integrations-core/pull/23738))
+
+## 6.5.0 / 2026-08-05 / Agent 7.83.0
+
+***Security***:
+
+* Expand the set of configuration fields protected behind integration security settings. ([#24646](https://github.com/DataDog/integrations-core/pull/24646))
+
+***Added***:
+
+* Update dependencies ([#24321](https://github.com/DataDog/integrations-core/pull/24321))
+
+## 6.4.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+***Fixed***:
+
+* Handle malformed binary protocol responses from `bmemcached` gracefully. Instead of crashing with an unhandled `AssertionError`, the check now logs a warning and reports a `WARNING` service check, allowing the next check run to retry. ([#22650](https://github.com/DataDog/integrations-core/pull/22650))
+
+## 6.3.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 6.2.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 6.1.0 / 2025-01-25 / Agent 7.63.0
+
+***Added***:
+
+* Support IPv6. ([#19359](https://github.com/DataDog/integrations-core/pull/19359))
+
+## 6.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 5.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
 ## 4.1.0 / 2024-01-05 / Agent 7.51.0
 
 ***Added***:

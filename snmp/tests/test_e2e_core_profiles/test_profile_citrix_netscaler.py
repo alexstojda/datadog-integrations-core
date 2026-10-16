@@ -16,7 +16,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_citrix_netscaler(dd_agent_check):
@@ -28,8 +28,12 @@ def test_e2e_profile_citrix_netscaler(dd_agent_check):
     common_tags = [
         'snmp_profile:citrix-netscaler',
         'snmp_host:citrix-netscaler.device.name',
+        'device_hostname:citrix-netscaler.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ]
 
     # --- TEST EXTENDED METRICS ---
@@ -376,6 +380,7 @@ def test_e2e_profile_citrix_netscaler(dd_agent_check):
         'vendor': 'citrix',
         'version': 'kept forward oxen but zombies forward Jaded',
         'device_type': 'load_balancer',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

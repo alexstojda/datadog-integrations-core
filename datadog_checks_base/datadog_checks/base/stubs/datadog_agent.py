@@ -2,10 +2,9 @@
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
 import re
+from collections import defaultdict
 
-from six import iteritems
-
-from datadog_checks.base.utils.serialization import json
+from datadog_checks.base.utils.format import json
 
 
 class DatadogAgentStub(object):
@@ -19,22 +18,37 @@ class DatadogAgentStub(object):
     """
 
     def __init__(self):
+        self._sent_logs = defaultdict(list)
         self._metadata = {}
         self._cache = {}
         self._config = self.get_default_config()
         self._hostname = 'stubbed.hostname'
         self._process_start_time = 0
         self._external_tags = []
+        self._host_tags = "{}"
+        self._sent_telemetry = defaultdict(list)
+        self._sent_reported_issues = defaultdict(list)
+        self._sent_resolved_issues = []
 
     def get_default_config(self):
-        return {'enable_metadata_collection': True, 'disable_unsafe_yaml': True}
+        return {'enable_metadata_collection': True}
 
     def reset(self):
+        self._sent_logs.clear()
         self._metadata.clear()
         self._cache.clear()
         self._config = self.get_default_config()
         self._process_start_time = 0
         self._external_tags = []
+        self._host_tags = "{}"
+        self._sent_reported_issues.clear()
+        self._sent_resolved_issues.clear()
+
+    def assert_logs(self, check_id, logs):
+        sent_logs = self._sent_logs[check_id]
+        assert sent_logs == logs, 'Expected {} logs for check {}, found {}. Submitted logs: {}'.format(
+            len(logs), check_id, len(self._sent_logs[check_id]), repr(self._sent_logs)
+        )
 
     def assert_metadata(self, check_id, data):
         actual = {}
@@ -42,7 +56,7 @@ class DatadogAgentStub(object):
             key = (check_id, name)
             if key in self._metadata:
                 actual[name] = self._metadata[key]
-        assert data == actual
+        assert data == actual, f'Expected metadata: {data}; actual metadata: {actual}'
 
     def assert_metadata_count(self, count):
         metadata_items = len(self._metadata)
@@ -54,13 +68,13 @@ class DatadogAgentStub(object):
         for h, tags in self._external_tags:
             if h == hostname:
                 if not match_tags_order:
-                    external_tags = {k: sorted(v) for (k, v) in iteritems(external_tags)}
-                    tags = {k: sorted(v) for (k, v) in iteritems(tags)}
+                    external_tags = {k: sorted(v) for (k, v) in external_tags.items()}
+                    tags = {k: sorted(v) for (k, v) in tags.items()}
 
-                assert (
-                    external_tags == tags
-                ), 'Expected {} external tags for hostname {}, found {}. Submitted external tags: {}'.format(
-                    external_tags, hostname, tags, repr(self._external_tags)
+                assert external_tags == tags, (
+                    'Expected {} external tags for hostname {}, found {}. Submitted external tags: {}'.format(
+                        external_tags, hostname, tags, repr(self._external_tags)
+                    )
                 )
                 return
 
@@ -72,6 +86,25 @@ class DatadogAgentStub(object):
             count, tags_count, repr(self._external_tags)
         )
 
+    def assert_telemetry(self, check_name, metric_name, metric_type, metric_value):
+        values = self._sent_telemetry[(check_name, metric_name, metric_type)]
+        assert metric_value in values, 'Expected value {} for check {}, metric {}, type {}. Found {}.'.format(
+            metric_value, check_name, metric_name, metric_type, values
+        )
+
+    def assert_reported_issue(self, check_name, issue_id, issue):
+        reported = self._sent_reported_issues[check_name]
+        matching = [reported_issue for reported_issue in reported if reported_issue['id'] == issue_id]
+        assert matching, 'No reported issue with id {} for check {}. Found: {}'.format(issue_id, check_name, reported)
+        assert matching[0] == issue, 'Expected reported issue {} for check {}, found {}.'.format(
+            issue, check_name, matching[0]
+        )
+
+    def assert_resolved_issue(self, issue_id):
+        assert issue_id in self._sent_resolved_issues, 'Expected resolved issue {}. Found: {}'.format(
+            issue_id, self._sent_resolved_issues
+        )
+
     def get_hostname(self):
         return self._hostname
 
@@ -80,6 +113,15 @@ class DatadogAgentStub(object):
 
     def reset_hostname(self):
         self._hostname = 'stubbed.hostname'
+
+    def get_host_tags(self):
+        return self._host_tags
+
+    def _set_host_tags(self, tags_dict):
+        self._host_tags = json.encode(tags_dict)
+
+    def _reset_host_tags(self):
+        self._host_tags = "{}"
 
     def get_config(self, config_option):
         return self._config.get(config_option, '')
@@ -92,6 +134,9 @@ class DatadogAgentStub(object):
 
     def set_check_metadata(self, check_id, name, value):
         self._metadata[(check_id, name)] = value
+
+    def send_log(self, log_line, check_id):
+        self._sent_logs[check_id].append(json.decode(log_line))
 
     def set_external_tags(self, external_tags):
         self._external_tags = external_tags
@@ -110,8 +155,8 @@ class DatadogAgentStub(object):
         if options:
             # Options provided is a JSON string because the Go stub requires it, whereas
             # the python stub does not for things such as testing.
-            if json.loads(options).get('return_json_metadata', False):
-                return json.dumps({'query': re.sub(r'\s+', ' ', query or '').strip(), 'metadata': {}})
+            if json.decode(options).get('return_json_metadata', False):
+                return json.encode({'query': re.sub(r'\s+', ' ', query or '').strip(), 'metadata': {}})
         return re.sub(r'\s+', ' ', query or '').strip()
 
     def obfuscate_sql_exec_plan(self, plan, normalize=False):
@@ -123,6 +168,19 @@ class DatadogAgentStub(object):
 
     def set_process_start_time(self, time):
         self._process_start_time = time
+
+    def obfuscate_mongodb_string(self, command):
+        # Passthrough stub: obfuscation implementation is in Go code.
+        return command
+
+    def emit_agent_telemetry(self, check_name, metric_name, metric_value, metric_type):
+        self._sent_telemetry[(check_name, metric_name, metric_type)].append(metric_value)
+
+    def report_issue(self, check_name, report_json):
+        self._sent_reported_issues[check_name].append(json.decode(report_json))
+
+    def resolve_issue(self, issue_id):
+        self._sent_resolved_issues.append(issue_id)
 
 
 # Use the stub as a singleton

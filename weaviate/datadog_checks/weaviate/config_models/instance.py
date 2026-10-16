@@ -13,11 +13,17 @@ from types import MappingProxyType
 from typing import Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing_extensions import Literal
 
 from datadog_checks.base.utils.functions import identity
 from datadog_checks.base.utils.models import validation
 
 from . import defaults, validators
+
+
+SECURE_FIELD_NAMES = frozenset(
+    ['auth_token', 'kerberos_cache', 'kerberos_keytab', 'tls_ca_cert', 'tls_cert', 'tls_private_key']
+)
 
 
 class AuthToken(BaseModel):
@@ -29,7 +35,7 @@ class AuthToken(BaseModel):
     writer: Optional[MappingProxyType[str, Any]] = None
 
 
-class ExtraMetric(BaseModel):
+class ExtraMetrics(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         extra='allow',
@@ -48,7 +54,7 @@ class MetricPatterns(BaseModel):
     include: Optional[tuple[str, ...]] = None
 
 
-class Metric(BaseModel):
+class Metrics(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         extra='allow',
@@ -68,7 +74,7 @@ class Proxy(BaseModel):
     no_proxy: Optional[tuple[str, ...]] = None
 
 
-class ShareLabel(BaseModel):
+class ShareLabels(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         frozen=True,
@@ -97,11 +103,12 @@ class InstanceConfig(BaseModel):
     disable_generic_tags: Optional[bool] = None
     empty_default_hostname: Optional[bool] = None
     enable_health_service_check: Optional[bool] = None
+    enable_legacy_tags_normalization: Optional[bool] = None
     exclude_labels: Optional[tuple[str, ...]] = None
     exclude_metrics: Optional[tuple[str, ...]] = None
     exclude_metrics_by_labels: Optional[MappingProxyType[str, Union[bool, tuple[str, ...]]]] = None
     extra_headers: Optional[MappingProxyType[str, Any]] = None
-    extra_metrics: Optional[tuple[Union[str, MappingProxyType[str, Union[str, ExtraMetric]]], ...]] = None
+    extra_metrics: Optional[tuple[Union[str, MappingProxyType[str, Union[str, ExtraMetrics]]], ...]] = None
     headers: Optional[MappingProxyType[str, Any]] = None
     histogram_buckets_as_distributions: Optional[bool] = None
     hostname_format: Optional[str] = None
@@ -109,7 +116,7 @@ class InstanceConfig(BaseModel):
     ignore_connection_errors: Optional[bool] = None
     ignore_tags: Optional[tuple[str, ...]] = None
     include_labels: Optional[tuple[str, ...]] = None
-    kerberos_auth: Optional[str] = None
+    kerberos_auth: Optional[Literal['required', 'optional', 'disabled']] = None
     kerberos_cache: Optional[str] = None
     kerberos_delegate: Optional[bool] = None
     kerberos_force_initiate: Optional[bool] = None
@@ -118,7 +125,7 @@ class InstanceConfig(BaseModel):
     kerberos_principal: Optional[str] = None
     log_requests: Optional[bool] = None
     metric_patterns: Optional[MetricPatterns] = None
-    metrics: Optional[tuple[Union[str, MappingProxyType[str, Union[str, Metric]]], ...]] = None
+    metrics: Optional[tuple[Union[str, MappingProxyType[str, Union[str, Metrics]]], ...]] = None
     min_collection_interval: Optional[float] = None
     namespace: Optional[str] = Field(None, pattern='\\w*')
     non_cumulative_histogram_buckets: Optional[bool] = None
@@ -133,7 +140,7 @@ class InstanceConfig(BaseModel):
     rename_labels: Optional[MappingProxyType[str, Any]] = None
     request_size: Optional[float] = None
     service: Optional[str] = None
-    share_labels: Optional[MappingProxyType[str, Union[bool, ShareLabel]]] = None
+    share_labels: Optional[MappingProxyType[str, Union[bool, ShareLabels]]] = None
     skip_proxy: Optional[bool] = None
     tag_by_endpoint: Optional[bool] = None
     tags: Optional[tuple[str, ...]] = None
@@ -141,6 +148,7 @@ class InstanceConfig(BaseModel):
     timeout: Optional[float] = None
     tls_ca_cert: Optional[str] = None
     tls_cert: Optional[str] = None
+    tls_ciphers: Optional[tuple[str, ...]] = None
     tls_ignore_warning: Optional[bool] = None
     tls_private_key: Optional[str] = None
     tls_protocols_allowed: Optional[tuple[str, ...]] = None
@@ -162,6 +170,11 @@ class InstanceConfig(BaseModel):
         field_name = field.alias or info.field_name
         if field_name in info.context['configured_fields']:
             value = getattr(validators, f'instance_{info.field_name}', identity)(value, field=field)
+
+            if info.field_name in SECURE_FIELD_NAMES:
+                validation.security.check_field_trusted_provider(
+                    info.field_name, value, info.context.get('security_config')
+                )
         else:
             value = getattr(defaults, f'instance_{info.field_name}', lambda: value)()
 

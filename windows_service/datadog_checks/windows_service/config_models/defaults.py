@@ -8,6 +8,10 @@
 #     ddev -x validate models -s <INTEGRATION_NAME>
 
 
+def instance_collect_display_name_as_tag():
+    return False
+
+
 def instance_disable_generic_tags():
     return False
 
@@ -17,6 +21,14 @@ def instance_disable_legacy_service_tag():
 
 
 def instance_empty_default_hostname():
+    return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
+
+
+def instance_group_per_user_services():
     return False
 
 

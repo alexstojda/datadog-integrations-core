@@ -6,14 +6,13 @@ import os
 import ssl
 import threading
 import time
+from http import server as BaseHTTPServer
+from urllib.parse import parse_qsl, unquote_plus, urlencode, urljoin, urlparse, urlunparse
 
 import mock
 import pytest
 import urllib3
-from requests import RequestException
-from six import iteritems
-from six.moves import BaseHTTPServer
-from six.moves.urllib.parse import parse_qsl, unquote_plus, urlencode, urljoin, urlparse, urlunparse
+from requests import ConnectionError, RequestException
 
 from datadog_checks.dev.http import MockResponse
 from datadog_checks.dev.utils import get_metadata_metrics
@@ -24,6 +23,7 @@ from .common import CLUSTER_NAME, CLUSTER_TAGS, INSTANCE_DRIVER_1, INSTANCE_DRIV
 # IDs
 YARN_APP_ID = 'application_1459362484344_0011'
 SPARK_APP_ID = 'app_001'
+SPARK_APP2_ID = 'app_002'
 
 APP_NAME = 'PySparkShell'
 
@@ -160,29 +160,35 @@ STANDALONE_SPARK_METRICS_JSON_URL_PRE20 = Url(join_url_dir(SPARK_APP_URL, 'metri
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
 CERTIFICATE_DIR = os.path.join(os.path.dirname(__file__), 'certificate')
 
+DEFAULT_RESPONSES = {
+    '/jobs': MockResponse(file_path=os.path.join(FIXTURE_DIR, 'job_metrics')),
+    '/stages': MockResponse(file_path=os.path.join(FIXTURE_DIR, 'stage_metrics')),
+    '/executors': MockResponse(file_path=os.path.join(FIXTURE_DIR, 'executor_metrics')),
+    '/storage/rdd': MockResponse(file_path=os.path.join(FIXTURE_DIR, 'rdd_metrics')),
+    '/streaming/statistics': MockResponse(file_path=os.path.join(FIXTURE_DIR, 'streaming_statistics')),
+    '/metrics/json': MockResponse(file_path=os.path.join(FIXTURE_DIR, 'metrics_json')),
+    '/api/v1/version': MockResponse(file_path=os.path.join(FIXTURE_DIR, 'version')),
+}
 
-def yarn_requests_get_mock(url, *args, **kwargs):
+
+def get_default_mock(url):
+    for k, v in DEFAULT_RESPONSES.items():
+        if url.endswith(k):
+            return v
+    raise KeyError(f"{url} does not match any response fixtures.")
+
+
+def yarn_requests_get_mock(session, url, *args, **kwargs):
     arg_url = Url(url)
 
     if arg_url == YARN_APP_URL:
         return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'yarn_apps'))
     elif arg_url == YARN_SPARK_APP_URL:
         return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'spark_apps'))
-    elif arg_url == YARN_SPARK_JOB_URL:
-        return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'job_metrics'))
-    elif arg_url == YARN_SPARK_STAGE_URL:
-        return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'stage_metrics'))
-    elif arg_url == YARN_SPARK_EXECUTOR_URL:
-        return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'executor_metrics'))
-    elif arg_url == YARN_SPARK_RDD_URL:
-        return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'rdd_metrics'))
-    elif arg_url == YARN_SPARK_STREAMING_STATISTICS_URL:
-        return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'streaming_statistics'))
-    elif arg_url == YARN_SPARK_METRICS_JSON_URL:
-        return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'metrics_json'))
+    return get_default_mock(url)
 
 
-def yarn_requests_auth_mock(*args, **kwargs):
+def yarn_requests_auth_mock(session, url, *args, **kwargs):
     # Make sure we're passing in authentication
     assert 'auth' in kwargs, "Error, missing authentication"
 
@@ -190,10 +196,10 @@ def yarn_requests_auth_mock(*args, **kwargs):
     assert kwargs['auth'] == (TEST_USERNAME, TEST_PASSWORD), "Incorrect username or password"
 
     # Return mocked request.get(...)
-    return yarn_requests_get_mock(*args, **kwargs)
+    return yarn_requests_get_mock(session, url, *args, **kwargs)
 
 
-def mesos_requests_get_mock(url, *args, **kwargs):
+def mesos_requests_get_mock(session, url, *args, **kwargs):
     arg_url = Url(url)
 
     if arg_url == MESOS_APP_URL:
@@ -214,7 +220,7 @@ def mesos_requests_get_mock(url, *args, **kwargs):
         return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'metrics_json'))
 
 
-def driver_requests_get_mock(url, *args, **kwargs):
+def driver_requests_get_mock(session, url, *args, **kwargs):
     arg_url = Url(url)
 
     if arg_url == DRIVER_APP_URL:
@@ -235,7 +241,7 @@ def driver_requests_get_mock(url, *args, **kwargs):
         return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'metrics_json'))
 
 
-def standalone_requests_get_mock(url, *args, **kwargs):
+def standalone_requests_get_mock(session, url, *args, **kwargs):
     arg_url = Url(url)
 
     if arg_url == STANDALONE_APP_URL:
@@ -258,7 +264,7 @@ def standalone_requests_get_mock(url, *args, **kwargs):
         return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'metrics_json'))
 
 
-def standalone_requests_pre20_get_mock(url, *args, **kwargs):
+def standalone_requests_pre20_get_mock(session, url, *args, **kwargs):
     arg_url = Url(url)
 
     if arg_url == STANDALONE_APP_URL:
@@ -293,7 +299,7 @@ def standalone_requests_pre20_get_mock(url, *args, **kwargs):
         return MockResponse(file_path=os.path.join(FIXTURE_DIR, 'metrics_json'))
 
 
-def proxy_with_warning_page_mock(url, *args, **kwargs):
+def proxy_with_warning_page_mock(session, url, *args, **kwargs):
     cookies = kwargs.get('cookies') or {}
     proxy_cookie = cookies.get('proxy_cookie')
     url_parts = list(urlparse(url))
@@ -301,7 +307,7 @@ def proxy_with_warning_page_mock(url, *args, **kwargs):
     if proxy_cookie and query.get('proxyapproved') == 'true':
         del query['proxyapproved']
         url_parts[4] = urlencode(query)
-        return standalone_requests_get_mock(urlunparse(url_parts), *args[1:], **kwargs)
+        return standalone_requests_get_mock(session, urlunparse(url_parts), *args[1:], **kwargs)
     else:
         # Display the html warning page with the redirect link
         query['proxyapproved'] = 'true'
@@ -362,6 +368,15 @@ STANDALONE_CONFIG = {
     'executor_level_metrics': True,
 }
 
+STANDALONE_CONFIG_STAGE_DISABLED = {
+    'spark_url': 'http://localhost:8080',
+    'cluster_name': CLUSTER_NAME,
+    'spark_cluster_mode': 'spark_standalone_mode',
+    'executor_level_metrics': True,
+    'disable_spark_stage_metrics': True,
+    'disable_spark_job_stage_tags': True,
+}
+
 STANDALONE_CONFIG_PRE_20 = {
     'spark_url': 'http://localhost:8080',
     'cluster_name': CLUSTER_NAME,
@@ -389,7 +404,8 @@ SSL_CERT_CONFIG = {
     'spark_url': SSL_SERVER_URL,
     'cluster_name': CLUSTER_NAME,
     'spark_cluster_mode': 'spark_standalone_mode',
-    'ssl_verify': os.path.join(CERTIFICATE_DIR, 'cert.cert'),
+    'ssl_verify': True,
+    'ssl_ca_cert': os.path.join(CERTIFICATE_DIR, 'cert.cert'),
     'executor_level_metrics': True,
 }
 
@@ -413,6 +429,11 @@ SPARK_JOB_RUNNING_METRIC_TAGS = [
     'stage_id:1',
 ] + COMMON_TAGS
 
+SPARK_JOB_RUNNING_NO_STAGE_METRIC_TAGS = [
+    'status:running',
+    'job_id:0',
+] + COMMON_TAGS
+
 SPARK_JOB_SUCCEEDED_METRIC_VALUES = {
     'spark.job.count': 3,
     'spark.job.num_tasks': 1000,
@@ -431,6 +452,11 @@ SPARK_JOB_SUCCEEDED_METRIC_TAGS = [
     'job_id:0',
     'stage_id:0',
     'stage_id:1',
+] + COMMON_TAGS
+
+SPARK_JOB_SUCCEEDED_NO_STAGE_METRIC_TAGS = [
+    'status:succeeded',
+    'job_id:0',
 ] + COMMON_TAGS
 
 SPARK_STAGE_RUNNING_METRIC_VALUES = {
@@ -492,6 +518,33 @@ SPARK_DRIVER_METRIC_VALUES = {
     'spark.driver.total_shuffle_read': 90,
     'spark.driver.total_shuffle_write': 89,
     'spark.driver.max_memory': 278019440,
+    'spark.driver.mem.used_on_heap_storage': 79283,
+    'spark.driver.mem.used_off_heap_storage': 0,
+    'spark.driver.mem.total_on_heap_storage': 384093388,
+    'spark.driver.mem.total_off_heap_storage': 0,
+}
+
+SPARK_DRIVER_OPTIONAL_METRIC_VALUES = {
+    'spark.driver.peak_mem.jvm_heap_memory': 345498432,
+    'spark.driver.peak_mem.jvm_off_heap_memory': 196924864,
+    'spark.driver.peak_mem.on_heap_execution': 0,
+    'spark.driver.peak_mem.off_heap_execution': 0,
+    'spark.driver.peak_mem.on_heap_storage': 2445933,
+    'spark.driver.peak_mem.off_heap_storage': 0,
+    'spark.driver.peak_mem.on_heap_unified': 2445933,
+    'spark.driver.peak_mem.off_heap_unified': 0,
+    'spark.driver.peak_mem.direct_pool': 276762,
+    'spark.driver.peak_mem.mapped_pool': 0,
+    'spark.driver.peak_mem.minor_gc_count': 118,
+    'spark.driver.peak_mem.minor_gc_time': 1436,
+    'spark.driver.peak_mem.major_gc_count': 4,
+    'spark.driver.peak_mem.major_gc_time': 419,
+    'spark.driver.peak_mem.process_tree_jvm': 0,
+    'spark.driver.peak_mem.process_tree_jvm_rss': 0,
+    'spark.driver.peak_mem.process_tree_python': 0,
+    'spark.driver.peak_mem.process_tree_python_rss': 0,
+    'spark.driver.peak_mem.process_tree_other': 0,
+    'spark.driver.peak_mem.process_tree_other_rss': 0,
 }
 
 SPARK_EXECUTOR_METRIC_VALUES = {
@@ -508,6 +561,33 @@ SPARK_EXECUTOR_METRIC_VALUES = {
     'spark.executor.total_shuffle_read': 10,
     'spark.executor.total_shuffle_write': 11,
     'spark.executor.max_memory': 555755765,
+    'spark.executor.mem.used_on_heap_storage': 79283,
+    'spark.executor.mem.used_off_heap_storage': 0,
+    'spark.executor.mem.total_on_heap_storage': 384093388,
+    'spark.executor.mem.total_off_heap_storage': 0,
+}
+
+SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES = {
+    'spark.executor.peak_mem.jvm_heap_memory': 361970928,
+    'spark.executor.peak_mem.jvm_off_heap_memory': 94409256,
+    'spark.executor.peak_mem.on_heap_execution': 16777216,
+    'spark.executor.peak_mem.off_heap_execution': 0,
+    'spark.executor.peak_mem.on_heap_storage': 2181737,
+    'spark.executor.peak_mem.off_heap_storage': 0,
+    'spark.executor.peak_mem.on_heap_unified': 18958953,
+    'spark.executor.peak_mem.off_heap_unified': 0,
+    'spark.executor.peak_mem.direct_pool': 8710,
+    'spark.executor.peak_mem.mapped_pool': 0,
+    'spark.executor.peak_mem.minor_gc_count': 988,
+    'spark.executor.peak_mem.minor_gc_time': 5670,
+    'spark.executor.peak_mem.major_gc_count': 3,
+    'spark.executor.peak_mem.major_gc_time': 252,
+    'spark.executor.peak_mem.process_tree_jvm': 0,
+    'spark.executor.peak_mem.process_tree_jvm_rss': 0,
+    'spark.executor.peak_mem.process_tree_python': 0,
+    'spark.executor.peak_mem.process_tree_python_rss': 0,
+    'spark.executor.peak_mem.process_tree_other': 0,
+    'spark.executor.peak_mem.process_tree_other_rss': 0,
 }
 
 SPARK_EXECUTOR_LEVEL_METRIC_VALUES = {
@@ -523,6 +603,33 @@ SPARK_EXECUTOR_LEVEL_METRIC_VALUES = {
     'spark.executor.id.total_shuffle_read': 10,
     'spark.executor.id.total_shuffle_write': 11,
     'spark.executor.id.max_memory': 555755765,
+    'spark.executor.id.mem.used_on_heap_storage': 79283,
+    'spark.executor.id.mem.used_off_heap_storage': 0,
+    'spark.executor.id.mem.total_on_heap_storage': 384093388,
+    'spark.executor.id.mem.total_off_heap_storage': 0,
+}
+
+SPARK_EXECUTOR_LEVEL_OPTIONAL_PROCESS_TREE_METRIC_VALUES = {
+    'spark.executor.id.peak_mem.jvm_heap_memory': 361970928,
+    'spark.executor.id.peak_mem.jvm_off_heap_memory': 94409256,
+    'spark.executor.id.peak_mem.on_heap_execution': 16777216,
+    'spark.executor.id.peak_mem.off_heap_execution': 0,
+    'spark.executor.id.peak_mem.on_heap_storage': 2181737,
+    'spark.executor.id.peak_mem.off_heap_storage': 0,
+    'spark.executor.id.peak_mem.on_heap_unified': 18958953,
+    'spark.executor.id.peak_mem.off_heap_unified': 0,
+    'spark.executor.id.peak_mem.direct_pool': 8710,
+    'spark.executor.id.peak_mem.mapped_pool': 0,
+    'spark.executor.id.peak_mem.minor_gc_count': 988,
+    'spark.executor.id.peak_mem.minor_gc_time': 5670,
+    'spark.executor.id.peak_mem.major_gc_count': 3,
+    'spark.executor.id.peak_mem.major_gc_time': 252,
+    'spark.executor.id.peak_mem.process_tree_jvm': 0,
+    'spark.executor.id.peak_mem.process_tree_jvm_rss': 0,
+    'spark.executor.id.peak_mem.process_tree_python': 0,
+    'spark.executor.id.peak_mem.process_tree_python_rss': 0,
+    'spark.executor.id.peak_mem.process_tree_other': 0,
+    'spark.executor.id.peak_mem.process_tree_other_rss': 0,
 }
 
 SPARK_EXECUTOR_LEVEL_METRIC_TAGS = [
@@ -574,48 +681,50 @@ SPARK_STRUCTURED_STREAMING_METRIC_PUNCTUATED_TAGS = {
 }
 
 
+def _assert(aggregator, values_and_tags):
+    for m_vals, tags in values_and_tags:
+        for metric, value in m_vals.items():
+            aggregator.assert_metric(metric, value=value, tags=tags)
+
+
 @pytest.mark.unit
 def test_yarn(aggregator, dd_run_check):
-    with mock.patch('requests.get', yarn_requests_get_mock):
+    with mock.patch('requests.Session.get', yarn_requests_get_mock):
         c = SparkCheck('spark', {}, [YARN_CONFIG])
         dd_run_check(c)
 
-        # Check the succeeded job metrics
-        for metric, value in iteritems(SPARK_JOB_SUCCEEDED_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_SUCCEEDED_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the running stage metrics
-        for metric, value in iteritems(SPARK_STAGE_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_RUNNING_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the complete stage metrics
-        for metric, value in iteritems(SPARK_STAGE_COMPLETE_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_COMPLETE_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the driver metrics
-        for metric, value in iteritems(SPARK_DRIVER_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the executor level metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_LEVEL_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the summary executor metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the RDD metrics
-        for metric, value in iteritems(SPARK_RDD_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the streaming statistics metrics
-        for metric, value in iteritems(SPARK_STREAMING_STATISTICS_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the structured streaming metrics
-        for metric, value in iteritems(SPARK_STRUCTURED_STREAMING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
+        _assert(
+            aggregator,
+            [
+                # Check the succeeded job metrics
+                (SPARK_JOB_SUCCEEDED_METRIC_VALUES, SPARK_JOB_SUCCEEDED_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the running stage metrics
+                (SPARK_STAGE_RUNNING_METRIC_VALUES, SPARK_STAGE_RUNNING_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the complete stage metrics
+                (SPARK_STAGE_COMPLETE_METRIC_VALUES, SPARK_STAGE_COMPLETE_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the driver metrics
+                (SPARK_DRIVER_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the optional driver metrics
+                (SPARK_DRIVER_OPTIONAL_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the executor level metrics
+                (SPARK_EXECUTOR_LEVEL_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the optional executor level metrics
+                (
+                    SPARK_EXECUTOR_LEVEL_OPTIONAL_PROCESS_TREE_METRIC_VALUES,
+                    SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS,
+                ),
+                # Check the summary executor metrics
+                (SPARK_EXECUTOR_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the optional summary executor metrics
+                (SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the RDD metrics
+                (SPARK_RDD_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the streaming statistics metrics
+                (SPARK_STREAMING_STATISTICS_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the structured streaming metrics
+                (SPARK_STRUCTURED_STREAMING_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+            ],
+        )
         tags = ['url:http://localhost:8088'] + CLUSTER_TAGS + CUSTOM_TAGS
         tags.sort()
 
@@ -635,7 +744,7 @@ def test_yarn(aggregator, dd_run_check):
 
 @pytest.mark.unit
 def test_auth_yarn(aggregator, dd_run_check):
-    with mock.patch('requests.get', yarn_requests_auth_mock):
+    with mock.patch('requests.Session.get', yarn_requests_auth_mock):
         c = SparkCheck('spark', {}, [YARN_AUTH_CONFIG])
         dd_run_check(c)
 
@@ -655,49 +764,43 @@ def test_auth_yarn(aggregator, dd_run_check):
 
 @pytest.mark.unit
 def test_mesos(aggregator, dd_run_check):
-    with mock.patch('requests.get', mesos_requests_get_mock):
+    with mock.patch('requests.Session.get', mesos_requests_get_mock):
         c = SparkCheck('spark', {}, [MESOS_CONFIG])
         dd_run_check(c)
-        # Check the running job metrics
-        for metric, value in iteritems(SPARK_JOB_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_RUNNING_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the succeeded job metrics
-        for metric, value in iteritems(SPARK_JOB_SUCCEEDED_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_SUCCEEDED_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the running stage metrics
-        for metric, value in iteritems(SPARK_STAGE_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_RUNNING_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the complete stage metrics
-        for metric, value in iteritems(SPARK_STAGE_COMPLETE_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_COMPLETE_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the driver metrics
-        for metric, value in iteritems(SPARK_DRIVER_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the executor level metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_LEVEL_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the summary executor metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the RDD metrics
-        for metric, value in iteritems(SPARK_RDD_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the streaming statistics metrics
-        for metric, value in iteritems(SPARK_STREAMING_STATISTICS_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the structured streaming metrics
-        for metric, value in iteritems(SPARK_STRUCTURED_STREAMING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
+        _assert(
+            aggregator,
+            [
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the succeeded job metrics
+                (SPARK_JOB_SUCCEEDED_METRIC_VALUES, SPARK_JOB_SUCCEEDED_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the running stage metrics
+                (SPARK_STAGE_RUNNING_METRIC_VALUES, SPARK_STAGE_RUNNING_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the complete stage metrics
+                (SPARK_STAGE_COMPLETE_METRIC_VALUES, SPARK_STAGE_COMPLETE_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the driver metrics
+                (SPARK_DRIVER_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the optional driver metrics
+                (SPARK_DRIVER_OPTIONAL_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the executor level metrics
+                (SPARK_EXECUTOR_LEVEL_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the optional executor level metrics
+                (
+                    SPARK_EXECUTOR_LEVEL_OPTIONAL_PROCESS_TREE_METRIC_VALUES,
+                    SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS,
+                ),
+                # Check the summary executor metrics
+                (SPARK_EXECUTOR_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the optional summary executor metrics
+                (SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the RDD metrics
+                (SPARK_RDD_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the streaming statistics metrics,
+                (SPARK_STREAMING_STATISTICS_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the structured streaming metrics
+                (SPARK_STRUCTURED_STREAMING_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+            ],
+        )
         # Check the service tests
 
         for sc in aggregator.service_checks(MESOS_SERVICE_CHECK):
@@ -720,7 +823,7 @@ def test_mesos(aggregator, dd_run_check):
 
 @pytest.mark.unit
 def test_mesos_filter(aggregator, dd_run_check):
-    with mock.patch('requests.get', mesos_requests_get_mock):
+    with mock.patch('requests.Session.get', mesos_requests_get_mock):
         c = SparkCheck('spark', {}, [MESOS_FILTERED_CONFIG])
         dd_run_check(c)
 
@@ -733,50 +836,44 @@ def test_mesos_filter(aggregator, dd_run_check):
 
 @pytest.mark.unit
 def test_driver_unit(aggregator, dd_run_check):
-    with mock.patch('requests.get', driver_requests_get_mock):
+    with mock.patch('requests.Session.get', driver_requests_get_mock):
         c = SparkCheck('spark', {}, [DRIVER_CONFIG])
         dd_run_check(c)
 
-        # Check the running job metrics
-        for metric, value in iteritems(SPARK_JOB_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_RUNNING_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the succeeded job metrics
-        for metric, value in iteritems(SPARK_JOB_SUCCEEDED_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_SUCCEEDED_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the running stage metrics
-        for metric, value in iteritems(SPARK_STAGE_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_RUNNING_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the complete stage metrics
-        for metric, value in iteritems(SPARK_STAGE_COMPLETE_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_COMPLETE_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the driver metrics
-        for metric, value in iteritems(SPARK_DRIVER_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the executor level metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_LEVEL_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS)
-
-        # Check the summary executor metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the RDD metrics
-        for metric, value in iteritems(SPARK_RDD_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the streaming statistics metrics
-        for metric, value in iteritems(SPARK_STREAMING_STATISTICS_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
-        # Check the structured streaming metrics
-        for metric, value in iteritems(SPARK_STRUCTURED_STREAMING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS + CUSTOM_TAGS)
-
+        _assert(
+            aggregator,
+            [
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the succeeded job metrics
+                (SPARK_JOB_SUCCEEDED_METRIC_VALUES, SPARK_JOB_SUCCEEDED_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the running stage metrics
+                (SPARK_STAGE_RUNNING_METRIC_VALUES, SPARK_STAGE_RUNNING_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the complete stage metrics
+                (SPARK_STAGE_COMPLETE_METRIC_VALUES, SPARK_STAGE_COMPLETE_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the driver metrics
+                (SPARK_DRIVER_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the optional driver metrics
+                (SPARK_DRIVER_OPTIONAL_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the executor level metrics
+                (SPARK_EXECUTOR_LEVEL_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS),
+                # Check the optional executor level metrics
+                (
+                    SPARK_EXECUTOR_LEVEL_OPTIONAL_PROCESS_TREE_METRIC_VALUES,
+                    SPARK_EXECUTOR_LEVEL_METRIC_TAGS + CUSTOM_TAGS,
+                ),
+                # Check the summary executor metrics
+                (SPARK_EXECUTOR_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the optional summary executor metrics
+                (SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the RDD metrics
+                (SPARK_RDD_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the streaming statistics metrics
+                (SPARK_STREAMING_STATISTICS_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+                # Check the structured streaming metrics
+                (SPARK_STRUCTURED_STREAMING_METRIC_VALUES, COMMON_TAGS + CUSTOM_TAGS),
+            ],
+        )
         # Check the service tests
 
         for sc in aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK):
@@ -799,54 +896,91 @@ def test_driver_unit(aggregator, dd_run_check):
 
 @pytest.mark.unit
 def test_standalone_unit(aggregator, dd_run_check):
-    with mock.patch('requests.get', standalone_requests_get_mock):
+    with mock.patch('requests.Session.get', standalone_requests_get_mock):
         c = SparkCheck('spark', {}, [STANDALONE_CONFIG])
         dd_run_check(c)
 
-        # Check the running job metrics
-        for metric, value in iteritems(SPARK_JOB_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_RUNNING_METRIC_TAGS)
+        _assert(
+            aggregator,
+            [
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_METRIC_TAGS),
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_METRIC_TAGS),
+                # Check the succeeded job metrics
+                (SPARK_JOB_SUCCEEDED_METRIC_VALUES, SPARK_JOB_SUCCEEDED_METRIC_TAGS),
+                # Check the running stage metrics
+                (SPARK_STAGE_RUNNING_METRIC_VALUES, SPARK_STAGE_RUNNING_METRIC_TAGS),
+                # Check the complete stage metrics
+                (SPARK_STAGE_COMPLETE_METRIC_VALUES, SPARK_STAGE_COMPLETE_METRIC_TAGS),
+                # Check the driver metrics
+                (SPARK_DRIVER_METRIC_VALUES, COMMON_TAGS),
+                # Check the optional driver metrics
+                (SPARK_DRIVER_OPTIONAL_METRIC_VALUES, COMMON_TAGS),
+                # Check the executor level metrics
+                (SPARK_EXECUTOR_LEVEL_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS),
+                # Check the optional executor level metrics
+                (SPARK_EXECUTOR_LEVEL_OPTIONAL_PROCESS_TREE_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS),
+                # Check the executor metrics
+                (SPARK_EXECUTOR_METRIC_VALUES, COMMON_TAGS),
+                # Check the optional summary executor metrics
+                (SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES, COMMON_TAGS),
+                # Check the RDD metrics
+                (SPARK_RDD_METRIC_VALUES, COMMON_TAGS),
+                # Check the streaming statistics metrics
+                (SPARK_STREAMING_STATISTICS_METRIC_VALUES, COMMON_TAGS),
+                # Check the structured streaming metrics
+                (SPARK_STRUCTURED_STREAMING_METRIC_VALUES, COMMON_TAGS),
+            ],
+        )
+        # Check the service tests
+        for sc in aggregator.service_checks(STANDALONE_SERVICE_CHECK):
+            assert sc.status == SparkCheck.OK
+            assert sc.tags == ['url:http://localhost:8080'] + CLUSTER_TAGS
+        for sc in aggregator.service_checks(SPARK_SERVICE_CHECK):
+            assert sc.status == SparkCheck.OK
+            assert sc.tags == ['url:http://localhost:4040'] + CLUSTER_TAGS
 
-        # Check the running job metrics
-        for metric, value in iteritems(SPARK_JOB_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_RUNNING_METRIC_TAGS)
+        # Assert coverage for this check on this instance
+        aggregator.assert_all_metrics_covered()
+        aggregator.assert_metrics_using_metadata(get_metadata_metrics())
 
-        # Check the succeeded job metrics
-        for metric, value in iteritems(SPARK_JOB_SUCCEEDED_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_SUCCEEDED_METRIC_TAGS)
 
-        # Check the running stage metrics
-        for metric, value in iteritems(SPARK_STAGE_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_RUNNING_METRIC_TAGS)
+@pytest.mark.unit
+def test_standalone_stage_disabled_unit(aggregator, dd_run_check):
+    with mock.patch('requests.Session.get', standalone_requests_get_mock):
+        c = SparkCheck('spark', {}, [STANDALONE_CONFIG_STAGE_DISABLED])
+        dd_run_check(c)
 
-        # Check the complete stage metrics
-        for metric, value in iteritems(SPARK_STAGE_COMPLETE_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_COMPLETE_METRIC_TAGS)
-
-        # Check the driver metrics
-        for metric, value in iteritems(SPARK_DRIVER_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the executor level metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_LEVEL_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_EXECUTOR_LEVEL_METRIC_TAGS)
-
-        # Check the executor metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the RDD metrics
-        for metric, value in iteritems(SPARK_RDD_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the streaming statistics metrics
-        for metric, value in iteritems(SPARK_STREAMING_STATISTICS_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the structured streaming metrics
-        for metric, value in iteritems(SPARK_STRUCTURED_STREAMING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
+        _assert(
+            aggregator,
+            [
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_NO_STAGE_METRIC_TAGS),
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_NO_STAGE_METRIC_TAGS),
+                # Check the succeeded job metrics
+                (SPARK_JOB_SUCCEEDED_METRIC_VALUES, SPARK_JOB_SUCCEEDED_NO_STAGE_METRIC_TAGS),
+                # Check the driver metrics
+                (SPARK_DRIVER_METRIC_VALUES, COMMON_TAGS),
+                # Check the optional driver metrics
+                (SPARK_DRIVER_OPTIONAL_METRIC_VALUES, COMMON_TAGS),
+                # Check the executor level metrics
+                (SPARK_EXECUTOR_LEVEL_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS),
+                # Check the optional executor level metrics
+                (SPARK_EXECUTOR_LEVEL_OPTIONAL_PROCESS_TREE_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS),
+                # Check the executor metrics
+                (SPARK_EXECUTOR_METRIC_VALUES, COMMON_TAGS),
+                # Check the optional summary executor metrics
+                (SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES, COMMON_TAGS),
+                # Check the RDD metrics
+                (SPARK_RDD_METRIC_VALUES, COMMON_TAGS),
+                # Check the streaming statistics metrics
+                (SPARK_STREAMING_STATISTICS_METRIC_VALUES, COMMON_TAGS),
+                # Check the structured streaming metrics
+                (SPARK_STRUCTURED_STREAMING_METRIC_VALUES, COMMON_TAGS),
+            ],
+        )
         # Check the service tests
         for sc in aggregator.service_checks(STANDALONE_SERVICE_CHECK):
             assert sc.status == SparkCheck.OK
@@ -863,52 +997,42 @@ def test_standalone_unit(aggregator, dd_run_check):
 @pytest.mark.unit
 def test_standalone_unit_with_proxy_warning_page(aggregator, dd_run_check):
     c = SparkCheck('spark', {}, [STANDALONE_CONFIG])
-    with mock.patch('requests.get', proxy_with_warning_page_mock):
+    with mock.patch('requests.Session.get', proxy_with_warning_page_mock):
         dd_run_check(c)
 
-        # Check the running job metrics
-        for metric, value in iteritems(SPARK_JOB_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_RUNNING_METRIC_TAGS)
-
-        # Check the running job metrics
-        for metric, value in iteritems(SPARK_JOB_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_RUNNING_METRIC_TAGS)
-
-        # Check the succeeded job metrics
-        for metric, value in iteritems(SPARK_JOB_SUCCEEDED_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_SUCCEEDED_METRIC_TAGS)
-
-        # Check the running stage metrics
-        for metric, value in iteritems(SPARK_STAGE_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_RUNNING_METRIC_TAGS)
-
-        # Check the complete stage metrics
-        for metric, value in iteritems(SPARK_STAGE_COMPLETE_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_COMPLETE_METRIC_TAGS)
-
-        # Check the driver metrics
-        for metric, value in iteritems(SPARK_DRIVER_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the executor level metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_LEVEL_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_EXECUTOR_LEVEL_METRIC_TAGS)
-
-        # Check the summary executor metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the RDD metrics
-        for metric, value in iteritems(SPARK_RDD_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the streaming statistics metrics
-        for metric, value in iteritems(SPARK_STREAMING_STATISTICS_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the structured streaming metrics
-        for metric, value in iteritems(SPARK_STRUCTURED_STREAMING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
+        _assert(
+            aggregator,
+            [
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_METRIC_TAGS),
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_METRIC_TAGS),
+                # Check the succeeded job metrics
+                (SPARK_JOB_SUCCEEDED_METRIC_VALUES, SPARK_JOB_SUCCEEDED_METRIC_TAGS),
+                # Check the running stage metrics
+                (SPARK_STAGE_RUNNING_METRIC_VALUES, SPARK_STAGE_RUNNING_METRIC_TAGS),
+                # Check the complete stage metrics
+                (SPARK_STAGE_COMPLETE_METRIC_VALUES, SPARK_STAGE_COMPLETE_METRIC_TAGS),
+                # Check the driver metrics
+                (SPARK_DRIVER_METRIC_VALUES, COMMON_TAGS),
+                # Check the optional driver metrics
+                (SPARK_DRIVER_OPTIONAL_METRIC_VALUES, COMMON_TAGS),
+                # Check the executor level metrics
+                (SPARK_EXECUTOR_LEVEL_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS),
+                # Check the optional executor level metrics
+                (SPARK_EXECUTOR_LEVEL_OPTIONAL_PROCESS_TREE_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS),
+                # Check the summary executor metrics
+                (SPARK_EXECUTOR_METRIC_VALUES, COMMON_TAGS),
+                # Check the optional summary executor metrics
+                (SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES, COMMON_TAGS),
+                # Check the RDD metrics
+                (SPARK_RDD_METRIC_VALUES, COMMON_TAGS),
+                # Check the streaming statistics metrics
+                (SPARK_STREAMING_STATISTICS_METRIC_VALUES, COMMON_TAGS),
+                # Check the structured streaming metrics
+                (SPARK_STRUCTURED_STREAMING_METRIC_VALUES, COMMON_TAGS),
+            ],
+        )
 
         # Check the service tests
         for sc in aggregator.service_checks(STANDALONE_SERVICE_CHECK):
@@ -925,53 +1049,43 @@ def test_standalone_unit_with_proxy_warning_page(aggregator, dd_run_check):
 
 @pytest.mark.unit
 def test_standalone_pre20(aggregator, dd_run_check):
-    with mock.patch('requests.get', standalone_requests_pre20_get_mock):
+    with mock.patch('requests.Session.get', standalone_requests_pre20_get_mock):
         c = SparkCheck('spark', {}, [STANDALONE_CONFIG_PRE_20])
         dd_run_check(c)
 
-        # Check the running job metrics
-        for metric, value in iteritems(SPARK_JOB_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_RUNNING_METRIC_TAGS)
-
-        # Check the running job metrics
-        for metric, value in iteritems(SPARK_JOB_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_RUNNING_METRIC_TAGS)
-
-        # Check the succeeded job metrics
-        for metric, value in iteritems(SPARK_JOB_SUCCEEDED_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_JOB_SUCCEEDED_METRIC_TAGS)
-
-        # Check the running stage metrics
-        for metric, value in iteritems(SPARK_STAGE_RUNNING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_RUNNING_METRIC_TAGS)
-
-        # Check the complete stage metrics
-        for metric, value in iteritems(SPARK_STAGE_COMPLETE_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_STAGE_COMPLETE_METRIC_TAGS)
-
-        # Check the driver metrics
-        for metric, value in iteritems(SPARK_DRIVER_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the executor level metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_LEVEL_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=SPARK_EXECUTOR_LEVEL_METRIC_TAGS)
-
-        # Check the summary executor metrics
-        for metric, value in iteritems(SPARK_EXECUTOR_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the RDD metrics
-        for metric, value in iteritems(SPARK_RDD_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the streaming statistics metrics
-        for metric, value in iteritems(SPARK_STREAMING_STATISTICS_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
-
-        # Check the structured streaming metrics
-        for metric, value in iteritems(SPARK_STRUCTURED_STREAMING_METRIC_VALUES):
-            aggregator.assert_metric(metric, value=value, tags=COMMON_TAGS)
+        _assert(
+            aggregator,
+            [
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_METRIC_TAGS),
+                # Check the running job metrics
+                (SPARK_JOB_RUNNING_METRIC_VALUES, SPARK_JOB_RUNNING_METRIC_TAGS),
+                # Check the succeeded job metrics
+                (SPARK_JOB_SUCCEEDED_METRIC_VALUES, SPARK_JOB_SUCCEEDED_METRIC_TAGS),
+                # Check the running stage metrics
+                (SPARK_STAGE_RUNNING_METRIC_VALUES, SPARK_STAGE_RUNNING_METRIC_TAGS),
+                # Check the complete stage metrics
+                (SPARK_STAGE_COMPLETE_METRIC_VALUES, SPARK_STAGE_COMPLETE_METRIC_TAGS),
+                # Check the driver metrics
+                (SPARK_DRIVER_METRIC_VALUES, COMMON_TAGS),
+                # Check the optional driver metrics
+                (SPARK_DRIVER_OPTIONAL_METRIC_VALUES, COMMON_TAGS),
+                # Check the executor level metrics
+                (SPARK_EXECUTOR_LEVEL_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS),
+                # Check the optional executor level metrics
+                (SPARK_EXECUTOR_LEVEL_OPTIONAL_PROCESS_TREE_METRIC_VALUES, SPARK_EXECUTOR_LEVEL_METRIC_TAGS),
+                # Check the summary executor metrics
+                (SPARK_EXECUTOR_METRIC_VALUES, COMMON_TAGS),
+                # Check the optional summary executor metrics
+                (SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES, COMMON_TAGS),
+                # Check the RDD metrics
+                (SPARK_RDD_METRIC_VALUES, COMMON_TAGS),
+                # Check the streaming statistics metrics
+                (SPARK_STREAMING_STATISTICS_METRIC_VALUES, COMMON_TAGS),
+                # Check the structured streaming metrics
+                (SPARK_STRUCTURED_STREAMING_METRIC_VALUES, COMMON_TAGS),
+            ],
+        )
 
         # Check the service tests
         for sc in aggregator.service_checks(STANDALONE_SERVICE_CHECK):
@@ -988,7 +1102,7 @@ def test_standalone_pre20(aggregator, dd_run_check):
 
 @pytest.mark.unit
 def test_metadata(aggregator, datadog_agent, dd_run_check):
-    with mock.patch('requests.get', standalone_requests_pre20_get_mock):
+    with mock.patch('requests.Session.get', standalone_requests_pre20_get_mock):
         c = SparkCheck(CHECK_NAME, {}, [STANDALONE_CONFIG_PRE_20])
         c.check_id = "test:123"
         dd_run_check(c)
@@ -1014,7 +1128,7 @@ def test_disable_legacy_cluster_tags(aggregator, dd_run_check):
     instance = MESOS_FILTERED_CONFIG
     instance['disable_legacy_cluster_tag'] = True
 
-    with mock.patch('requests.get', mesos_requests_get_mock):
+    with mock.patch('requests.Session.get', mesos_requests_get_mock):
         c = SparkCheck('spark', {}, [instance])
         dd_run_check(c)
 
@@ -1043,18 +1157,18 @@ def test_enable_query_name_tag_for_structured_streaming(
 ):
     instance['enable_query_name_tag'] = True
 
-    with mock.patch('requests.get', requests_get_mock):
+    with mock.patch('requests.Session.get', requests_get_mock):
         c = SparkCheck('spark', {}, [instance])
         dd_run_check(c)
 
-        for metric, value in iteritems(SPARK_STRUCTURED_STREAMING_METRIC_VALUES):
+        for metric, value in SPARK_STRUCTURED_STREAMING_METRIC_VALUES.items():
             tags = base_tags
             if metric not in SPARK_STRUCTURED_STREAMING_METRIC_NO_TAGS:
                 tags = base_tags + ["query_name:my_named_query"]
 
             aggregator.assert_metric(metric, value=value, tags=tags)
 
-        for metric, value in iteritems(SPARK_STRUCTURED_STREAMING_METRIC_PUNCTUATED_TAGS):
+        for metric, value in SPARK_STRUCTURED_STREAMING_METRIC_PUNCTUATED_TAGS.items():
             tags = base_tags + ["query_name:my.app.punctuation"]
 
             aggregator.assert_metric(metric, value=value, tags=tags)
@@ -1071,6 +1185,124 @@ def test_do_not_crash_on_version_collection_failure():
     with mock.patch.object(c, '_rest_request_to_json', rest_requests_to_json):
         # ensure no exception is raised by calling collect_version
         assert not c._collect_version(running_apps, [])
+
+
+@pytest.mark.unit
+def test_driver_startup_message_default_retries(aggregator, caplog):
+    """Default behavior (startup_wait_retries=3): retry 3 times then raise."""
+    from simplejson import JSONDecodeError
+
+    check = SparkCheck('spark', {}, [DRIVER_CONFIG])
+    response = MockResponse(content="Spark is starting up. Please wait a while until it's ready.")
+
+    with caplog.at_level(logging.DEBUG):
+        with mock.patch.object(check, '_rest_request', return_value=response):
+            # First 3 attempts should return None (default is 3 retries)
+            for i in range(3):
+                result = check._rest_request_to_json(
+                    DRIVER_CONFIG['spark_url'], SPARK_REST_PATH, SPARK_DRIVER_SERVICE_CHECK, []
+                )
+                assert result is None, f"Attempt {i + 1} should return None"
+
+            # 4th attempt should raise
+            with pytest.raises(JSONDecodeError):
+                check._rest_request_to_json(DRIVER_CONFIG['spark_url'], SPARK_REST_PATH, SPARK_DRIVER_SERVICE_CHECK, [])
+
+    assert 'spark driver not ready yet' in caplog.text.lower()
+    assert 'retries exhausted' in caplog.text.lower()
+
+    aggregator.assert_service_check(
+        SPARK_DRIVER_SERVICE_CHECK,
+        status=SparkCheck.CRITICAL,
+        tags=['url:{}'.format(DRIVER_CONFIG['spark_url'])],
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("retries_value", [0, -1, -5])
+def test_driver_startup_message_disabled(aggregator, retries_value):
+    """When startup_wait_retries<=0, treat startup messages as errors immediately."""
+    from simplejson import JSONDecodeError
+
+    config = DRIVER_CONFIG.copy()
+    config['startup_wait_retries'] = retries_value
+    check = SparkCheck('spark', {}, [config])
+    response = MockResponse(content="Spark is starting up. Please wait a while until it's ready.")
+
+    with mock.patch.object(check, '_rest_request', return_value=response):
+        with pytest.raises(JSONDecodeError):
+            check._rest_request_to_json(config['spark_url'], SPARK_REST_PATH, SPARK_DRIVER_SERVICE_CHECK, [])
+
+    aggregator.assert_service_check(
+        SPARK_DRIVER_SERVICE_CHECK,
+        status=SparkCheck.CRITICAL,
+        tags=['url:{}'.format(config['spark_url'])],
+    )
+
+
+@pytest.mark.unit
+def test_driver_startup_message_limited_retries(aggregator, caplog):
+    """When startup_wait_retries>0, retry N times then raise."""
+    from simplejson import JSONDecodeError
+
+    config = DRIVER_CONFIG.copy()
+    config['startup_wait_retries'] = 3
+    check = SparkCheck('spark', {}, [config])
+    response = MockResponse(content="Spark is starting up. Please wait a while until it's ready.")
+
+    with caplog.at_level(logging.DEBUG):
+        with mock.patch.object(check, '_rest_request', return_value=response):
+            # First 3 attempts should return None
+            for i in range(3):
+                result = check._rest_request_to_json(
+                    config['spark_url'], SPARK_REST_PATH, SPARK_DRIVER_SERVICE_CHECK, []
+                )
+                assert result is None, f"Attempt {i + 1} should return None"
+
+            # 4th attempt should raise
+            with pytest.raises(JSONDecodeError):
+                check._rest_request_to_json(config['spark_url'], SPARK_REST_PATH, SPARK_DRIVER_SERVICE_CHECK, [])
+
+    assert 'attempt 1/3' in caplog.text.lower()
+    assert 'attempt 3/3' in caplog.text.lower()
+    assert 'retries exhausted' in caplog.text.lower()
+
+    aggregator.assert_service_check(
+        SPARK_DRIVER_SERVICE_CHECK,
+        status=SparkCheck.CRITICAL,
+        tags=['url:{}'.format(config['spark_url'])],
+    )
+
+
+@pytest.mark.unit
+def test_driver_startup_retry_counter_resets_on_success(caplog):
+    """Verify the retry counter resets after a successful JSON response."""
+    config = DRIVER_CONFIG.copy()
+    config['startup_wait_retries'] = 2
+    check = SparkCheck('spark', {}, [config])
+    startup_response = MockResponse(content="Spark is starting up. Please wait a while until it's ready.")
+    success_response = MockResponse(json_data=[{"id": "app_001", "name": "TestApp"}])
+
+    with caplog.at_level(logging.DEBUG):
+        with mock.patch.object(check, '_rest_request', return_value=startup_response):
+            # Use 1 retry
+            result = check._rest_request_to_json(config['spark_url'], SPARK_REST_PATH, SPARK_DRIVER_SERVICE_CHECK, [])
+            assert result is None
+            assert check._startup_retry_count == 1
+
+        # Successful response resets counter
+        with mock.patch.object(check, '_rest_request', return_value=success_response):
+            result = check._rest_request_to_json(config['spark_url'], SPARK_REST_PATH, SPARK_DRIVER_SERVICE_CHECK, [])
+            assert result == [{"id": "app_001", "name": "TestApp"}]
+            assert check._startup_retry_count == 0
+
+        # After reset, we should have 2 retries available again
+        with mock.patch.object(check, '_rest_request', return_value=startup_response):
+            for _ in range(2):
+                result = check._rest_request_to_json(
+                    config['spark_url'], SPARK_REST_PATH, SPARK_DRIVER_SERVICE_CHECK, []
+                )
+                assert result is None
 
 
 @pytest.mark.unit
@@ -1127,7 +1359,7 @@ def test_do_not_crash_on_single_app_failure():
     ids=["driver", "yarn", "mesos", "standalone", "standalone_pre_20"],
 )
 def test_no_running_apps(aggregator, dd_run_check, instance, service_check, caplog):
-    with mock.patch('requests.get', return_value=MockResponse("{}")):
+    with mock.patch('requests.Session.get', return_value=MockResponse("{}")):
         with caplog.at_level(logging.WARNING):
             dd_run_check(SparkCheck('spark', {}, [instance]))
 
@@ -1142,6 +1374,82 @@ def test_no_running_apps(aggregator, dd_run_check, instance, service_check, capl
     assert 'No running apps found. No metrics will be collected.' in caplog.text
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "mock_response",
+    [
+        pytest.param(MockResponse(content=""), id="Invalid JSON"),  # this triggers json parsing error,
+        pytest.param(MockResponse(status_code=404), id="property not found"),
+        pytest.param(MockResponse(status_code=500), id="Spark internal server error"),  # reported by users in the wild
+    ],
+)
+@pytest.mark.parametrize(
+    'property_url, missing_metrics',
+    [
+        pytest.param(YARN_SPARK_JOB_URL, SPARK_JOB_RUNNING_METRIC_VALUES, id='jobs'),
+        pytest.param(YARN_SPARK_STAGE_URL, SPARK_STAGE_RUNNING_METRIC_VALUES, id='stages'),
+        pytest.param(
+            YARN_SPARK_EXECUTOR_URL,
+            SPARK_EXECUTOR_METRIC_VALUES.keys() | SPARK_EXECUTOR_LEVEL_METRIC_VALUES.keys(),
+            id='executors',
+        ),
+        pytest.param(YARN_SPARK_RDD_URL, SPARK_RDD_METRIC_VALUES, id='storage/rdd'),
+        pytest.param(
+            YARN_SPARK_STREAMING_STATISTICS_URL, SPARK_STREAMING_STATISTICS_METRIC_VALUES, id='streaming/statistics'
+        ),
+    ],
+)
+def test_yarn_no_json_for_app_properties(
+    aggregator, dd_run_check, mocker, mock_response, property_url, missing_metrics
+):
+    """
+    In some yarn deployments apps stop exposing properties (such as jobs and stages) by the time we query them.
+    In these cases we skip only the specific missing apps and metrics while collecting all others.
+    """
+
+    def get_without_json(session, url, *args, **kwargs):
+        arg_url = Url(url)
+        if arg_url == property_url:
+            return mock_response
+        elif arg_url == YARN_SPARK_APP_URL:
+            return MockResponse(
+                json_data=[
+                    {
+                        "id": SPARK_APP_ID,
+                        "name": "PySparkShell",
+                        "attempts": [
+                            {
+                                "startTime": "2016-04-12T12:48:17.576GMT",
+                                "endTime": "1969-12-31T23:59:59.999GMT",
+                                "sparkUser": "",
+                                "completed": False,
+                            }
+                        ],
+                    },
+                    {
+                        "id": SPARK_APP2_ID,
+                        "name": "PySparkShell2",
+                        "attempts": [
+                            {
+                                "startTime": "2016-04-12T12:48:17.576GMT",
+                                "endTime": "1969-12-31T23:59:59.999GMT",
+                                "sparkUser": "",
+                                "completed": False,
+                            }
+                        ],
+                    },
+                ]
+            )
+        else:
+            return yarn_requests_get_mock(session, url, *args, **kwargs)
+
+    mocker.patch('requests.Session.get', get_without_json)
+    dd_run_check(SparkCheck('spark', {}, [YARN_CONFIG]))
+    for m in missing_metrics:
+        aggregator.assert_metric_has_tag(m, 'app_name:PySparkShell', count=0)
+        aggregator.assert_metric_has_tag(m, 'app_name:PySparkShell2')
+
+
 class StandaloneAppsResponseHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -1153,9 +1461,11 @@ class StandaloneAppsResponseHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 def run_ssl_server():
     cert_file = os.path.join(CERTIFICATE_DIR, 'server.pem')
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_file)
 
     httpd = BaseHTTPServer.HTTPServer((SSL_SERVER_ADDRESS, SSL_SERVER_PORT), StandaloneAppsResponseHandler)
-    httpd.socket = ssl.wrap_socket(httpd.socket, certfile=cert_file, server_side=False)
+    httpd.socket = context.wrap_socket(httpd.socket, server_side=False)
     httpd.timeout = 5
 
     threading.Thread(target=httpd.handle_request).start()
@@ -1179,7 +1489,11 @@ def test_integration_standalone(aggregator, dd_run_check):
         SPARK_STRUCTURED_STREAMING_METRIC_VALUES,
         SPARK_EXECUTOR_METRIC_VALUES,
     )
-    optional_metric_values = (SPARK_STREAMING_STATISTICS_METRIC_VALUES,)
+    optional_metric_values = (
+        SPARK_STREAMING_STATISTICS_METRIC_VALUES,
+        SPARK_DRIVER_OPTIONAL_METRIC_VALUES,
+        SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES,
+    )
     # Extract all keys
     expected_metrics = {k for j in expected_metric_values for k in j}
     optional_metrics = {k for j in optional_metric_values for k in j}
@@ -1212,6 +1526,8 @@ def test_integration_driver_1(aggregator, dd_run_check):
     optional_metric_values = (
         SPARK_STREAMING_STATISTICS_METRIC_VALUES,
         SPARK_EXECUTOR_METRIC_VALUES,
+        SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES,
+        SPARK_DRIVER_OPTIONAL_METRIC_VALUES,
     )
     # Extract all keys
     expected_metrics = {k for j in all_metric_values for k in j}
@@ -1245,6 +1561,8 @@ def test_integration_driver_2(aggregator, dd_run_check):
     optional_metric_values = (
         SPARK_STAGE_RUNNING_METRIC_VALUES,
         SPARK_EXECUTOR_METRIC_VALUES,
+        SPARK_EXECUTOR_OPTIONAL_METRIC_VALUES,
+        SPARK_DRIVER_OPTIONAL_METRIC_VALUES,
         SPARK_JOB_RUNNING_METRIC_VALUES,
         SPARK_JOB_SUCCEEDED_METRIC_VALUES,
     )
@@ -1265,3 +1583,188 @@ def test_integration_driver_2(aggregator, dd_run_check):
     )
     aggregator.assert_all_metrics_covered()
     aggregator.assert_metrics_using_metadata(get_metadata_metrics())
+
+
+@pytest.mark.unit
+def test_debounce_connection_failure(aggregator, dd_run_check, caplog):
+    # Mock connection failure
+    def connection_failure_mock(*args, **kwargs):
+        raise ConnectionError("Connection refused")
+
+    instance = DRIVER_CONFIG.copy()
+    instance['tags'] = list(instance.get('tags', [])) + ['pod_phase:Running']
+
+    with mock.patch('requests.Session.get', side_effect=connection_failure_mock):
+        c = SparkCheck('spark', {}, [instance])
+
+        # First run: expect warning, no CRITICAL check
+        with caplog.at_level(logging.WARNING):
+            dd_run_check(c)
+
+        assert "Connection failed. Suppressing error once to ensure driver is running" in caplog.text
+
+        # Verify no CRITICAL check sent for spark.driver.can_connect
+        service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+        assert len(service_checks) == 0
+
+        # Second run: expect CRITICAL (wrapped by dd_run_check as Exception)
+        with pytest.raises(Exception) as excinfo:
+            dd_run_check(c)
+
+        assert "Connection refused" in str(excinfo.value)
+
+        service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+        assert len(service_checks) == 1
+        assert service_checks[0].status == SparkCheck.CRITICAL
+
+
+@pytest.mark.unit
+def test_connection_failure_non_k8s(aggregator, dd_run_check):
+    def connection_failure_mock(*args, **kwargs):
+        raise ConnectionError("Connection refused")
+
+    instance = DRIVER_CONFIG.copy()
+    instance['tags'] = list(instance.get('tags', []))
+
+    with mock.patch('requests.Session.get', side_effect=connection_failure_mock):
+        c = SparkCheck('spark', {}, [instance])
+
+        with pytest.raises(Exception) as excinfo:
+            dd_run_check(c)
+
+        assert "Connection refused" in str(excinfo.value)
+
+    service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+    assert len(service_checks) == 1
+    assert service_checks[0].status == SparkCheck.CRITICAL
+
+
+@pytest.mark.unit
+def test_debounce_connection_failure_terminal_phase(aggregator, dd_run_check, caplog):
+    def connection_failure_mock(*args, **kwargs):
+        raise ConnectionError("Connection refused")
+
+    instance = DRIVER_CONFIG.copy()
+    instance['tags'] = list(instance.get('tags', [])) + ['pod_phase:Failed']
+
+    with mock.patch('requests.Session.get', side_effect=connection_failure_mock):
+        c = SparkCheck('spark', {}, [instance])
+
+        with caplog.at_level(logging.DEBUG):
+            dd_run_check(c)
+
+        assert "Pod phase is terminal, suppressing request error" in caplog.text
+
+    # Expect NO service check because we suppress errors for failed pods
+    service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+    assert len(service_checks) == 0
+
+
+@pytest.mark.unit
+def test_debounce_connection_recovery(aggregator, dd_run_check, caplog):
+    # Mock connection failure
+    def connection_failure_mock(*args, **kwargs):
+        raise ConnectionError("Connection refused")
+
+    instance = DRIVER_CONFIG.copy()
+    instance['tags'] = list(instance.get('tags', [])) + ['pod_phase:Running']
+
+    c = SparkCheck('spark', {}, [instance])
+
+    # 1. Fail (Debounce)
+    with mock.patch('requests.Session.get', side_effect=connection_failure_mock):
+        with caplog.at_level(logging.WARNING):
+            dd_run_check(c)
+
+        assert "Connection failed. Suppressing error once to ensure driver is running" in caplog.text
+        # Verify no CRITICAL check sent
+        service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+        assert len(service_checks) == 0
+
+    caplog.clear()
+    aggregator.reset()
+
+    # 2. Success (Reset)
+    with mock.patch('requests.Session.get', driver_requests_get_mock):
+        dd_run_check(c)
+
+        # Verify success
+        service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+        assert len(service_checks) > 0
+        assert service_checks[0].status == SparkCheck.OK
+
+        # Verify internal state was reset
+        assert c._connection_error_seen is False
+
+    caplog.clear()
+    aggregator.reset()
+
+    # 3. Fail (Debounce again)
+    with mock.patch('requests.Session.get', side_effect=connection_failure_mock):
+        with caplog.at_level(logging.WARNING):
+            dd_run_check(c)
+
+        assert "Connection failed. Suppressing error once to ensure driver is running" in caplog.text
+        # Verify no CRITICAL check sent
+        service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+        assert len(service_checks) == 0
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "pod_phase",
+    ["Failed", "Succeeded", "Unknown"],
+)
+def test_debounce_connection_failure_all_terminal_phases(aggregator, dd_run_check, caplog, pod_phase):
+    """Test that all terminal pod phases suppress connection errors."""
+
+    def connection_failure_mock(*args, **kwargs):
+        raise ConnectionError("Connection refused")
+
+    instance = DRIVER_CONFIG.copy()
+    instance['tags'] = list(instance.get('tags', [])) + ['pod_phase:{}'.format(pod_phase)]
+
+    with mock.patch('requests.Session.get', side_effect=connection_failure_mock):
+        c = SparkCheck('spark', {}, [instance])
+
+        with caplog.at_level(logging.DEBUG):
+            dd_run_check(c)
+
+        assert "Pod phase is terminal, suppressing request error" in caplog.text
+
+    service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+    assert len(service_checks) == 0
+
+
+@pytest.mark.unit
+def test_debounce_no_route_to_host(aggregator, dd_run_check, caplog):
+    """Test that 'No route to host' errors are also debounced."""
+
+    def connection_failure_mock(*args, **kwargs):
+        raise ConnectionError("No route to host")
+
+    instance = DRIVER_CONFIG.copy()
+    instance['tags'] = list(instance.get('tags', [])) + ['pod_phase:Running']
+
+    with mock.patch('requests.Session.get', side_effect=connection_failure_mock):
+        c = SparkCheck('spark', {}, [instance])
+
+        # First run: expect warning, no CRITICAL check
+        with caplog.at_level(logging.WARNING):
+            dd_run_check(c)
+
+        assert "Connection failed. Suppressing error once to ensure driver is running" in caplog.text
+
+        service_checks = aggregator.service_checks(SPARK_DRIVER_SERVICE_CHECK)
+        assert len(service_checks) == 0
+
+
+@pytest.mark.unit
+def test_get_pod_phase():
+    """Test _get_pod_phase static method."""
+    assert SparkCheck._get_pod_phase(['pod_phase:Running']) == 'running'
+    assert SparkCheck._get_pod_phase(['pod_phase:Failed']) == 'failed'
+    assert SparkCheck._get_pod_phase(['other:tag', 'pod_phase:Succeeded']) == 'succeeded'
+    assert SparkCheck._get_pod_phase(['other:tag']) is None
+    assert SparkCheck._get_pod_phase(None) is None
+    assert SparkCheck._get_pod_phase([]) is None

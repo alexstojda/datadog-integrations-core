@@ -40,6 +40,10 @@ def instance_empty_default_hostname():
     return False
 
 
+def instance_enable_legacy_tags_normalization():
+    return True
+
+
 def instance_kerberos_auth():
     return 'disabled'
 
@@ -60,12 +64,28 @@ def instance_min_collection_interval():
     return 15
 
 
+def instance_namespace():
+    return 'default'
+
+
 def instance_persist_connections():
     return False
 
 
 def instance_request_size():
     return 16
+
+
+def instance_send_faultdelegate_faults():
+    return False
+
+
+def instance_send_faultinst_faults():
+    return False
+
+
+def instance_send_ndm_metadata():
+    return False
 
 
 def instance_skip_proxy():

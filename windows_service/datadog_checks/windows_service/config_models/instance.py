@@ -35,9 +35,12 @@ class InstanceConfig(BaseModel):
         arbitrary_types_allowed=True,
         frozen=True,
     )
+    collect_display_name_as_tag: Optional[bool] = None
     disable_generic_tags: Optional[bool] = None
     disable_legacy_service_tag: Optional[bool] = None
     empty_default_hostname: Optional[bool] = None
+    enable_legacy_tags_normalization: Optional[bool] = None
+    group_per_user_services: Optional[bool] = None
     metric_patterns: Optional[MetricPatterns] = None
     min_collection_interval: Optional[float] = None
     service: Optional[str] = None

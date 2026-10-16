@@ -16,8 +16,16 @@ def instance_close_admin_client():
     return True
 
 
+def instance_collect_consumer_group_state():
+    return False
+
+
 def instance_consumer_queued_max_messages_kbytes():
     return 1024
+
+
+def instance_data_streams_enabled():
+    return False
 
 
 def instance_disable_generic_tags():
@@ -26,6 +34,26 @@ def instance_disable_generic_tags():
 
 def instance_empty_default_hostname():
     return False
+
+
+def instance_enable_cluster_monitoring():
+    return False
+
+
+def instance_enable_kafka_console():
+    return False
+
+
+def instance_enable_legacy_tags_normalization():
+    return True
+
+
+def instance_kafka_configs_refresh_interval():
+    return 180
+
+
+def instance_kafka_connect_tls_verify():
+    return True
 
 
 def instance_min_collection_interval():
@@ -46,6 +74,26 @@ def instance_sasl_kerberos_principal():
 
 def instance_sasl_kerberos_service_name():
     return 'kafka'
+
+
+def instance_schema_registry_tls_ca_cert():
+    return '/path/to/ca_cert.pem'
+
+
+def instance_schema_registry_tls_cert():
+    return '/path/to/client_cert.pem'
+
+
+def instance_schema_registry_tls_key():
+    return '/path/to/client_key.pem'
+
+
+def instance_schema_registry_tls_verify():
+    return True
+
+
+def instance_schema_registry_url():
+    return 'http://localhost:8081'
 
 
 def instance_security_protocol():

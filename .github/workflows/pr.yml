@@ -5,6 +5,12 @@ on:
     paths-ignore:
     - datadog_checks_base/datadog_checks/**
     - datadog_checks_dev/datadog_checks/dev/*.py
+  merge_group:
+    # We require this workflow to pass in order to merge a PR to master.
+    # This means Github's Merge Queue also requires it to pass.
+    # We must add the Merge Queue trigger in this configuration, otherwise Merge Queue
+    # times out waiting for this check that never triggers.
+    types: [checks_requested]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.head_ref }}
@@ -15,4 +21,14 @@ jobs:
     uses: ./.github/workflows/pr-test.yml
     with:
       repo: core
+      # Set the "test-debug" label on a PR to run its tests with verbose pytest
+      # logging. Useful for inspecting test output, such as E2E discovery
+      # candidate probing, on platforms where tests can't be run locally.
+      pytest-args: ${{ contains(github.event.pull_request.labels.*.name, 'test-debug') && '-rP --log-level=DEBUG' || '' }}
     secrets: inherit
+
+    permissions:
+       # needed for compute-matrix in test-target.yml
+       contents: read
+       # needed for dd-sts
+       id-token: write

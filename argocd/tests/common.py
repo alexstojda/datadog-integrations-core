@@ -2,6 +2,36 @@
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
 
+from datadog_checks.argocd import ArgocdCheck
+from datadog_checks.argocd.resources import ArgocdResourceCollector
+
+GENRESOURCES_ENDPOINT = "https://argocd.example.com"
+
+
+def build_instance(**overrides) -> dict:
+    instance = {
+        "app_controller_endpoint": "http://app_controller:8082",
+        "collect_genresources": True,
+        "genresources_endpoint": GENRESOURCES_ENDPOINT,
+        "genresources_auth_token": "test-token",
+    }
+    instance.update(overrides)
+    return instance
+
+
+def build_check(**overrides) -> ArgocdCheck:
+    """Build an ArgocdCheck with config models loaded and the genresources collector attached.
+
+    Production builds the collector lazily on the first ``check()`` once
+    ``check_initializations`` has populated ``self.config``; tests reach into
+    ``check._resource_collector`` directly, so we mirror that bootstrap here.
+    """
+    check = ArgocdCheck("argocd", {}, [build_instance(**overrides)])
+    check.load_configuration_models()
+    check._resource_collector = ArgocdResourceCollector(check)
+    return check
+
+
 MOCKED_APP_CONTROLLER_INSTANCE = {'app_controller_endpoint': 'http://app_controller:8082'}
 
 MOCKED_APP_CONTROLLER_WITH_OTHER_PARAMS = {
@@ -19,12 +49,22 @@ MOCKED_REPO_SERVER_INSTANCE = {'repo_server_endpoint': 'http://repo_server:8084'
 
 MOCKED_NOTIFICATIONS_CONTROLLER_INSTANCE = {'notifications_controller_endpoint': 'http://notifications_controller:9001'}
 
-app_controller_ns, appset_controller_ns, api_server_ns, repo_server_ns, notifications_controller_ns = (
+MOCKED_COMMIT_SERVER_INSTANCE = {'commit_server_endpoint': 'http://commit_server:8087'}
+
+(
+    app_controller_ns,
+    appset_controller_ns,
+    api_server_ns,
+    repo_server_ns,
+    notifications_controller_ns,
+    commit_server_ns,
+) = (
     "argocd.app_controller",
     "argocd.appset_controller",
     "argocd.api_server",
     "argocd.repo_server",
     "argocd.notifications_controller",
+    "argocd.commit_server",
 )
 
 general_gauges = [
@@ -42,7 +82,7 @@ general_gauges = [
     'go.memstats.last_gc_time.seconds',
     'go.memstats.mcache.inuse_bytes',
     'go.memstats.mcache.sys_bytes',
-    'go.memstats.mspan.inuse_use',
+    'go.memstats.mspan.inuse_bytes',
     'go.memstats.mspan.sys_bytes',
     'go.memstats.next.gc_bytes',
     'go.memstats.other.sys_bytes',
@@ -75,8 +115,13 @@ app_controller_counters = [
     'redis.request.count',
     'app.k8s.request.count',
     'app.sync.count',
+    'app.sync.duration.seconds.count',
     'cluster.events.count',
     'kubectl.exec.count',
+    'kubectl.requests.count',
+    'kubectl.exec_plugin.call.count',
+    'kubectl.request.retries.count',
+    'kubectl.transport.create_calls.count',
     'workqueue.adds.count',
     'workqueue.retries.count',
     'process.cpu.seconds.count',
@@ -84,10 +129,15 @@ app_controller_counters = [
 
 app_controller_gauges = [
     'app.info',
+    'app.condition',
+    'app.orphaned_resources.count',
+    'resource_events.processed_in_batch',
     'cluster.api.resource_objects',
     'cluster.api.resources',
     'cluster.cache.age.seconds',
     'kubectl.exec.pending',
+    'kubectl.client_cert_rotation.age.seconds',
+    'kubectl.transport.cache_entries',
     'workqueue.depth',
     'workqueue.longest.running_processor.seconds',
     'workqueue.unfinished_work.seconds',
@@ -97,6 +147,24 @@ app_controller_histograms = [
     'app.reconcile.bucket',
     'app.reconcile.count',
     'app.reconcile.sum',
+    'resource_events.processing.bucket',
+    'resource_events.processing.count',
+    'resource_events.processing.sum',
+    'kubectl.request.duration.seconds.bucket',
+    'kubectl.request.duration.seconds.count',
+    'kubectl.request.duration.seconds.sum',
+    'kubectl.dns_resolution.duration.seconds.bucket',
+    'kubectl.dns_resolution.duration.seconds.count',
+    'kubectl.dns_resolution.duration.seconds.sum',
+    'kubectl.request.size.bytes.bucket',
+    'kubectl.request.size.bytes.count',
+    'kubectl.request.size.bytes.sum',
+    'kubectl.response.size.bytes.bucket',
+    'kubectl.response.size.bytes.count',
+    'kubectl.response.size.bytes.sum',
+    'kubectl.rate_limiter.duration.seconds.bucket',
+    'kubectl.rate_limiter.duration.seconds.count',
+    'kubectl.rate_limiter.duration.seconds.sum',
     'workqueue.queue.duration.seconds.bucket',
     'workqueue.queue.duration.seconds.count',
     'workqueue.queue.duration.seconds.sum',
@@ -108,17 +176,34 @@ app_controller_histograms = [
     'redis.request.duration.sum',
 ]
 
-appset_controller_counters = ['reconcile.errors.total', 'runtime.reconcile.total']
+appset_controller_counters = [
+    'reconcile.errors.count',
+    'runtime.reconcile.count',
+    'github_api.requests.count',
+]
 
 appset_controller_gauges = [
     'active.workers',
     'max.concurrent.reconciles',
+    'appset.info',
+    'appset.owned.applications',
+    'appset.labels',
+    'github_api.rate_limit.remaining',
+    'github_api.rate_limit.limit',
+    'github_api.rate_limit.reset.seconds',
+    'github_api.rate_limit.used',
 ]
 
 appset_controller_histograms = [
     'reconcile.time_seconds.bucket',
     'reconcile.time_seconds.count',
     'reconcile.time_seconds.sum',
+    'appset.reconcile.bucket',
+    'appset.reconcile.count',
+    'appset.reconcile.sum',
+    'github_api.request.duration.seconds.bucket',
+    'github_api.request.duration.seconds.count',
+    'github_api.request.duration.seconds.sum',
 ]
 
 api_server_counters = [
@@ -127,12 +212,17 @@ api_server_counters = [
     'grpc.server.msg.sent.count',
     'grpc.server.msg.received.count',
     'grpc.server.started.count',
+    'login.request.count',
+    'proxy_extension.request.count',
 ]
 
 api_server_histograms = [
     'redis.request.duration.bucket',
     'redis.request.duration.count',
     'redis.request.duration.sum',
+    'proxy_extension.request.duration.seconds.bucket',
+    'proxy_extension.request.duration.seconds.count',
+    'proxy_extension.request.duration.seconds.sum',
 ]
 
 repo_server_gauges = [
@@ -142,6 +232,13 @@ repo_server_gauges = [
 repo_server_counters = [
     'redis.request.count',
     'git.request.count',
+    'git.fetch.fail.count',
+    'oci.request.count',
+    'oci.test_repo.fail.count',
+    'oci.get_tags.fail.count',
+    'oci.digest_metadata.fail.count',
+    'oci.resolve_revision.fail.count',
+    'oci.extract.fail.count',
 ]
 
 repo_server_histograms = [
@@ -151,6 +248,30 @@ repo_server_histograms = [
     'redis.request.duration.seconds.bucket',
     'redis.request.duration.seconds.count',
     'redis.request.duration.seconds.sum',
+    'oci.request.duration.seconds.bucket',
+    'oci.request.duration.seconds.count',
+    'oci.request.duration.seconds.sum',
+]
+
+commit_server_counters = [
+    'git.request.count',
+    'commit.request.count',
+]
+
+commit_server_gauges = [
+    'commit.pending.request.total',
+]
+
+commit_server_histograms = [
+    'git.request.duration.seconds.bucket',
+    'git.request.duration.seconds.count',
+    'git.request.duration.seconds.sum',
+    'commit.request.duration.seconds.bucket',
+    'commit.request.duration.seconds.count',
+    'commit.request.duration.seconds.sum',
+    'userinfo.request.duration.seconds.bucket',
+    'userinfo.request.duration.seconds.count',
+    'userinfo.request.duration.seconds.sum',
 ]
 
 notifications_controller_counters = [
@@ -163,8 +284,6 @@ NOT_EXPOSED_METRICS = [
     'argocd.app_controller.cluster.api.resources',
     'argocd.app_controller.cluster.cache.age.seconds',
     'argocd.app_controller.redis.request.duration',
-    'argocd.appset_controller.reconcile.errors.total',
-    'argocd.appset_controller.runtime.reconcile.total',
 ]
 
 # Additional metrics that aren't exposed in the E2E environment
@@ -173,11 +292,18 @@ E2E_NOT_EXPOSED_METRICS = [
     'argocd.app_controller.app.sync.count',
     'argocd.app_controller.cluster.events.count',
     'argocd.app_controller.kubectl.exec.count',
+    'argocd.app_controller.app.sync.duration.seconds.count',
     'argocd.app_controller.app.info',
     'argocd.app_controller.app.reconcile.bucket',
     'argocd.app_controller.app.reconcile.count',
     'argocd.app_controller.app.reconcile.sum',
     'argocd.app_controller.kubectl.exec.pending',
+    'argocd.appset_controller.appset.reconcile.bucket',
+    'argocd.appset_controller.appset.reconcile.count',
+    'argocd.appset_controller.appset.reconcile.sum',
+    'argocd.appset_controller.appset.info',
+    'argocd.appset_controller.appset.owned.applications',
+    'argocd.appset_controller.appset.labels',
     'argocd.appset_controller.reconcile.time_seconds.bucket',
     'argocd.appset_controller.reconcile.time_seconds.count',
     'argocd.appset_controller.reconcile.time_seconds.sum',
@@ -197,6 +323,78 @@ E2E_NOT_EXPOSED_METRICS = [
     'argocd.repo_server.redis.request.duration.seconds.count',
     'argocd.repo_server.redis.request.duration.seconds.sum',
     'argocd.repo_server.redis.request.count',
+    'argocd.commit_server.git.request.duration.seconds.bucket',
+    'argocd.commit_server.git.request.duration.seconds.count',
+    'argocd.commit_server.git.request.duration.seconds.sum',
+    'argocd.commit_server.commit.request.duration.seconds.bucket',
+    'argocd.commit_server.commit.request.duration.seconds.count',
+    'argocd.commit_server.commit.request.duration.seconds.sum',
+    'argocd.commit_server.userinfo.request.duration.seconds.bucket',
+    'argocd.commit_server.userinfo.request.duration.seconds.count',
+    'argocd.commit_server.userinfo.request.duration.seconds.sum',
+    'argocd.commit_server.commit.pending.request.total',
+    'argocd.commit_server.git.request.count',
+    'argocd.commit_server.commit.request.count',
+    # GitHub API metrics - disabled by default in ArgoCD
+    # (requires applicationsetcontroller.enable.github.api.metrics: true);
+    # also requires ApplicationSets with GitHub generators, which are not deployed in E2E
+    'argocd.appset_controller.github_api.requests.count',
+    'argocd.appset_controller.github_api.rate_limit.remaining',
+    'argocd.appset_controller.github_api.rate_limit.limit',
+    'argocd.appset_controller.github_api.rate_limit.reset.seconds',
+    'argocd.appset_controller.github_api.rate_limit.used',
+    'argocd.appset_controller.github_api.request.duration.seconds.bucket',
+    'argocd.appset_controller.github_api.request.duration.seconds.count',
+    'argocd.appset_controller.github_api.request.duration.seconds.sum',
+    # Kubectl metrics - emitted during app resource management operations; no apps deployed in E2E
+    'argocd.app_controller.kubectl.requests.count',
+    'argocd.app_controller.kubectl.exec_plugin.call.count',
+    'argocd.app_controller.kubectl.request.retries.count',
+    'argocd.app_controller.kubectl.transport.create_calls.count',
+    'argocd.app_controller.kubectl.client_cert_rotation.age.seconds',
+    'argocd.app_controller.kubectl.transport.cache_entries',
+    'argocd.app_controller.kubectl.request.duration.seconds.bucket',
+    'argocd.app_controller.kubectl.request.duration.seconds.count',
+    'argocd.app_controller.kubectl.request.duration.seconds.sum',
+    'argocd.app_controller.kubectl.dns_resolution.duration.seconds.bucket',
+    'argocd.app_controller.kubectl.dns_resolution.duration.seconds.count',
+    'argocd.app_controller.kubectl.dns_resolution.duration.seconds.sum',
+    'argocd.app_controller.kubectl.request.size.bytes.bucket',
+    'argocd.app_controller.kubectl.request.size.bytes.count',
+    'argocd.app_controller.kubectl.request.size.bytes.sum',
+    'argocd.app_controller.kubectl.response.size.bytes.bucket',
+    'argocd.app_controller.kubectl.response.size.bytes.count',
+    'argocd.app_controller.kubectl.response.size.bytes.sum',
+    'argocd.app_controller.kubectl.rate_limiter.duration.seconds.bucket',
+    'argocd.app_controller.kubectl.rate_limiter.duration.seconds.count',
+    'argocd.app_controller.kubectl.rate_limiter.duration.seconds.sum',
+    # App condition - disabled by default (requires --metrics-application-conditions flag);
+    # orphaned resources require deployed apps with orphaned resource monitoring enabled
+    'argocd.app_controller.app.condition',
+    'argocd.app_controller.app.orphaned_resources.count',
+    # Resource events metrics - emitted during app reconciliation; no apps deployed in E2E
+    'argocd.app_controller.resource_events.processed_in_batch',
+    'argocd.app_controller.resource_events.processing.bucket',
+    'argocd.app_controller.resource_events.processing.count',
+    'argocd.app_controller.resource_events.processing.sum',
+    # Login and proxy extension metrics - require user authentication attempts and configured
+    # proxy extensions; not exercised in E2E
+    'argocd.api_server.login.request.count',
+    'argocd.api_server.proxy_extension.request.count',
+    'argocd.api_server.proxy_extension.request.duration.seconds.bucket',
+    'argocd.api_server.proxy_extension.request.duration.seconds.count',
+    'argocd.api_server.proxy_extension.request.duration.seconds.sum',
+    # OCI metrics - require OCI/Helm registry usage; E2E environment uses git repos, not OCI registries
+    'argocd.repo_server.git.fetch.fail.count',
+    'argocd.repo_server.oci.request.count',
+    'argocd.repo_server.oci.test_repo.fail.count',
+    'argocd.repo_server.oci.get_tags.fail.count',
+    'argocd.repo_server.oci.digest_metadata.fail.count',
+    'argocd.repo_server.oci.resolve_revision.fail.count',
+    'argocd.repo_server.oci.extract.fail.count',
+    'argocd.repo_server.oci.request.duration.seconds.bucket',
+    'argocd.repo_server.oci.request.duration.seconds.count',
+    'argocd.repo_server.oci.request.duration.seconds.sum',
 ]
 
 general = general_gauges + general_counters + general_summaries
@@ -206,6 +404,7 @@ appset_controller = appset_controller_counters + appset_controller_gauges + apps
 api_server = api_server_counters + api_server_histograms + general
 repo_server = repo_server_counters + repo_server_gauges + repo_server_histograms + general
 notifications_controller = notifications_controller_counters + general
+commit_server = commit_server_counters + commit_server_gauges + commit_server_histograms + general
 
 
 def namespace_formatter(metrics, namespace):
@@ -220,3 +419,4 @@ APPSET_CONTROLLER_METRICS = namespace_formatter(appset_controller, appset_contro
 API_SERVER_METRICS = namespace_formatter(api_server, api_server_ns)
 REPO_SERVER_METRICS = namespace_formatter(repo_server, repo_server_ns)
 NOTIFICATIONS_CONTROLLER_METRICS = namespace_formatter(notifications_controller, notifications_controller_ns)
+COMMIT_SERVER_METRICS = namespace_formatter(commit_server, commit_server_ns)

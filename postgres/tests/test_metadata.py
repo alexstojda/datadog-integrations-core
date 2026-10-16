@@ -1,15 +1,17 @@
 # (C) Datadog, Inc. 2023-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
+import json
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import List
+from unittest import mock
 
 import pytest
 
 from datadog_checks.base.utils.db.utils import DBMAsyncJob
 
-from .common import POSTGRES_VERSION
-from .utils import run_one_check
+from .common import POSTGRES_LOCALE, POSTGRES_VERSION
+from .utils import _get_superconn, normalize_object, run_one_check
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures('dd_environment')]
 
@@ -21,7 +23,6 @@ def dbm_instance(pg_instance):
     pg_instance['query_samples'] = {'enabled': False}
     pg_instance['query_activity'] = {'enabled': False}
     pg_instance['query_metrics'] = {'enabled': False}
-    pg_instance['collect_resources'] = {'enabled': True, 'run_sync': True, 'collection_interval': 0.1}
     pg_instance['collect_settings'] = {'enabled': True, 'run_sync': True, 'collection_interval': 0.1}
     return pg_instance
 
@@ -31,6 +32,30 @@ def stop_orphaned_threads():
     # make sure we shut down any orphaned threads and create a new Executor for each test
     DBMAsyncJob.executor.shutdown(wait=True)
     DBMAsyncJob.executor = ThreadPoolExecutor()
+
+
+def test_collect_extensions(integration_check, dbm_instance, aggregator):
+    check = integration_check(dbm_instance)
+    check.check(dbm_instance)
+    dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
+    event = next((e for e in dbm_metadata if e['kind'] == 'pg_extension'), None)
+    assert event is not None
+    assert event['host'] == "stubbed.hostname"
+    assert event['dbms'] == "postgres"
+    assert event['kind'] == "pg_extension"
+    assert len(event["metadata"]) > 0
+    assert set(event["metadata"][0].keys()) == {
+        'id',
+        'name',
+        'owner',
+        'relocatable',
+        'schema_name',
+        'version',
+        'logical_database',
+    }
+    assert type(event["metadata"][0]["id"]) is str
+    assert all(row['logical_database'] == dbm_instance['dbname'] for row in event['metadata'])
+    assert next((k for k in event['metadata'] if k['name'].startswith('plpgsql')), None) is not None
 
 
 def test_collect_metadata(integration_check, dbm_instance, aggregator):
@@ -44,75 +69,484 @@ def test_collect_metadata(integration_check, dbm_instance, aggregator):
     assert event['dbms'] == "postgres"
     assert event['kind'] == "pg_settings"
     assert len(event["metadata"]) > 0
+    assert set(event["metadata"][0].keys()) == {'name', 'setting', 'source', 'sourcefile', 'pending_restart'}
     assert all(not k['name'].startswith('max_wal') for k in event['metadata'])
+    assert next((k for k in event['metadata'] if k['name'].startswith('pg_trgm')), None) is not None
+    statement_timeout_setting = next((k for k in event['metadata'] if k['name'] == 'statement_timeout'), None)
+    assert statement_timeout_setting is not None
+    # statement_timeout should be server level setting not session level
+    assert statement_timeout_setting['setting'] == '10000'
 
 
-def test_collect_schemas(integration_check, dbm_instance, aggregator):
-    dbm_instance["collect_schemas"] = {'enabled': True, 'collection_interval': 0.5}
-    dbm_instance['relations'] = [{'relation_regex': ".*"}]
+def test_collect_settings_ignores_shadowing_extension_overloads(integration_check, dbm_instance, aggregator):
+    # Regression test for HackerOne report 3977706: an overload planted on the monitoring role's search_path
+    # must not be picked over the extension's own function by the settings loader queries.
+    with _get_superconn(dbm_instance) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "CREATE FUNCTION public.armor(text) RETURNS text "
+                "AS $$ BEGIN RAISE EXCEPTION 'shadowing overload executed'; END $$ LANGUAGE plpgsql"
+            )
+    try:
+        check = integration_check(dbm_instance)
+        check.check(dbm_instance)
+    finally:
+        with _get_superconn(dbm_instance) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DROP FUNCTION public.armor(text)")
+    dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
+    assert any(e['kind'] == 'pg_settings' for e in dbm_metadata)
+
+
+def test_collect_schema_snapshot(integration_check, dbm_instance, aggregator):
+    dbm_instance["collect_schemas"] = {'enabled': True, 'run_sync': True, 'include_databases': ['datadog_test']}
+    dbm_instance['dbname'] = 'datadog_test'
+    check = integration_check(dbm_instance)
+    run_one_check(check, dbm_instance)
+    dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
+    schema_events = [e for e in dbm_metadata if e['kind'] == 'pg_databases']
+    # This tests should fit within one payload
+    assert len(schema_events) == 1
+
+    file_path = f'tests/fixtures/schema_snapshot_v{POSTGRES_VERSION}_{POSTGRES_LOCALE}.json'
+    # If you need to update the snapshot, uncomment the following lines and run
+    # ddev test postgres -- -x -k test_collect_schema_snapshot
+    # then go grab a cup of coffee, tea, or your beverage of choice
+    # with open(file_path, 'w') as f:
+    #     json.dump(schema_events[0]['metadata'], f, indent=4)
+
+    with open(file_path, 'r') as f:
+        snapshot = json.load(f)
+    # Normalize the objects to avoid differences in list sorting
+    assert normalize_object(snapshot) == normalize_object(schema_events[0]['metadata'])
+
+
+@pytest.mark.parametrize(
+    "use_default_ignore_schemas_owned_by",
+    [
+        pytest.param(True, id="default_ignore_schemas_owned_by"),
+        pytest.param(False, id="custom_ignore_schemas_owned_by"),
+    ],
+)
+def test_collect_schemas(integration_check, dbm_instance, aggregator, use_default_ignore_schemas_owned_by):
+    dbm_instance["collect_schemas"] = {'enabled': True, 'collection_interval': 600}
+    dbm_instance['relations'] = []
+    dbm_instance["database_autodiscovery"] = {"enabled": True, "include": ["datadog"]}
+    del dbm_instance['dbname']
+    if not use_default_ignore_schemas_owned_by:
+        dbm_instance["ignore_schemas_owned_by"] = ['rds_superuser']
+    check = integration_check(dbm_instance)
+    run_one_check(check, dbm_instance)
+    dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
+
+    # check that all expected tables are present
+    tables_set = {
+        'persons',
+        "personsdup1",
+        "personsdup2",
+        "personsdup3",
+        "personsdup4",
+        "personsdup5",
+        "personsdup6",
+        "personsdup7",
+        "personsdup8",
+        "personsdup9",
+        "personsdup10",
+        "personsdup11",
+        "personsdup12",
+        "pgtable",
+        "pg_newtable",
+        "cities",
+        "sample_foreign_d73a8c",
+    }
+    # if version isn't 9 or 10, check that partition master is in tables
+    if float(POSTGRES_VERSION) >= 11:
+        tables_set.update({'test_part', 'test_part_no_children', 'test_part_no_activity'})
+    tables_not_reported_set = {'test_part1', 'test_part2'}
+
+    tables_got = []
+
+    schemas_want = {
+        'public',
+        'public2',
+        'datadog',
+        'hstore',
+    }
+
+    if not use_default_ignore_schemas_owned_by:
+        schemas_want.add('rdsadmin_test')
+        tables_set.add('rds_admin_misc')
+
+    schemas_got = set()
+
+    collection_started_at = None
+    schema_events = [e for e in dbm_metadata if e['kind'] == 'pg_databases']
+    for i, schema_event in enumerate(schema_events):
+        for mi, _ in enumerate(schema_event['metadata']):
+            assert schema_event.get("timestamp") is not None
+            if collection_started_at is None:
+                collection_started_at = schema_event["collection_started_at"]
+            assert schema_event["collection_started_at"] == collection_started_at
+
+            if i == len(schema_events) - 1:
+                assert schema_event["collection_payloads_count"] == len(schema_events)
+            else:
+                assert "collection_payloads_count" not in schema_event
+
+            # there should only be one database, datadog_test
+            database_metadata = schema_event['metadata']
+            assert 'datadog_test' == database_metadata[mi]['name']
+
+            # there should only two schemas, 'public' and 'datadog'. datadog is empty
+            schema = database_metadata[mi]['schemas'][0]
+            schema_name = schema['name']
+            # We should always have an owner
+            assert schema['owner']
+            # The owner of the datadog_test schema should be postgres
+            if schema_name == 'datadog_test':
+                assert schema['owner'] == 'postgres'
+            assert schema_name in ['public', 'public2', 'datadog', 'rdsadmin_test', 'hstore']
+            schemas_got.add(schema_name)
+            if schema_name in ['public', 'rdsadmin_test']:
+                for table in schema['tables']:
+                    tables_got.append(table['name'])
+
+                    assert table['name']
+                    assert table['owner']
+                    assert 'relkind' in table
+                    assert table['relkind'] in ('r', 'p', 'f')
+
+                    # make some assertions on fields
+                    if table['name'] == "persons":
+                        # check that foreign keys, indexes get reported
+                        keys = list(table.keys())
+                        assert_fields(keys, ["foreign_keys", "columns", "id", "name"])
+                        # The toast table doesn't seem to be created in the C locale
+                        if POSTGRES_LOCALE != 'C':
+                            assert_fields(keys, ["toast_table"])
+                        assert_fields(list(table['foreign_keys'][0].keys()), ['name', 'definition'])
+                        assert_fields(
+                            list(table['columns'][0].keys()),
+                            [
+                                'name',
+                                'nullable',
+                                'data_type',
+                                'default',
+                            ],
+                        )
+                    if table['name'] == "cities":
+                        keys = list(table.keys())
+                        assert_fields(keys, ["indexes", "columns", "id", "name"])
+                        if POSTGRES_LOCALE != 'C':
+                            assert_fields(keys, ["toast_table"])
+                        assert len(table['indexes']) == 1
+                        assert_fields(
+                            list(table['indexes'][0].keys()),
+                            [
+                                'name',
+                                'definition',
+                                'is_unique',
+                                'is_exclusion',
+                                'is_immediate',
+                                'is_clustered',
+                                'is_valid',
+                                'is_checkxmin',
+                                'is_ready',
+                                'is_live',
+                                'is_replident',
+                                'is_partial',
+                            ],
+                        )
+                    if float(POSTGRES_VERSION) >= 11:
+                        if table['name'] in ('test_part', 'test_part_no_activity'):
+                            keys = list(table.keys())
+                            assert_fields(keys, ["indexes", "num_partitions", "partition_key"])
+                            assert table['num_partitions'] == 2
+                        elif table['name'] == 'test_part_no_children':
+                            keys = list(table.keys())
+                            assert_fields(keys, ["partition_key"])
+
+    assert schemas_want == schemas_got
+    assert_fields(tables_got, tables_set)
+    assert_not_fields(tables_got, tables_not_reported_set)
+
+
+def test_collect_schemas_filters(integration_check, dbm_instance, aggregator):
+    test_cases = [
+        [
+            {'include_databases': ['.*'], 'include_schemas': ['public'], 'include_tables': ['.*']},
+            [
+                "persons",
+                "personsdup1",
+                "personsdup2",
+                "personsdup3",
+                "personsdup4",
+                "personsdup5",
+                "personsdup6",
+                "personsdup7",
+                "personsdup8",
+                "personsdup9",
+                "personsdup10",
+                "personsdup11",
+                "personsdup12",
+                "pgtable",
+                "pg_newtable",
+                "cities",
+            ],
+            [],
+        ],
+        [
+            {'exclude_tables': ['person.*']},
+            [
+                "pgtable",
+                "pg_newtable",
+                "cities",
+            ],
+            [
+                "persons",
+                "personsdup1",
+                "personsdup2",
+                "personsdup3",
+                "personsdup4",
+                "personsdup5",
+                "personsdup6",
+                "personsdup7",
+                "personsdup8",
+                "personsdup9",
+                "personsdup10",
+                "personsdup11",
+                "personsdup12",
+            ],
+        ],
+        [
+            {'include_tables': ['person.*'], 'exclude_tables': ['person.*']},
+            [],
+            [
+                "persons",
+                "personsdup1",
+                "personsdup2",
+                "personsdup3",
+                "personsdup4",
+                "personsdup5",
+                "personsdup6",
+                "personsdup7",
+                "personsdup8",
+                "personsdup9",
+                "personsdup10",
+                "personsdup11",
+                "personsdup12",
+            ],
+        ],
+        [
+            {'include_tables': ['person.*', "cities"]},
+            [
+                "persons",
+                "personsdup1",
+                "personsdup2",
+                "personsdup3",
+                "personsdup4",
+                "personsdup5",
+                "personsdup6",
+                "personsdup7",
+                "personsdup8",
+                "personsdup9",
+                "personsdup10",
+                "personsdup11",
+                "personsdup12",
+                "cities",
+            ],
+            [
+                "pgtable",
+                "pg_newtable",
+            ],
+        ],
+        [
+            {'exclude_tables': ['person.*', "cities"]},
+            [
+                "pgtable",
+                "pg_newtable",
+            ],
+            [
+                "persons",
+                "personsdup1",
+                "personsdup2",
+                "personsdup3",
+                "personsdup4",
+                "personsdup5",
+                "personsdup6",
+                "personsdup7",
+                "personsdup8",
+                "personsdup9",
+                "personsdup10",
+                "personsdup11",
+                "personsdup12",
+                "cities",
+            ],
+        ],
+        [
+            {'include_tables': ['person.*1', "cities"], 'exclude_tables': ['person.*2', "pg.*"]},
+            [
+                "cities",
+                "personsdup1",
+                "personsdup10",
+                "personsdup11",
+            ],
+            [
+                "persons",
+                "personsdup2",
+                "personsdup3",
+                "personsdup4",
+                "personsdup5",
+                "personsdup6",
+                "personsdup7",
+                "personsdup8",
+                "personsdup9",
+                "personsdup12",
+                "pgtable",
+                "pg_newtable",
+            ],
+        ],
+    ]
+
+    del dbm_instance['dbname']
+    dbm_instance["database_autodiscovery"] = {"enabled": True, "include": ["datadog"]}
+    dbm_instance['relations'] = []
+
+    for tc in test_cases:
+        dbm_instance["collect_schemas"] = {'enabled': True, 'run_sync': True, **tc[0]}
+        check = integration_check(dbm_instance)
+        run_one_check(check, dbm_instance)
+        dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
+
+        tables_got = []
+
+        for schema_event in (e for e in dbm_metadata if e['kind'] == 'pg_databases'):
+            for mi, _ in enumerate(schema_event['metadata']):
+                database_metadata = schema_event['metadata'][mi]
+                schema = database_metadata['schemas'][0]
+                schema_name = schema['name']
+                assert schema_name in ['public', 'public2', 'datadog', 'rdsadmin_test', 'hstore']
+                if schema_name == 'public':
+                    for table in schema['tables']:
+                        if 'name' in table:
+                            tables_got.append(table['name'])
+                        else:
+                            print(table)
+
+        assert_fields(tables_got, tc[1])
+        assert_not_fields(tables_got, tc[2])
+        aggregator.reset()
+
+
+def test_collect_schemas_max_tables(integration_check, dbm_instance, aggregator):
+    dbm_instance["collect_schemas"] = {'enabled': True, 'collection_interval': 0.5, 'max_tables': 1}
+    dbm_instance['relations'] = []
     dbm_instance["database_autodiscovery"] = {"enabled": True, "include": ["datadog"]}
     del dbm_instance['dbname']
     check = integration_check(dbm_instance)
     run_one_check(check, dbm_instance)
     dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
-    schema_event = next(e for e in dbm_metadata if e['kind'] == 'pg_databases')
 
-    # there should only be one database, datadog_test
-    database_metadata = schema_event['metadata']
-    assert len(database_metadata) == 1
-    assert 'datadog_test' == database_metadata[0]['name']
+    for schema_event in (e for e in dbm_metadata if e['kind'] == 'pg_databases'):
+        database_metadata = schema_event['metadata']
+        assert len(database_metadata[0]['schemas'][0]['tables']) <= 1
 
-    # there should only two schemas, 'public' and 'datadog'. datadog is empty
-    schema_names = [s['name'] for s in database_metadata[0]['schemas']]
-    assert 'public' in schema_names
-    assert 'datadog' in schema_names
-    schema_public = None
-    for schema in database_metadata[0]['schemas']:
-        if schema['name'] == 'public':
-            schema_public = schema
+    # Rerun check with relations enabled
+    dbm_instance['relations'] = [{'relation_regex': '.*'}]
+    check = integration_check(dbm_instance)
+    run_one_check(check, dbm_instance)
+    dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
 
-    # check that all expected tables are present
-    tables_set = {'persons', "personsdup1", "personsdup2", "pgtable", "pg_newtable", "cities"}
-    # if version isn't 9 or 10, check that partition master is in tables
-    if float(POSTGRES_VERSION) >= 11:
-        tables_set.update({'test_part', 'test_part_no_children'})
-    tables_not_reported_set = {'test_part1', 'test_part2'}
+    for schema_event in (e for e in dbm_metadata if e['kind'] == 'pg_databases'):
+        database_metadata = schema_event['metadata']
+        assert len(database_metadata[0]['schemas'][0]['tables']) <= 1
 
-    tables_got = []
-    for table in schema_public['tables']:
-        tables_got.append(table['name'])
 
-        # make some assertions on fields
-        if table['name'] == "persons":
-            # check that foreign keys, indexes get reported
-            keys = list(table.keys())
-            assert_fields(keys, ["foreign_keys", "columns", "toast_table", "id", "name"])
-            assert_fields(list(table['foreign_keys'][0].keys()), ['name', 'definition'])
-            assert_fields(
-                list(table['columns'][0].keys()),
-                [
-                    'name',
-                    'nullable',
-                    'data_type',
-                    'default',
-                ],
-            )
-        if table['name'] == "cities":
-            keys = list(table.keys())
-            assert_fields(keys, ["indexes", "columns", "toast_table", "id", "name"])
-            assert_fields(list(table['indexes'][0].keys()), ['name', 'definition'])
-        if float(POSTGRES_VERSION) >= 11:
-            if table['name'] == 'test_part':
-                keys = list(table.keys())
-                assert_fields(keys, ["indexes", "num_partitions", "partition_key"])
-                assert table['num_partitions'] == 2
-            elif table['name'] == 'test_part_no_children':
-                keys = list(table.keys())
-                assert_fields(keys, ["indexes", "num_partitions", "partition_key"])
-                assert table['num_partitions'] == 0
+def test_collect_schemas_multiple_payloads(integration_check, dbm_instance, aggregator):
+    dbm_instance["collect_schemas"] = {'enabled': True, 'collection_interval': 0.5}
+    dbm_instance['relations'] = []
+    dbm_instance["database_autodiscovery"] = {"enabled": True, "include": ["datadog"]}
+    del dbm_instance['dbname']
+    check = integration_check(dbm_instance)
+    check.metadata_samples._schema_collector._config.payload_chunk_size = 1
+    run_one_check(check, dbm_instance)
 
-    assert_fields(tables_got, tables_set)
-    assert_not_fields(tables_got, tables_not_reported_set)
+    dbm_metadata = aggregator.get_event_platform_events("dbm-metadata")
+    schema_events = [e for e in dbm_metadata if e['kind'] == 'pg_databases']
+    assert len(schema_events) > 1
+    # Check that all the payloads have the same collection_started_at
+    collection_started_at = schema_events[0]['collection_started_at']
+    for schema_event in schema_events:
+        assert schema_event['collection_started_at'] == collection_started_at
+    # Check that only the last payload has the collection_payloads_count
+    # and that the count matches the number of payloads
+    collection_payloads_count = schema_events[-1]['collection_payloads_count']
+    assert collection_payloads_count == len(schema_events)
+    for schema_event in schema_events[:-1]:
+        assert 'collection_payloads_count' not in schema_event
+
+
+def test_metadata_collectors_honor_their_own_collection_intervals(integration_check, dbm_instance):
+    """
+    Each metadata sub-collector collects only once its own interval has elapsed. The intervals are
+    deliberately distinct so a collector that gates on a sibling's timestamp or interval fails here
+    instead of passing on coincidentally equal values.
+    """
+    # Extensions has no interval of its own; it shares collect_settings.collection_interval.
+    settings_interval, schemas_interval, column_statistics_interval = 600, 700, 800
+    dbm_instance['collect_settings'] = {
+        'enabled': True,
+        'run_sync': True,
+        'collection_interval': settings_interval,
+    }
+    dbm_instance['collect_schemas'] = {'enabled': True, 'collection_interval': schemas_interval}
+    dbm_instance['collect_column_statistics'] = {
+        'enabled': True,
+        'collection_interval': column_statistics_interval,
+    }
+
+    check = integration_check(dbm_instance)
+    # The first run establishes the connection and server version the collectors need, and takes the
+    # one collection each interval allows. Leave the job uncancelled so it can keep running below.
+    run_one_check(check, cancel=False)
+
+    metadata = check.metadata_samples
+
+    # wraps= leaves the real method in place, so each collector still stamps its own timestamp.
+    def spy_on(method_name):
+        return mock.patch.object(metadata, method_name, wraps=getattr(metadata, method_name))
+
+    with (
+        spy_on('_collect_postgres_settings') as settings,
+        spy_on('_collect_postgres_extensions') as extensions,
+        spy_on('_collect_postgres_schemas') as schemas,
+        spy_on('_collect_column_statistics') as column_statistics,
+    ):
+
+        def counts_after_ticks(ticks=1):
+            for _ in range(ticks):
+                metadata.run_job()
+            return {
+                'settings': settings.call_count,
+                'extensions': extensions.call_count,
+                'schemas': schemas.call_count,
+                'column_statistics': column_statistics.call_count,
+            }
+
+        # The first run stamped every collector, so no number of ticks collects anything.
+        assert counts_after_ticks(3) == {'settings': 0, 'extensions': 0, 'schemas': 0, 'column_statistics': 0}
+
+        # Retire one timestamp at a time; only the collector that owns it may become due.
+        metadata._last_schemas_query_time -= schemas_interval + 1
+        assert counts_after_ticks() == {'settings': 0, 'extensions': 0, 'schemas': 1, 'column_statistics': 0}
+
+        metadata._last_column_statistics_query_time -= column_statistics_interval + 1
+        assert counts_after_ticks() == {'settings': 0, 'extensions': 0, 'schemas': 1, 'column_statistics': 1}
+
+        # Settings and extensions share one interval, so they come due together.
+        metadata._time_since_last_settings_query -= settings_interval + 1
+        metadata._time_since_last_extension_query -= settings_interval + 1
+        assert counts_after_ticks() == {'settings': 1, 'extensions': 1, 'schemas': 1, 'column_statistics': 1}
 
 
 def assert_fields(keys: List[str], fields: List[str]):

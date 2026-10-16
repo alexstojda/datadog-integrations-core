@@ -4,6 +4,8 @@
 
 Use the OpenLDAP integration to get metrics from the `cn=Monitor` backend of your OpenLDAP servers.
 
+**Minimum Agent version:** 6.5.0
+
 ## Setup
 
 ### Installation
@@ -16,6 +18,8 @@ The OpenLDAP integration is packaged with the Agent. To start gathering your Ope
 ### Configuration
 
 #### Prepare OpenLDAP
+
+The user created in these steps is granted read-only access to the monitor backend. As a best practice, Datadog recommends this read-only setup to limit the permissions granted to the Datadog Agent.
 
 If the `cn=Monitor` backend is not configured on your server, follow these steps:
 
@@ -179,7 +183,7 @@ See [service_checks.json][8] for a list of service checks provided by this integ
 Need help? Contact [Datadog support][9].
 
 
-[1]: https://app.datadoghq.com/account/settings/agent/latest
+[1]: /account/settings/agent/latest
 [2]: https://github.com/DataDog/integrations-core/blob/master/openldap/datadog_checks/openldap/data/conf.yaml.example
 [3]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
 [4]: https://docs.datadoghq.com/agent/kubernetes/integrations/

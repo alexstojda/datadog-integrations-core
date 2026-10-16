@@ -20,6 +20,9 @@ from datadog_checks.base.utils.models import validation
 from . import defaults, validators
 
 
+SECURE_FIELD_NAMES = frozenset(['local_cert_path', 'tls_ca_cert', 'tls_cert', 'tls_private_key'])
+
+
 class MetricPatterns(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -40,6 +43,7 @@ class InstanceConfig(BaseModel):
     days_warning: Optional[float] = None
     disable_generic_tags: Optional[bool] = None
     empty_default_hostname: Optional[bool] = None
+    enable_legacy_tags_normalization: Optional[bool] = None
     fetch_intermediate_certs: Optional[bool] = None
     intermediate_cert_refresh_interval: Optional[float] = None
     local_cert_path: Optional[str] = None
@@ -58,6 +62,7 @@ class InstanceConfig(BaseModel):
     timeout: Optional[int] = None
     tls_ca_cert: Optional[str] = None
     tls_cert: Optional[str] = None
+    tls_ciphers: Optional[tuple[str, ...]] = None
     tls_private_key: Optional[str] = None
     tls_private_key_password: Optional[str] = None
     tls_validate_hostname: Optional[bool] = None
@@ -74,6 +79,11 @@ class InstanceConfig(BaseModel):
         field_name = field.alias or info.field_name
         if field_name in info.context['configured_fields']:
             value = getattr(validators, f'instance_{info.field_name}', identity)(value, field=field)
+
+            if info.field_name in SECURE_FIELD_NAMES:
+                validation.security.check_field_trusted_provider(
+                    info.field_name, value, info.context.get('security_config')
+                )
         else:
             value = getattr(defaults, f'instance_{info.field_name}', lambda: value)()
 

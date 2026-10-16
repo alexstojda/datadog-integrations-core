@@ -2,8 +2,17 @@
 
 ## Overview
 
-This check monitors [Flink][1]. Datadog collects Flink metrics through Flink's
-[Datadog HTTP Reporter][2], which uses [Datadog's HTTP API][3].
+This check monitors [Flink][1]. Metrics can be collected in one of two ways:
+
+- **Agent-side collection** via Flink's [Prometheus reporter][15], scraped by
+  the Datadog Agent over OpenMetrics. The Datadog API key lives in the Agent,
+  so no secret needs to be set on the Flink side - well suited to
+  Kubernetes/GitOps deployments.
+- **Push collection** via Flink's [Datadog HTTP Reporter][2], where Flink
+  pushes metrics directly to [Datadog's HTTP API][3]. This requires the
+  Datadog API key to be set in Flink's configuration.
+
+**Minimum Agent version:** 7.17.2
 
 ## Setup
 
@@ -14,7 +23,65 @@ No additional installation is needed on your server.
 
 ### Configuration
 
-#### Metric collection
+#### Metric collection - OpenMetrics (recommended for Kubernetes)
+
+1. Configure the [Prometheus reporter][15] in Flink. In your
+   `<FLINK_HOME>/conf/flink-conf.yaml`:
+
+   ```yaml
+   metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+   metrics.reporter.prom.port: 9249
+   ```
+
+   Unlike the Datadog HTTP Reporter, the Prometheus reporter ignores
+   `metrics.scope.*` overrides -- it uses Flink's internal scope names
+   directly. No extra Flink configuration is required for this
+   integration to recognize the metrics.
+
+2. Edit `flink.d/conf.yaml` (in the Agent's `conf.d/` directory) and set
+   `openmetrics_endpoint` to point at the reporter:
+
+   ```yaml
+   instances:
+     - openmetrics_endpoint: http://<FLINK_HOST>:9249/metrics
+   ```
+
+   In Kubernetes, configure this via Autodiscovery pod annotations:
+
+   ```yaml
+   ad.datadoghq.com/jobmanager.checks: |
+     {
+       "flink": {
+         "init_config": {},
+         "instances": [{"openmetrics_endpoint": "http://%%host%%:9249/metrics"}]
+       }
+     }
+   ```
+
+3. Restart Flink and the Agent.
+
+#### Metric collection - Datadog HTTP Reporter (legacy)
+
+<!-- partial
+{{< site-region region="gov,gov2" >}}
+1. Configure the [StatsD reporter][14] in Flink.
+   In your `<FLINK_HOME>/conf/flink-conf.yaml`, add these lines:
+   ```yaml
+   metrics.reporter.stsd.factory.class: org.apache.flink.metrics.statsd.StatsDReporterFactory
+   metrics.reporter.stsd.host: datadog-agent
+   metrics.reporter.stsd.port: 8125
+   metrics.reporter.stsd.interval: 60 SECONDS 
+    ```
+2. Ensure DogStatsD/StatsD is enabled within Datadog Agent and consider setting `DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true` for containerized environments.
+3. Restart Flink to start sending your Flink metrics to Datadog.
+
+[14]: https://nightlies.apache.org/flink/flink-docs-release-1.20/docs/deployment/metric_reporters/#statsd
+
+{{< /site-region >}}
+partial -->
+
+<!-- partial
+{{< site-region region="us,us3,us5,eu,ap1" >}}
 
 1. Configure the [Datadog HTTP Reporter][2] in Flink.
 
@@ -23,7 +90,7 @@ No additional installation is needed on your server.
     ```yaml
     metrics.reporter.dghttp.factory.class: org.apache.flink.metrics.datadog.DatadogHttpReporterFactory
     metrics.reporter.dghttp.apikey: <DATADOG_API_KEY>
-    metrics.reporter.dghttp.dataCenter: {{< region-param key="dd_datacenter" >}}
+    metrics.reporter.dghttp.dataCenter: US #(optional) The data center (EU/US) to connect to, defaults to US.
     ```
 
 2. Re-map system scopes in your `<FLINK_HOME>/conf/flink-conf.yaml`.
@@ -48,6 +115,12 @@ No additional installation is needed on your server.
      **Note**: By default, any variables in metric names are sent as tags, so there is no need to add custom tags for `job_id`, `task_id`, etc.
 
 4. Restart Flink to start sending your Flink metrics to Datadog.
+
+[2]: https://nightlies.apache.org/flink/flink-docs-release-1.16/docs/deployment/metric_reporters/#datadog
+[5]: /organization-settings/api-keys
+
+{{< /site-region >}}
+partial -->
 
 #### Log collection
 
@@ -114,8 +187,8 @@ Need help? Contact [Datadog support][12].
 [1]: https://flink.apache.org/
 [2]: https://nightlies.apache.org/flink/flink-docs-release-1.16/docs/deployment/metric_reporters/#datadog
 [3]: https://docs.datadoghq.com/api/?lang=bash#api-reference
-[4]: https://app.datadoghq.com/account/settings/agent/latest
-[5]: https://app.datadoghq.com/organization-settings/api-keys
+[4]: /account/settings/agent/latest
+[5]: /organization-settings/api-keys
 [6]: https://github.com/apache/flink/tree/release-1.16/flink-dist/src/main/flink-bin/conf
 [7]: https://docs.datadoghq.com/logs/processing/#integration-pipelines
 [8]: https://github.com/DataDog/integrations-core/blob/master/flink/datadog_checks/flink/data/conf.yaml.example
@@ -124,3 +197,4 @@ Need help? Contact [Datadog support][12].
 [11]: https://github.com/DataDog/integrations-core/blob/master/flink/metadata.csv
 [12]: https://docs.datadoghq.com/help/
 [13]: https://nightlies.apache.org/flink/flink-docs-release-1.16/docs/deployment/advanced/logging/
+[15]: https://nightlies.apache.org/flink/flink-docs-stable/docs/deployment/metric_reporters/#prometheus

@@ -2,8 +2,7 @@
 # All rights reserved
 # Licensed under Simplified BSD License (see LICENSE)
 import re
-
-from six.moves.urllib.parse import urlparse
+from urllib.parse import urlparse
 
 from datadog_checks.base import AgentCheck, ConfigurationError
 from datadog_checks.base.errors import CheckException
@@ -93,6 +92,9 @@ class Apache(AgentCheck):
         except Exception as e:
             self.log.warning("Caught exception %s", e)
             self.service_check(service_check_name, AgentCheck.CRITICAL, tags=service_check_tags)
+            self.warning(
+                "For Apache troubleshooting, please visit: https://docs.datadoghq.com/integrations/apache/?tab=host#troubleshooting"
+            )
             raise
         else:
             self.service_check(service_check_name, AgentCheck.OK, tags=service_check_tags)

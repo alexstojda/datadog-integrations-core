@@ -36,6 +36,10 @@ def instance_collect_tags():
     return False
 
 
+def instance_collect_vsan_data():
+    return False
+
+
 def instance_collection_level():
     return 1
 
@@ -52,6 +56,10 @@ def instance_disable_generic_tags():
     return False
 
 
+def instance_enable_legacy_tags_normalization():
+    return True
+
+
 def instance_event_resource_filters():
     return ['vm', 'host']
 
@@ -60,8 +68,16 @@ def instance_excluded_host_tags():
     return []
 
 
+def instance_hostname_transform():
+    return 'default'
+
+
 def instance_include_datastore_cluster_folder_tag():
     return True
+
+
+def instance_infrastructure_mode():
+    return 'full'
 
 
 def instance_max_historical_metrics():

@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "25ae6f45-147b-478c-9f0c-5013c3859796",
   "app_id": "mapreduce",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -15,7 +16,26 @@
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/hadoop-architecture-overview"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-hadoop-metrics"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/collecting-hadoop-metrics"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-hadoop-metrics-datadog"
+      }
     ]
   },
   "author": {
@@ -46,9 +66,6 @@
     },
     "dashboards": {
       "mapreduce": "assets/dashboards/mapreduce_dashboard.json"
-    },
-    "logs": {
-      "source": "mapreduce"
     }
   }
 }

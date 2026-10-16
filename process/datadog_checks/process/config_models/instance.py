@@ -9,15 +9,17 @@
 
 from __future__ import annotations
 
-from types import MappingProxyType
-from typing import Any, Optional
+from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from datadog_checks.base.utils.functions import identity
 from datadog_checks.base.utils.models import validation
 
 from . import defaults, validators
+
+
+SECURE_FIELD_NAMES = frozenset(['pid_file'])
 
 
 class MetricPatterns(BaseModel):
@@ -29,6 +31,15 @@ class MetricPatterns(BaseModel):
     include: Optional[tuple[str, ...]] = None
 
 
+class Thresholds(BaseModel):
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        frozen=True,
+    )
+    critical: Optional[tuple[float, ...]] = Field(None, min_length=2)
+    warning: Optional[tuple[float, ...]] = Field(None, min_length=2)
+
+
 class InstanceConfig(BaseModel):
     model_config = ConfigDict(
         validate_default=True,
@@ -38,6 +49,7 @@ class InstanceConfig(BaseModel):
     collect_children: Optional[bool] = None
     disable_generic_tags: Optional[bool] = None
     empty_default_hostname: Optional[bool] = None
+    enable_legacy_tags_normalization: Optional[bool] = None
     exact_match: Optional[bool] = None
     ignore_denied_access: Optional[bool] = None
     metric_patterns: Optional[MetricPatterns] = None
@@ -49,8 +61,9 @@ class InstanceConfig(BaseModel):
     search_string: Optional[tuple[str, ...]] = None
     service: Optional[str] = None
     tags: Optional[tuple[str, ...]] = None
-    thresholds: Optional[MappingProxyType[str, Any]] = None
+    thresholds: Optional[Thresholds] = None
     try_sudo: Optional[bool] = None
+    use_oneshot: Optional[bool] = None
     user: Optional[str] = None
 
     @model_validator(mode='before')
@@ -63,6 +76,11 @@ class InstanceConfig(BaseModel):
         field_name = field.alias or info.field_name
         if field_name in info.context['configured_fields']:
             value = getattr(validators, f'instance_{info.field_name}', identity)(value, field=field)
+
+            if info.field_name in SECURE_FIELD_NAMES:
+                validation.security.check_field_trusted_provider(
+                    info.field_name, value, info.context.get('security_config')
+                )
         else:
             value = getattr(defaults, f'instance_{info.field_name}', lambda: value)()
 

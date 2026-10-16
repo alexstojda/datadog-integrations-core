@@ -2,12 +2,17 @@
 
 -----
 
-All configuration can be managed entirely by the `ddev config` command group. To locate the
+All configuration can be managed entirely by the `ddev config` command group. To locate the global
 [TOML][toml-github] config file, run:
 
 ```
 ddev config find
 ```
+
+!!! info "Config overrides"
+    When running `ddev`, if the current working directory (or a parent directory) contains a `.ddev.toml` file, any options defined in this file will override those in the global
+    configuration file. This allows easy configuration sets depending on the working directory `ddev` is run from.
+    See the [Multi-repo/Worktrees](multirepo.md) documentation for more details on how overrides work and affect commands.
 
 ## Repository
 
@@ -26,7 +31,7 @@ agent = "/path/to/datadog-agent"
 would make it so running e.g. `ddev test nginx` will look for an integration named `nginx` in `/path/to/integrations-core`
 no matter what directory you are in. If the selected path does not exist, then the current directory will be used.
 
-By default, `repo` is set to `core`.
+By default, `repo` is set to `core`. To easily switch between repositories depending on your current directory take a look at how to work with [Multi-repo/Worktrees](multirepo.md).
 
 ## Agent
 
@@ -38,11 +43,11 @@ Agent versions. For example, this configuration:
 agent = "master"
 
 [agents.master]
-docker = "datadog/agent-dev:master"
+docker = "registry.datadoghq.com/agent-dev:master-py3"
 local = "latest"
 
 [agents."7.18.1"]
-docker = "datadog/agent:7.18.1"
+docker = "registry.datadoghq.com/agent:7.18.1"
 local = "7.18.1"
 ```
 

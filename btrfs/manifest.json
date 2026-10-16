@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "471f9447-678b-4199-9503-7170b65d07c5",
   "app_id": "btrfs",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -14,7 +15,8 @@
     "classifier_tags": [
       "Supported OS::Linux",
       "Supported OS::macOS",
-      "Category::OS & System"
+      "Category::OS & System",
+      "Offering::Integration"
     ]
   },
   "author": {

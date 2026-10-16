@@ -1,0 +1,5 @@
+provides:
+  - id: bluecat-edge-dns-query-logs
+    always_on: false
+    granular: true
+    data_type: logs

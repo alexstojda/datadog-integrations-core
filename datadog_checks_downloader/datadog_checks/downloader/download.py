@@ -22,6 +22,7 @@ from packaging.version import parse as parse_version
 from securesystemslib import interface
 from tuf.ngclient import Updater
 
+from .download_v2 import RetryingRequestsFetcher
 from .exceptions import (
     DuplicatePackage,
     InconsistentSimpleIndex,
@@ -49,7 +50,7 @@ REPOSITORY_DIR = 'repo'
 REPOSITORY_URL_PREFIX = 'https://dd-integrations-core-wheels-build-stable.datadoghq.com'
 # Where to find our in-toto root layout.
 IN_TOTO_METADATA_DIR = 'in-toto-metadata'
-ROOT_LAYOUTS = {'core': '5.core.root.layout', 'extras': '1.extras.root.layout'}
+ROOT_LAYOUTS = {'core': '8.core.root.layout', 'extras': '1.extras.root.layout'}
 DEFAULT_ROOT_LAYOUT_TYPE = 'core'
 
 
@@ -101,6 +102,7 @@ class TUFDownloader:
             metadata_base_url=f'{repository_url_prefix}/metadata.staged/',
             target_base_url=f'{repository_url_prefix}/targets/',
             target_dir=self.__targets_dir,
+            fetcher=RetryingRequestsFetcher(),
         )
 
         # Increase requests timeout.

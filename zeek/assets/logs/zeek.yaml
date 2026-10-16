@@ -1,3 +1,5 @@
+# bypass-global-no-service-config-checks
+# bypass-global-missing-date-remapper-checks
 id: zeek
 metric_id: zeek
 backend_only: false
@@ -134,16 +136,6 @@ facets:
     path: zeek.auth_attempts
     source: log
     type: integer
-  - facetType: range
-    groups:
-      - Zeek
-    name: DNS Bytes
-    path: zeek.dns_bytes
-    source: log
-    type: integer
-    unit:
-      family: bytes
-      name: byte
   - facetType: list
     groups:
       - Zeek
@@ -158,6 +150,44 @@ facets:
     path: zeek.request_p
     source: log
     type: string
+  - facetType: range
+    groups:
+      - Zeek
+    name: conn_red
+    path: zeek.conn_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: conn_total
+    path: zeek.conn_total
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: DNS Bytes
+    path: zeek.dns_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: dns_red
+    path: zeek.dns_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: dns_total
+    path: zeek.dns_total
+    source: log
+    type: double
   - facetType: range
     groups:
       - Zeek
@@ -178,6 +208,20 @@ facets:
     unit:
       family: bytes
       name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: files_red
+    path: zeek.files_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: files_total
+    path: zeek.files_total
+    source: log
+    type: double
   - facetType: list
     groups:
       - Zeek
@@ -185,6 +229,20 @@ facets:
     path: zeek.host_p
     source: log
     type: string
+  - facetType: range
+    groups:
+      - Zeek
+    name: http_red
+    path: zeek.http_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: http_total
+    path: zeek.http_total
+    source: log
+    type: double
   - facetType: range
     groups:
       - Zeek
@@ -222,20 +280,6 @@ facets:
     path: zeek.note
     source: log
     type: string
-  - facetType: list
-    groups:
-      - Zeek
-    name: Originator IP
-    path: zeek.orig_h
-    source: log
-    type: string
-  - facetType: list
-    groups:
-      - Zeek
-    name: Originator Port
-    path: zeek.orig_p
-    source: log
-    type: string
   - facetType: range
     groups:
       - Zeek
@@ -258,20 +302,6 @@ facets:
       - Zeek
     name: Protocol
     path: zeek.proto
-    source: log
-    type: string
-  - facetType: list
-    groups:
-      - Zeek
-    name: Responder IP
-    path: zeek.resp_h
-    source: log
-    type: string
-  - facetType: list
-    groups:
-      - Zeek
-    name: Responder Port
-    path: zeek.resp_p
     source: log
     type: string
   - facetType: range
@@ -311,6 +341,20 @@ facets:
   - facetType: range
     groups:
       - Zeek
+    name: ssl_red
+    path: zeek.ssl_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: ssl_total
+    path: zeek.ssl_total
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
     name: Total Bytes
     path: zeek.total_bytes
     source: log
@@ -318,6 +362,460 @@ facets:
     unit:
       family: bytes
       name: byte
+  - facetType: range
+    groups:
+      - Zeek
+    name: weird_red
+    path: zeek.weird_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: weird_total
+    path: zeek.weird_total
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: x509_red
+    path: zeek.x509_red
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Zeek
+    name: x509_total
+    path: zeek.x509_total
+    source: log
+    type: double
+  - groups:
+      - OCSF
+    name: Activity ID
+    path: ocsf.activity_id
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: Activity Name
+    path: ocsf.activity_name
+    source: log
+  - groups:
+      - OCSF
+    name: Category ID
+    path: ocsf.category_uid
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: Category
+    path: ocsf.category_name
+    source: log
+  - groups:
+      - OCSF
+    name: Class ID
+    path: ocsf.class_uid
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: Class
+    path: ocsf.class_name
+    source: log
+  - groups:
+      - OCSF
+    name: Severity
+    path: ocsf.severity
+    source: log
+  - groups:
+      - OCSF
+    name: Severity ID
+    path: ocsf.severity_id
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: Status
+    path: ocsf.status
+    source: log
+  - groups:
+      - OCSF
+    name: Status ID
+    path: ocsf.status_id
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: Source IP Address
+    path: ocsf.src_endpoint.ip
+    source: log
+  - groups:
+      - OCSF
+    name: Destination IP Address
+    path: ocsf.dst_endpoint.ip
+    source: log
+  - groups:
+      - OCSF
+    name: Event Code
+    path: ocsf.metadata.event_code
+    source: log
+  - groups:
+      - OCSF
+    name: Product Name
+    path: ocsf.metadata.product.name
+    source: log
+  - groups:
+      - OCSF
+    name: Vendor Name
+    path: ocsf.metadata.product.vendor_name
+    source: log
+  - groups:
+      - OCSF
+    name: Finding Info Title
+    path: ocsf.finding_info.title
+    source: log
+  - groups:
+      - OCSF
+    name: Finding Info Unique ID
+    path: ocsf.finding_info.uid
+    source: log
+  - groups:
+      - OCSF
+    name: HTTP Method
+    path: ocsf.http_request.http_method
+    source: log
+  - groups:
+      - OCSF
+    name: Request URL String
+    path: ocsf.http_request.url.url_string
+    source: log
+  - groups:
+      - OCSF
+    name: TLS Version
+    path: ocsf.tls.version
+    source: log
+  - groups:
+      - OCSF
+    name: File Name
+    path: ocsf.file.name
+    source: log
+  - groups:
+      - OCSF
+    name: File MIME Type
+    path: ocsf.file.mime_type
+    source: log
+  - groups:
+      - OCSF
+    name: DNS Query Hostname
+    path: ocsf.query.hostname
+    source: log
+  - groups:
+      - OCSF
+    name: DNS Answer
+    path: ocsf.answers
+    source: log
+  - groups:
+      - OCSF
+    name: Session Unique ID
+    path: ocsf.actor.session.uid
+    source: log
+  - groups:
+      - OCSF
+    name: Confidence
+    path: ocsf.confidence
+    source: log
+  - groups:
+      - OCSF
+    name: Confidence ID
+    path: ocsf.confidence_id
+    source: log
+  - groups:
+      - OCSF
+    name: Connection Info Boundary
+    path: ocsf.connection_info.boundary
+    source: log
+  - groups:
+      - OCSF
+    name: Connection Info Boundary ID
+    path: ocsf.connection_info.boundary_id
+    source: log
+  - groups:
+      - OCSF
+    name: Connection Info Community UID
+    path: ocsf.connection_info.community_uid
+    source: log
+  - groups:
+      - OCSF
+    name: Connection Info Direction
+    path: ocsf.connection_info.direction
+    source: log
+  - groups:
+      - OCSF
+    name: Connection Info Direction ID
+    path: ocsf.connection_info.direction_id
+    source: log
+  - groups:
+      - OCSF
+    name: Connection Info Flag History
+    path: ocsf.connection_info.flag_history
+    source: log
+  - groups:
+      - OCSF
+    name: Connection Info Protocol Ver
+    path: ocsf.connection_info.protocol_ver
+    source: log
+  - groups:
+      - OCSF
+    name: Connection Info UID
+    path: ocsf.connection_info.uid
+    source: log
+  - groups:
+      - OCSF
+    name: Device IP
+    path: ocsf.device.ip
+    source: log
+  - groups:
+      - OCSF
+    name: Dst Endpoint Hostname
+    path: ocsf.dst_endpoint.hostname
+    source: log
+  - facetType: range
+    groups:
+      - OCSF
+    name: Dst Endpoint Port
+    path: ocsf.dst_endpoint.port
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - OCSF
+    name: Duration Milliseconds
+    path: ocsf.duration
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: Evidences
+    path: ocsf.evidences
+    source: log
+  - groups:
+      - OCSF
+    name: File Hashes
+    path: ocsf.file.hashes
+    source: log
+  - groups:
+      - OCSF
+    name: File Size
+    path: ocsf.file.size
+    source: log
+  - groups:
+      - OCSF
+    name: File Type ID
+    path: ocsf.file.type_id
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: File Unique ID
+    path: ocsf.file.uid
+    source: log
+  - groups:
+      - OCSF
+    name: Finding Info Analytic Name
+    path: ocsf.finding_info.analytic.name
+    source: log
+  - groups:
+      - OCSF
+    name: Finding Info Analytic Type
+    path: ocsf.finding_info.analytic.type
+    source: log
+  - groups:
+      - OCSF
+    name: Finding Info Analytic Type ID
+    path: ocsf.finding_info.analytic.type_id
+    source: log
+  - groups:
+      - OCSF
+    name: Finding Info Analytic UID
+    path: ocsf.finding_info.analytic.uid
+    source: log
+  - groups:
+      - OCSF
+    name: Finding Info UID Alt
+    path: ocsf.finding_info.uid_alt
+    source: log
+  - groups:
+      - OCSF
+    name: HTTP Request Body Length
+    path: ocsf.http_request.body_length
+    source: log
+  - groups:
+      - OCSF
+    name: Url Hostname
+    path: ocsf.http_request.url.hostname
+    source: log
+  - groups:
+      - OCSF
+    name: Url Path
+    path: ocsf.http_request.url.path
+    source: log
+  - groups:
+      - OCSF
+    name: HTTP Request URL Port
+    path: ocsf.http_request.url.port
+    source: log
+  - groups:
+      - OCSF
+    name: HTTP User-Agent
+    path: ocsf.http_request.user_agent
+    source: log
+  - groups:
+      - OCSF
+    name: HTTP Response Body Length
+    path: ocsf.http_response.body_length
+    source: log
+  - groups:
+      - OCSF
+    name: Response Code
+    path: ocsf.http_response.code
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: HTTP Response Message
+    path: ocsf.http_response.message
+    source: log
+  - groups:
+      - OCSF
+    name: Message
+    path: ocsf.message
+    source: log
+  - groups:
+      - OCSF
+    name: Metadata Original Time
+    path: ocsf.metadata.original_time
+    source: log
+  - groups:
+      - OCSF
+    name: Metadata Event UID
+    path: ocsf.metadata.uid
+    source: log
+  - groups:
+      - OCSF
+    name: Query Class
+    path: ocsf.query.class
+    source: log
+  - groups:
+      - OCSF
+    name: Query Resource Record Type
+    path: ocsf.query.type
+    source: log
+  - groups:
+      - OCSF
+    name: Response Code
+    path: ocsf.rcode
+    source: log
+  - groups:
+      - OCSF
+    name: Response Code ID
+    path: ocsf.rcode_id
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - OCSF
+    name: Src Endpoint Port
+    path: ocsf.src_endpoint.port
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: Status Detail
+    path: ocsf.status_detail
+    source: log
+  - facetType: range
+    groups:
+      - OCSF
+    name: Event Time
+    path: ocsf.time
+    source: log
+    type: integer
+  - groups:
+      - OCSF
+    name: TLS Cipher
+    path: ocsf.tls.cipher
+    source: log
+  - groups:
+      - OCSF
+    name: TLS JA3 Hash Algorithm
+    path: ocsf.tls.ja3_hash.algorithm
+    source: log
+  - groups:
+      - OCSF
+    name: TLS JA3 Hash Algorithm ID
+    path: ocsf.tls.ja3_hash.algorithm_id
+    source: log
+  - groups:
+      - OCSF
+    name: TLS JA3 Hash Value
+    path: ocsf.tls.ja3_hash.value
+    source: log
+  - groups:
+      - OCSF
+    name: TLS JA3s Hash Algorithm
+    path: ocsf.tls.ja3s_hash.algorithm
+    source: log
+  - groups:
+      - OCSF
+    name: TLS JA3s Hash Algorithm ID
+    path: ocsf.tls.ja3s_hash.algorithm_id
+    source: log
+  - groups:
+      - OCSF
+    name: TLS JA3s Hash Value
+    path: ocsf.tls.ja3s_hash.value
+    source: log
+  - groups:
+      - OCSF
+    name: TLS SNI
+    path: ocsf.tls.sni
+    source: log
+  - groups:
+      - OCSF
+    name: Traffic Bytes
+    path: ocsf.traffic.bytes
+    source: log
+  - groups:
+      - OCSF
+    name: Traffic Bytes In
+    path: ocsf.traffic.bytes_in
+    source: log
+  - groups:
+      - OCSF
+    name: Traffic Bytes Missed
+    path: ocsf.traffic.bytes_missed
+    source: log
+  - groups:
+      - OCSF
+    name: Traffic Bytes Out
+    path: ocsf.traffic.bytes_out
+    source: log
+  - groups:
+      - OCSF
+    name: Traffic Packets
+    path: ocsf.traffic.packets
+    source: log
+  - groups:
+      - OCSF
+    name: Traffic Packets In
+    path: ocsf.traffic.packets_in
+    source: log
+  - groups:
+      - OCSF
+    name: Traffic Packets Out
+    path: ocsf.traffic.packets_out
+    source: log
 pipeline:
   type: pipeline
   name: Zeek
@@ -334,8 +832,6 @@ pipeline:
         - type: grok-parser
           name: Parsing corelight logs
           enabled: true
-          meta:
-            tags: []
           source: message
           samples:
             - <134>Dec 26 01:35:11 machine-name {"_path":"capture_loss","_write_ts":"2023-12-12T05:52:50.756358Z","ts":"2023-12-12T05:52:32.763303Z","ts_delta":15.235642194747925,"peer":"zeek","gaps":3,"acks":316,"percent_lost":0.9493670886075949}
@@ -345,17 +841,70 @@ pipeline:
     - type: service-remapper
       name: Define `_path` as the official service of the log
       enabled: true
-      meta:
-        tags: []
       sources:
         - _path
-    - type: date-remapper
-      name: Define `ts` as the official date of the log
+    - type: attribute-remapper
+      name: Map `id.orig_h` to `network.client.ip`
       enabled: true
-      meta:
-        tags: []
       sources:
-        - ts
+        - id.orig_h
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id.orig_p` to `network.client.port`
+      enabled: true
+      sources:
+        - id.orig_p
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id.resp_h` to `network.destination.ip`
+      enabled: true
+      sources:
+        - id.resp_h
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id.resp_p` to `network.destination.port`
+      enabled: true
+      sources:
+        - id.resp_p
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: pipeline
+      name: Datetime Remapper for other than files_red logs
+      enabled: true
+      filter:
+        query: "-@_path:files_red "
+      processors:
+        - type: date-remapper
+          name: Define `ts` as the official date of the log
+          enabled: true
+          sources:
+            - ts
+    - type: pipeline
+      name: Datetime Remapper for files_red logs
+      enabled: true
+      filter:
+        query: "@_path:files_red "
+      processors:
+        - type: date-remapper
+          name: Define `_write_ts` as the official date of the log
+          enabled: true
+          sources:
+            - _write_ts
     - type: pipeline
       name: Processing for conn logs
       enabled: true
@@ -364,8 +913,6 @@ pipeline:
       processors:
         - name: Lookup for `conn_state` to `connection_state` field
           enabled: true
-          meta:
-            tags: []
           source: conn_state
           target: connection_state
           lookupTable: |-
@@ -386,14 +933,12 @@ pipeline:
         - type: attribute-remapper
           name: Map `missed_bytes` to `zeek.missed_bytes`
           enabled: true
-          meta:
-            tags: []
           sources:
             - missed_bytes
           sourceType: attribute
           target: zeek.missed_bytes
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
     - type: pipeline
       name: Processing for pe logs
@@ -403,8 +948,6 @@ pipeline:
       processors:
         - name: Lookup for `is_exe` to `file_type` field
           enabled: true
-          meta:
-            tags: []
           source: is_exe
           target: file_type
           lookupTable: |-
@@ -420,8 +963,6 @@ pipeline:
         - type: grok-parser
           name: Parsing `severity` from `level` attribute
           enabled: true
-          meta:
-            tags: []
           source: level
           samples:
             - Reporter::INFO
@@ -436,8 +977,6 @@ pipeline:
       processors:
         - name: Lookup for `mode` to `ntp_mode`
           enabled: true
-          meta:
-            tags: []
           source: mode
           target: ntp_mode
           lookupTable: |-
@@ -458,8 +997,6 @@ pipeline:
       processors:
         - name: Lookup for `alert.severity` to `alert_severity`
           enabled: true
-          meta:
-            tags: []
           source: alert.severity
           target: alert_severity
           lookupTable: |-
@@ -471,191 +1008,121 @@ pipeline:
       name: Processing for http logs and Standard attribute remapping for HTTP requests
       enabled: true
       filter:
-        query: '@_path:http '
+        query: "@_path:(http OR http_red) "
       processors:
         - type: string-builder-processor
-          name: 'Create URL based on `host` and `uri` '
+          name: "Create URL based on `host` and `uri` "
           enabled: true
-          meta:
-            tags: []
           template: http://%{host}%{uri}
           target: http_url
           replaceMissing: false
         - type: attribute-remapper
           name: Map `method` to `http.method`
           enabled: true
-          meta:
-            tags: []
           sources:
             - method
           sourceType: attribute
           target: http.method
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `host` to `http.url_details.host`
           enabled: true
-          meta:
-            tags: []
           sources:
             - host
           sourceType: attribute
           target: http.url_details.host
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `uri` to `http.url_details.path`
           enabled: true
-          meta:
-            tags: []
           sources:
             - uri
           sourceType: attribute
           target: http.url_details.path
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `referrer` to `http.referer`
           enabled: true
-          meta:
-            tags: []
           sources:
             - referrer
           sourceType: attribute
           target: http.referer
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `version` to `http.version`
           enabled: true
-          meta:
-            tags: []
           sources:
             - version
           sourceType: attribute
           target: http.version
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `user_agent` to `http.useragent`
           enabled: true
-          meta:
-            tags: []
           sources:
             - user_agent
           sourceType: attribute
           target: http.useragent
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `status_code` to `http.status_code`
           enabled: true
-          meta:
-            tags: []
           sources:
             - status_code
           sourceType: attribute
           target: http.status_code
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
     - type: pipeline
       name: Standard attribute remapping for Web Access
       enabled: true
       filter:
-        query: '@_path:(conn* OR dns OR ftp OR http OR rdp OR smtp OR socks OR ssh OR tunnel OR smb_files OR smb_mapping OR smtp_links) '
+        query: "@_path:(conn* OR http OR http_red) "
       processors:
-        - type: attribute-remapper
-          name: Map `id.orig_h` to `network.client.ip`
-          enabled: true
-          meta:
-            tags: []
-          sources:
-            - id.orig_h
-          sourceType: attribute
-          target: network.client.ip
-          targetType: attribute
-          preserveSource: false
-          overrideOnConflict: false
-        - type: attribute-remapper
-          name: Map `id.orig_p` to `network.client.port`
-          enabled: true
-          meta:
-            tags: []
-          sources:
-            - id.orig_p
-          sourceType: attribute
-          target: network.client.port
-          targetType: attribute
-          preserveSource: false
-          overrideOnConflict: false
-        - type: attribute-remapper
-          name: Map `id.resp_h` to `network.destination.ip`
-          enabled: true
-          meta:
-            tags: []
-          sources:
-            - id.resp_h
-          sourceType: attribute
-          target: network.destination.ip
-          targetType: attribute
-          preserveSource: false
-          overrideOnConflict: false
-        - type: attribute-remapper
-          name: Map `id.resp_p` to `network.destination.port`
-          enabled: true
-          meta:
-            tags: []
-          sources:
-            - id.resp_p
-          sourceType: attribute
-          target: network.destination.port
-          targetType: attribute
-          preserveSource: false
-          overrideOnConflict: false
         - type: attribute-remapper
           name: Map `orig_bytes`, `request_body_len` to `network.bytes_read`
           enabled: true
-          meta:
-            tags: []
           sources:
             - orig_bytes
             - request_body_len
           sourceType: attribute
           target: network.bytes_read
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `resp_bytes`, `response_body_len` to `network.bytes_written`
           enabled: true
-          meta:
-            tags: []
           sources:
             - resp_bytes
             - response_body_len
           sourceType: attribute
           target: network.bytes_written
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
     - type: pipeline
       name: Processing for dns logs and Standard attribute remapping for DNS
       enabled: true
       filter:
-        query: '@_path:(dns OR generic_dns_tunnels) '
+        query: "@_path:(dns OR dns_red OR generic_dns_tunnels) "
       processors:
         - type: geo-ip-parser
           name: Extracting geolocation information from the client IP
           enabled: true
-          meta:
-            tags: []
           sources:
             - network.client.ip
           target: network.client.geoip
@@ -663,8 +1130,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `bytes` to `zeek.dns_bytes`
           enabled: true
-          meta:
-            tags: []
           sources:
             - bytes
           sourceType: attribute
@@ -675,87 +1140,73 @@ pipeline:
         - type: attribute-remapper
           name: Map `trans_id` to `dns.id`
           enabled: true
-          meta:
-            tags: []
           sources:
             - trans_id
           sourceType: attribute
           target: dns.id
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `domain`, `query` to `dns.question.name`
           enabled: true
-          meta:
-            tags: []
           sources:
             - domain
             - query
           sourceType: attribute
           target: dns.question.name
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `qclass_name` to `dns.question.class`
           enabled: true
-          meta:
-            tags: []
           sources:
             - qclass_name
           sourceType: attribute
           target: dns.question.class
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `qtype_name` to `dns.question.type`
           enabled: true
-          meta:
-            tags: []
           sources:
             - qtype_name
           sourceType: attribute
           target: dns.question.type
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `rcode_name` to `dns.flags.rcode`
           enabled: true
-          meta:
-            tags: []
           sources:
             - rcode_name
           sourceType: attribute
           target: dns.flags.rcode
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `answers` to `dns.answer.name`
           enabled: true
-          meta:
-            tags: []
           sources:
             - answers
           sourceType: attribute
           target: dns.answer.name
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
     - type: pipeline
       name: Standard attribute remapping for user attributes
       enabled: true
       filter:
-        query: '@_path:(ftp OR socks OR http) '
+        query: "@_path:(ftp OR socks OR http OR http_red) "
       processors:
         - type: attribute-remapper
           name: Map `user`, `username` to `usr.name`
           enabled: true
-          meta:
-            tags: []
           sources:
             - user
             - username
@@ -773,66 +1224,10 @@ pipeline:
         - type: attribute-remapper
           name: Map `severity` to `syslog.severity`
           enabled: true
-          meta:
-            tags: []
           sources:
             - severity
           sourceType: attribute
           target: syslog.severity
-          targetType: attribute
-          preserveSource: false
-          overrideOnConflict: false
-    - type: pipeline
-      name: Remap `id.orig_h`,`id.orig_p`,`id.resp_h` and `id.resp_p` attributes
-      enabled: true
-      filter:
-        query: '@_path:(ntp OR snmp OR ssl OR syslog OR files OR intel OR notice OR dpd OR weird OR ldap OR ldap_search) '
-      processors:
-        - type: attribute-remapper
-          name: Map `id.orig_h` to `zeek.orig_h`
-          enabled: true
-          meta:
-            tags: []
-          sources:
-            - id.orig_h
-          sourceType: attribute
-          target: zeek.orig_h
-          targetType: attribute
-          preserveSource: false
-          overrideOnConflict: false
-        - type: attribute-remapper
-          name: Map `id.orig_p` to `zeek.orig_p`
-          enabled: true
-          meta:
-            tags: []
-          sources:
-            - id.orig_p
-          sourceType: attribute
-          target: zeek.orig_p
-          targetType: attribute
-          preserveSource: false
-          overrideOnConflict: false
-        - type: attribute-remapper
-          name: Map `id.resp_h` to `zeek.resp_h`
-          enabled: true
-          meta:
-            tags: []
-          sources:
-            - id.resp_h
-          sourceType: attribute
-          target: zeek.resp_h
-          targetType: attribute
-          preserveSource: false
-          overrideOnConflict: false
-        - type: attribute-remapper
-          name: Map `id.resp_p` to `zeek.resp_p`
-          enabled: true
-          meta:
-            tags: []
-          sources:
-            - id.resp_p
-          sourceType: attribute
-          target: zeek.resp_p
           targetType: attribute
           preserveSource: false
           overrideOnConflict: false
@@ -845,8 +1240,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `request` to `zeek.request`
           enabled: true
-          meta:
-            tags: []
           sources:
             - request
           sourceType: attribute
@@ -857,8 +1250,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `request_p` to `zeek.request_p`
           enabled: true
-          meta:
-            tags: []
           sources:
             - request_p
           sourceType: attribute
@@ -869,8 +1260,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `bound` to `zeek.bound`
           enabled: true
-          meta:
-            tags: []
           sources:
             - bound
           sourceType: attribute
@@ -881,8 +1270,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `bound_p` to `zeek.bound_p`
           enabled: true
-          meta:
-            tags: []
           sources:
             - bound_p
           sourceType: attribute
@@ -899,14 +1286,12 @@ pipeline:
         - type: attribute-remapper
           name: Map `duration` to `zeek.duration_sec`
           enabled: true
-          meta:
-            tags: []
           sources:
             - duration
           sourceType: attribute
           target: zeek.duration_sec
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
     - type: pipeline
       name: Remap attributes for ssh logs
@@ -917,8 +1302,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `auth_attempts` to `zeek.auth_attempts`
           enabled: true
-          meta:
-            tags: []
           sources:
             - auth_attempts
           sourceType: attribute
@@ -935,8 +1318,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `file_size` to `zeek.file_size`
           enabled: true
-          meta:
-            tags: []
           sources:
             - file_size
           sourceType: attribute
@@ -953,8 +1334,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `lease_time` to `zeek.lease_time`
           enabled: true
-          meta:
-            tags: []
           sources:
             - lease_time
           sourceType: attribute
@@ -966,31 +1345,27 @@ pipeline:
       name: Remap attributes for notice and weird logs
       enabled: true
       filter:
-        query: "@_path:(note OR weird) "
+        query: "@_path:(notice OR weird OR weird_red) "
       processors:
         - type: attribute-remapper
           name: Map `note` to `zeek.note`
           enabled: true
-          meta:
-            tags: []
           sources:
             - note
           sourceType: attribute
           target: zeek.note
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
     - type: pipeline
       name: Remap attributes for files logs
       enabled: true
       filter:
-        query: "@_path:files "
+        query: "@_path:(files OR files_red) "
       processors:
         - type: attribute-remapper
           name: Map `overflow_bytes` to `zeek.overflow_bytes`
           enabled: true
-          meta:
-            tags: []
           sources:
             - overflow_bytes
           sourceType: attribute
@@ -1001,38 +1376,54 @@ pipeline:
         - type: attribute-remapper
           name: Map `missing_bytes` to `zeek.missing_bytes`
           enabled: true
-          meta:
-            tags: []
           sources:
             - missing_bytes
           sourceType: attribute
           target: zeek.missing_bytes
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `seen_bytes` to `zeek.seen_bytes`
           enabled: true
-          meta:
-            tags: []
           sources:
             - seen_bytes
           sourceType: attribute
           target: zeek.seen_bytes
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
           overrideOnConflict: false
         - type: attribute-remapper
           name: Map `total_bytes` to `zeek.total_bytes`
           enabled: true
-          meta:
-            tags: []
           sources:
             - total_bytes
           sourceType: attribute
           target: zeek.total_bytes
           targetType: attribute
-          preserveSource: false
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `network.client.ip`, `rx_hosts` to `orig_host`
+          enabled: true
+          sources:
+            - network.client.ip
+            - rx_hosts
+          sourceType: attribute
+          target: orig_host
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `network.destination.ip`, `tx_hosts` to `dest_host`
+          enabled: true
+          sources:
+            - network.destination.ip
+            - tx_hosts
+          sourceType: attribute
+          target: dest_host
+          targetType: attribute
+          preserveSource: true
           overrideOnConflict: false
     - type: pipeline
       name: Remap attributes for capture loss logs
@@ -1043,8 +1434,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `percent_lost` to `zeek.percent_lost`
           enabled: true
-          meta:
-            tags: []
           sources:
             - percent_lost
           sourceType: attribute
@@ -1061,8 +1450,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `size` to `zeek.size`
           enabled: true
-          meta:
-            tags: []
           sources:
             - size
           sourceType: attribute
@@ -1079,8 +1466,6 @@ pipeline:
         - type: attribute-remapper
           name: Map `host_p` to `zeek.host_p`
           enabled: true
-          meta:
-            tags: []
           sources:
             - host_p
           sourceType: attribute
@@ -1092,25 +1477,2411 @@ pipeline:
       name: Remap `proto` attribute to `zeek.proto`
       enabled: true
       filter:
-        query: "@_path:(conn* OR notice OR traceroute OR dns OR dpd OR syslog) "
+        query: "@_path:(conn* OR notice OR traceroute OR dns OR dns_red OR dpd OR syslog) "
       processors:
         - type: attribute-remapper
           name: Map `proto` to `zeek.proto`
           enabled: true
-          meta:
-            tags: []
           sources:
             - proto
           sourceType: attribute
           target: zeek.proto
           targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remapping datared log attributes
+      enabled: true
+      filter:
+        query: "@_path:datared "
+      processors:
+        - type: attribute-remapper
+          name: Map `conn_red` to `zeek.conn_red`
+          enabled: true
+          sources:
+            - conn_red
+          sourceType: attribute
+          target: zeek.conn_red
+          targetType: attribute
           preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `conn_total` to `zeek.conn_total`
+          enabled: true
+          sources:
+            - conn_total
+          sourceType: attribute
+          target: zeek.conn_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dns_red` to `zeek.dns_red`
+          enabled: true
+          sources:
+            - dns_red
+          sourceType: attribute
+          target: zeek.dns_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dns_total` to `zeek.dns_total`
+          enabled: true
+          sources:
+            - dns_total
+          sourceType: attribute
+          target: zeek.dns_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `files_red` to `zeek.files_red`
+          enabled: true
+          sources:
+            - files_red
+          sourceType: attribute
+          target: zeek.files_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `files_total` to `zeek.files_total`
+          enabled: true
+          sources:
+            - files_total
+          sourceType: attribute
+          target: zeek.files_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `http_red` to `zeek.http_red`
+          enabled: true
+          sources:
+            - http_red
+          sourceType: attribute
+          target: zeek.http_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `http_total` to `zeek.http_total`
+          enabled: true
+          sources:
+            - http_total
+          sourceType: attribute
+          target: zeek.http_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ssl_red` to `zeek.ssl_red`
+          enabled: true
+          sources:
+            - ssl_red
+          sourceType: attribute
+          target: zeek.ssl_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ssl_total` to `zeek.ssl_total`
+          enabled: true
+          sources:
+            - ssl_total
+          sourceType: attribute
+          target: zeek.ssl_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `weird_red` to `zeek.weird_red`
+          enabled: true
+          sources:
+            - weird_red
+          sourceType: attribute
+          target: zeek.weird_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `weird_total` to `zeek.weird_total`
+          enabled: true
+          sources:
+            - weird_total
+          sourceType: attribute
+          target: zeek.weird_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `x509_red` to `zeek.x509_red`
+          enabled: true
+          sources:
+            - x509_red
+          sourceType: attribute
+          target: zeek.x509_red
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `x509_total` to `zeek.x509_total`
+          enabled: true
+          sources:
+            - x509_total
+          sourceType: attribute
+          target: zeek.x509_total
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remapping etc_viz log attributes
+      enabled: true
+      filter:
+        query: "@_path:etc_viz "
+      processors:
+        - type: attribute-remapper
+          name: Map `server_a` to `network.client.ip`
+          enabled: true
+          sources:
+            - server_a
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `server_p` to `network.client.port`
+          enabled: true
+          sources:
+            - server_p
+          sourceType: attribute
+          target: network.client.port
+          targetType: attribute
+          preserveSource: true
           overrideOnConflict: false
     - type: status-remapper
       name: Define `severity`, `syslog.severity` as the official status of the log
       enabled: true
-      meta:
-        tags: []
       sources:
         - severity
         - syslog.severity
+    - type: pipeline
+      name: OCSF pre transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:(files OR files_red OR notice OR suricata_corelight OR conn OR conn_long OR conn_red OR ssl OR ssl_red OR weird_red OR http OR http_red OR dns OR dns_red)"
+      processors:
+        - type: string-builder-processor
+          name: Add product name
+          enabled: true
+          template: Zeek
+          target: ocsf.metadata.product.name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add product vendor name
+          enabled: true
+          template: Corelight
+          target: ocsf.metadata.product.vendor_name
+          replaceMissing: false
+        - type: grok-parser
+          name: Parse `ts` to epoch milliseconds
+          enabled: true
+          source: ts
+          samples:
+            - "2023-12-12T05:52:32.763303Z"
+          grok:
+            supportRules: ""
+            matchRules: 'parse_ts %{date("yyyy-MM-dd''T''HH:mm:ss.SSSSSSZ"):ocsf.time}'
+    - type: pipeline
+      name: OCSF sub pipeline for class Detection Finding [2004] - Notice
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:notice"
+      processors:
+        - type: string-builder-processor
+          name: Set is_alert to boolean true
+          enabled: true
+          template: "true"
+          target: ocsf.is_alert
+          replaceMissing: false
+        - type: grok-parser
+          name: Convert ocsf.is_alert string to boolean
+          enabled: true
+          source: ocsf.is_alert
+          samples:
+            - "true"
+          grok:
+            supportRules: ""
+            matchRules: "to_bool %{boolean(\"true\",\"false\"):ocsf.is_alert}"
+        - type: attribute-remapper
+          name: Map `proto` to `ocsf.evidence.connection_info.protocol_name`
+          enabled: true
+          sources:
+            - proto
+          sourceType: attribute
+          target: ocsf.evidence.connection_info.protocol_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Set evidence connection_info.direction_id to 0 (Unknown)
+          enabled: true
+          template: "0"
+          target: ocsf.evidence.connection_info.direction_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.evidence.connection_info.direction_id` to `ocsf.evidence.connection_info.direction_id`
+          enabled: true
+          sources:
+            - ocsf.evidence.connection_info.direction_id
+          sourceType: attribute
+          target: ocsf.evidence.connection_info.direction_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+          targetFormat: integer
+        - type: attribute-remapper
+          name: Map `id.orig_h` to `ocsf.evidence.src_endpoint.ip`
+          enabled: true
+          sources:
+            - id.orig_h
+          sourceType: attribute
+          target: ocsf.evidence.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id.orig_p` to `ocsf.evidence.src_endpoint.port`
+          enabled: true
+          sources:
+            - id.orig_p
+          sourceType: attribute
+          target: ocsf.evidence.src_endpoint.port
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id.resp_h` to `ocsf.evidence.dst_endpoint.ip`
+          enabled: true
+          sources:
+            - id.resp_h
+          sourceType: attribute
+          target: ocsf.evidence.dst_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id.resp_p` to `ocsf.evidence.dst_endpoint.port`
+          enabled: true
+          sources:
+            - id.resp_p
+          sourceType: attribute
+          target: ocsf.evidence.dst_endpoint.port
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: array-processor
+          name: Move ocsf.evidence into ocsf.evidences array
+          enabled: true
+          operation:
+            source: ocsf.evidence
+            target: ocsf.evidences
+            preserveSource: false
+            type: append
+        - type: schema-processor
+          name: Apply OCSF schema for 2004
+          enabled: true
+          mappers:
+            - type: schema-category-mapper
+              name: ocsf.activity_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Create
+                  id: 1
+              targets:
+                name: ocsf.activity_name
+                id: ocsf.activity_id
+            - type: schema-remapper
+              name: Map `ocsf.evidences` to `ocsf.evidences`
+              sources:
+                - ocsf.evidences
+              target: ocsf.evidences
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `note` to `ocsf.finding_info.title`
+              sources:
+                - note
+              target: ocsf.finding_info.title
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.finding_info.uid`
+              sources:
+                - uid
+              target: ocsf.finding_info.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.is_alert` to `ocsf.is_alert`
+              sources:
+                - ocsf.is_alert
+              target: ocsf.is_alert
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `note` to `ocsf.metadata.event_code`
+              sources:
+                - note
+              target: ocsf.metadata.event_code
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.name` to `ocsf.metadata.product.name`
+              sources:
+                - ocsf.metadata.product.name
+              target: ocsf.metadata.product.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.vendor_name` to `ocsf.metadata.product.vendor_name`
+              sources:
+                - ocsf.metadata.product.vendor_name
+              target: ocsf.metadata.product.vendor_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.metadata.uid`
+              sources:
+                - uid
+              target: ocsf.metadata.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.severity_id
+              categories:
+                - filter:
+                    query: "@severity.level:1 OR @severity.id:1"
+                  name: Informational
+                  id: 1
+                - filter:
+                    query: "@severity.level:2 OR @severity.id:2"
+                  name: Low
+                  id: 2
+                - filter:
+                    query: "@severity.level:3 OR @severity.id:3"
+                  name: Medium
+                  id: 3
+                - filter:
+                    query: "@severity.level:4 OR @severity.id:4"
+                  name: High
+                  id: 4
+                - filter:
+                    query: "@severity.level:5 OR @severity.id:5"
+                  name: Critical
+                  id: 5
+                - filter:
+                    query: "*"
+                  name: Other
+                  id: 99
+              targets:
+                name: ocsf.severity
+                id: ocsf.severity_id
+              fallback:
+                values:
+                  ocsf.severity: Other
+                  ocsf.severity_id: "99"
+                sources:
+                  ocsf.severity:
+                    - severity.name
+            - type: schema-category-mapper
+              name: ocsf.status_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: New
+                  id: 1
+              targets:
+                name: ocsf.status
+                id: ocsf.status_id
+            - type: schema-remapper
+              name: Map `ocsf.time` to `ocsf.time`
+              sources:
+                - ocsf.time
+              target: ocsf.time
+              preserveSource: false
+              overrideOnConflict: true
+              targetFormat: integer
+          schema:
+            schemaType: ocsf
+            version: 1.5.0
+            className: Detection Finding
+            classUid: 2004
+            extensions: []
+            profiles: []
+    - type: pipeline
+      name: OCSF sub pipeline for class Detection Finding [2004] - Suricata
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:suricata_corelight"
+      processors:
+        - type: string-builder-processor
+          name: Override product name for Suricata
+          enabled: true
+          template: Suricata
+          target: ocsf.metadata.product.name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Set log provider
+          enabled: true
+          template: Corelight
+          target: ocsf.metadata.log_provider
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Set is_alert to boolean true
+          enabled: true
+          template: "true"
+          target: ocsf.is_alert
+          replaceMissing: false
+        - type: grok-parser
+          name: Convert ocsf.is_alert string to boolean
+          enabled: true
+          source: ocsf.is_alert
+          samples:
+            - "true"
+          grok:
+            supportRules: ""
+            matchRules: "to_bool %{boolean(\"true\",\"false\"):ocsf.is_alert}"
+        - type: attribute-remapper
+          name: Map `service` to `ocsf.evidence.connection_info.protocol_name`
+          enabled: true
+          sources:
+            - service
+          sourceType: attribute
+          target: ocsf.evidence.connection_info.protocol_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Set evidence connection_info.direction_id to 0 (Unknown)
+          enabled: true
+          template: "0"
+          target: ocsf.evidence.connection_info.direction_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.evidence.connection_info.direction_id` to `ocsf.evidence.connection_info.direction_id`
+          enabled: true
+          sources:
+            - ocsf.evidence.connection_info.direction_id
+          sourceType: attribute
+          target: ocsf.evidence.connection_info.direction_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+          targetFormat: integer
+        - type: attribute-remapper
+          name: Map `id.orig_h` to `ocsf.evidence.src_endpoint.ip`
+          enabled: true
+          sources:
+            - id.orig_h
+          sourceType: attribute
+          target: ocsf.evidence.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id.orig_p` to `ocsf.evidence.src_endpoint.port`
+          enabled: true
+          sources:
+            - id.orig_p
+          sourceType: attribute
+          target: ocsf.evidence.src_endpoint.port
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id.resp_h` to `ocsf.evidence.dst_endpoint.ip`
+          enabled: true
+          sources:
+            - id.resp_h
+          sourceType: attribute
+          target: ocsf.evidence.dst_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id.resp_p` to `ocsf.evidence.dst_endpoint.port`
+          enabled: true
+          sources:
+            - id.resp_p
+          sourceType: attribute
+          target: ocsf.evidence.dst_endpoint.port
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: array-processor
+          name: Move ocsf.evidence into ocsf.evidences array
+          enabled: true
+          operation:
+            source: ocsf.evidence
+            target: ocsf.evidences
+            preserveSource: false
+            type: append
+        - type: array-processor
+          name: Append alert.category to ocsf.finding_info.types
+          enabled: true
+          operation:
+            source: alert.category
+            target: ocsf.finding_info.types
+            preserveSource: true
+            type: append
+        - type: string-builder-processor
+          name: Add ocsf.metadata.event_code from alert.metadata
+          enabled: true
+          template: "%{alert.metadata}"
+          target: ocsf.metadata.event_code
+          replaceMissing: false
+        - type: grok-parser
+          name: Parse ocsf.metadata.event_code to MITRE tactic and technique fields
+          enabled: true
+          source: ocsf.metadata.event_code
+          samples:
+            - "[attack_target:Client_Endpoint, confidence:High, created_at:2026_04_01, deployment:Internal, deployment:Perimeter, mitre_tactic_id:TA0011, mitre_tactic_name:Command_And_Control, mitre_technique_id:T1071, mitre_technique_name:Application_Layer_Protocol, performance_impact:Low, signature_severity:Major, updated_at:2026_04_09]"
+          grok:
+            supportRules: ""
+            matchRules: 'rule .*?mitre_tactic_id:%{regex("[^,\\]]+"):ocsf.finding_info.attack.tactic.uid},\s*mitre_tactic_name:%{regex("[^,\\]]+"):ocsf.finding_info.attack.tactic.name},\s*mitre_technique_id:%{regex("[^,\\]]+"):ocsf.finding_info.attack.technique.uid},\s*mitre_technique_name:%{regex("[^,\\]]+"):ocsf.finding_info.attack.technique.name}%{data}'
+        - type: array-processor
+          name: Move ocsf.finding_info.attack into ocsf.finding_info.attacks array
+          enabled: true
+          operation:
+            source: ocsf.finding_info.attack
+            target: ocsf.finding_info.attacks
+            preserveSource: false
+            type: append
+        - type: schema-processor
+          name: Apply OCSF schema for 2004
+          enabled: true
+          mappers:
+            - type: schema-category-mapper
+              name: ocsf.activity_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Create
+                  id: 1
+              targets:
+                name: ocsf.activity_name
+                id: ocsf.activity_id
+            - type: schema-category-mapper
+              name: ocsf.confidence_id
+              categories:
+                - filter:
+                    query: "@alert.metadata:\"confidence:High\""
+                  name: High
+                  id: 3
+                - filter:
+                    query: "@alert.metadata:\"confidence:Medium\""
+                  name: Medium
+                  id: 2
+                - filter:
+                    query: "@alert.metadata:\"confidence:Low\""
+                  name: Low
+                  id: 1
+              targets:
+                name: ocsf.confidence
+                id: ocsf.confidence_id
+            - type: schema-category-mapper
+              name: ocsf.risk_level_id
+              categories:
+                - filter:
+                    query: "@alert.metadata:\"signature_severity:Informational\""
+                  name: Info
+                  id: 0
+                - filter:
+                    query: "@alert.metadata:\"signature_severity:Minor\""
+                  name: Low
+                  id: 1
+                - filter:
+                    query: "@alert.metadata:\"signature_severity:Major\""
+                  name: High
+                  id: 3
+                - filter:
+                    query: "@alert.metadata:\"signature_severity:Critical\""
+                  name: Critical
+                  id: 4
+              targets:
+                name: ocsf.risk_level
+                id: ocsf.risk_level_id
+            - type: schema-remapper
+              name: Map `ocsf.finding_info.attacks` to `ocsf.finding_info.attacks`
+              sources:
+                - ocsf.finding_info.attacks
+              target: ocsf.finding_info.attacks
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.finding_info.types` to `ocsf.finding_info.types`
+              sources:
+                - ocsf.finding_info.types
+              target: ocsf.finding_info.types
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.evidences` to `ocsf.evidences`
+              sources:
+                - ocsf.evidences
+              target: ocsf.evidences
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `alert.signature` to `ocsf.finding_info.analytic.name`
+              sources:
+                - alert.signature
+              target: ocsf.finding_info.analytic.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.finding_info.analytic.type_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Rule
+                  id: 1
+              targets:
+                name: ocsf.finding_info.analytic.type
+                id: ocsf.finding_info.analytic.type_id
+            - type: schema-remapper
+              name: Map `alert.signature_id` to `ocsf.finding_info.analytic.uid`
+              sources:
+                - alert.signature_id
+              target: ocsf.finding_info.analytic.uid
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: string
+            - type: schema-remapper
+              name: Map `alert.signature` to `ocsf.finding_info.title`
+              sources:
+                - alert.signature
+              target: ocsf.finding_info.title
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.finding_info.uid`
+              sources:
+                - uid
+              target: ocsf.finding_info.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `suri_id` to `ocsf.finding_info.uid_alt`
+              sources:
+                - suri_id
+              target: ocsf.finding_info.uid_alt
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.is_alert` to `ocsf.is_alert`
+              sources:
+                - ocsf.is_alert
+              target: ocsf.is_alert
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `alert.signature_id` to `ocsf.metadata.event_code`
+              sources:
+                - alert.signature_id
+              target: ocsf.metadata.event_code
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: string
+            - type: schema-remapper
+              name: Map `ocsf.metadata.log_provider` to `ocsf.metadata.log_provider`
+              sources:
+                - ocsf.metadata.log_provider
+              target: ocsf.metadata.log_provider
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.name` to `ocsf.metadata.product.name`
+              sources:
+                - ocsf.metadata.product.name
+              target: ocsf.metadata.product.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.vendor_name` to `ocsf.metadata.product.vendor_name`
+              sources:
+                - ocsf.metadata.product.vendor_name
+              target: ocsf.metadata.product.vendor_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.metadata.uid`
+              sources:
+                - uid
+              target: ocsf.metadata.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.severity_id
+              categories:
+                - filter:
+                    query: "@alert.severity:1"
+                  name: High
+                  id: 4
+                - filter:
+                    query: "@alert.severity:2"
+                  name: Medium
+                  id: 3
+                - filter:
+                    query: "@alert.severity:3"
+                  name: Low
+                  id: 2
+                - filter:
+                    query: "*"
+                  name: Other
+                  id: 99
+              targets:
+                name: ocsf.severity
+                id: ocsf.severity_id
+              fallback:
+                values:
+                  ocsf.severity: Other
+                  ocsf.severity_id: "99"
+                sources:
+                  ocsf.severity:
+                    - alert_severity
+            - type: schema-remapper
+              name: Map `alert.action` to `ocsf.status_detail`
+              sources:
+                - alert.action
+              target: ocsf.status_detail
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.time` to `ocsf.time`
+              sources:
+                - ocsf.time
+              target: ocsf.time
+              preserveSource: false
+              overrideOnConflict: true
+              targetFormat: integer
+          schema:
+            schemaType: ocsf
+            version: 1.5.0
+            className: Detection Finding
+            classUid: 2004
+            extensions: []
+            profiles: []
+    - type: pipeline
+      name: OCSF sub pipeline for class Network Activity [4001] - conn
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:(conn OR conn_long OR conn_red)"
+      processors:
+        - type: arithmetic-processor
+          name: Calculate total bytes
+          enabled: true
+          expression: (orig_bytes + resp_bytes)
+          target: ocsf.traffic.bytes
+          isReplaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate total packets
+          enabled: true
+          expression: (orig_pkts + resp_pkts)
+          target: ocsf.traffic.packets
+          isReplaceMissing: false
+        - type: arithmetic-processor
+          name: Convert duration to milliseconds
+          enabled: true
+          expression: duration * 1000
+          target: ocsf.duration
+          isReplaceMissing: false
+        - type: schema-processor
+          name: Apply OCSF schema for 4001
+          enabled: true
+          mappers:
+            - type: schema-category-mapper
+              name: ocsf.activity_id
+              categories:
+                - filter:
+                    query: "@conn_state:(SF OR RSTO OR RSTR OR RSTRH OR SH OR SHR)"
+                  name: Close
+                  id: 2
+                - filter:
+                    query: "@conn_state:(S0 OR RSTOS0)"
+                  name: Fail
+                  id: 4
+                - filter:
+                    query: "@conn_state:REJ"
+                  name: Refuse
+                  id: 5
+                - filter:
+                    query: "@conn_state:(OTH OR S1 OR S2 OR S3)"
+                  name: Traffic
+                  id: 6
+                - filter:
+                    query: "@conn_state:*"
+                  name: Other
+                  id: 99
+              targets:
+                name: ocsf.activity_name
+                id: ocsf.activity_id
+              fallback:
+                values:
+                  ocsf.activity_name: Other
+                  ocsf.activity_id: "99"
+                sources:
+                  ocsf.activity_name:
+                    - conn_state
+            - type: schema-category-mapper
+              name: ocsf.connection_info.boundary_id
+              categories:
+                - filter:
+                    query: "@local_orig:true @local_resp:true"
+                  name: Localhost
+                  id: 1
+                - filter:
+                    query: "(@local_orig:true @local_resp:false) OR (@local_orig:false @local_resp:true)"
+                  name: External
+                  id: 3
+                - filter:
+                    query: "*"
+                  name: Unknown
+                  id: 0
+              targets:
+                name: ocsf.connection_info.boundary
+                id: ocsf.connection_info.boundary_id
+            - type: schema-remapper
+              name: Map `community_id` to `ocsf.connection_info.community_uid`
+              sources:
+                - community_id
+              target: ocsf.connection_info.community_uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.connection_info.direction_id
+              categories:
+                - filter:
+                    query: "@local_orig:true @local_resp:false"
+                  name: Outbound
+                  id: 2
+                - filter:
+                    query: "@local_orig:false @local_resp:true"
+                  name: Inbound
+                  id: 1
+                - filter:
+                    query: "@local_orig:true @local_resp:true"
+                  name: Lateral
+                  id: 3
+                - filter:
+                    query: "*"
+                  name: Unknown
+                  id: 0
+              targets:
+                name: ocsf.connection_info.direction
+                id: ocsf.connection_info.direction_id
+            - type: schema-remapper
+              name: Map `history` to `ocsf.connection_info.flag_history`
+              sources:
+                - history
+              target: ocsf.connection_info.flag_history
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `proto` to `ocsf.connection_info.protocol_name`
+              sources:
+                - proto
+              target: ocsf.connection_info.protocol_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.connection_info.uid`
+              sources:
+                - uid
+              target: ocsf.connection_info.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_h` to `ocsf.dst_endpoint.ip`
+              sources:
+                - id.resp_h
+              target: ocsf.dst_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_p` to `ocsf.dst_endpoint.port`
+              sources:
+                - id.resp_p
+              target: ocsf.dst_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `ocsf.duration` to `ocsf.duration`
+              sources:
+                - ocsf.duration
+              target: ocsf.duration
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.name` to `ocsf.metadata.product.name`
+              sources:
+                - ocsf.metadata.product.name
+              target: ocsf.metadata.product.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.vendor_name` to `ocsf.metadata.product.vendor_name`
+              sources:
+                - ocsf.metadata.product.vendor_name
+              target: ocsf.metadata.product.vendor_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.metadata.uid`
+              sources:
+                - uid
+              target: ocsf.metadata.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.severity_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Informational
+                  id: 1
+              targets:
+                name: ocsf.severity
+                id: ocsf.severity_id
+            - type: schema-remapper
+              name: Map `id.orig_h` to `ocsf.src_endpoint.ip`
+              sources:
+                - id.orig_h
+              target: ocsf.src_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.orig_h_name.vals.0` to `ocsf.src_endpoint.hostname`
+              sources:
+                - id.orig_h_name.vals.0
+              target: ocsf.src_endpoint.hostname
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `orig_l2_addr` to `ocsf.src_endpoint.mac`
+              sources:
+                - orig_l2_addr
+              target: ocsf.src_endpoint.mac
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.orig_p` to `ocsf.src_endpoint.port`
+              sources:
+                - id.orig_p
+              target: ocsf.src_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `resp_l2_addr` to `ocsf.dst_endpoint.mac`
+              sources:
+                - resp_l2_addr
+              target: ocsf.dst_endpoint.mac
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_h_name.vals.0` to `ocsf.dst_endpoint.hostname`
+              sources:
+                - id.resp_h_name.vals.0
+              target: ocsf.dst_endpoint.hostname
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `conn_state` to `ocsf.status_detail`
+              sources:
+                - conn_state
+              target: ocsf.status_detail
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.status_id
+              categories:
+                - filter:
+                    query: "@conn_state:(SF OR S1 OR S2 OR S3 OR OTH OR RSTO OR RSTRH OR SH OR SHR)"
+                  name: Success
+                  id: 1
+                - filter:
+                    query: "@conn_state:(S0 OR RSTOS0 OR RSTR OR REJ)"
+                  name: Failure
+                  id: 2
+                - filter:
+                    query: "*"
+                  name: Other
+                  id: 99
+              targets:
+                name: ocsf.status
+                id: ocsf.status_id
+              fallback:
+                values:
+                  ocsf.status: Other
+                  ocsf.status_id: "99"
+                sources:
+                  ocsf.status:
+                    - conn_state
+            - type: schema-remapper
+              name: Map `ocsf.time` to `ocsf.time`
+              sources:
+                - ocsf.time
+              target: ocsf.time
+              preserveSource: false
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `ocsf.traffic.bytes` to `ocsf.traffic.bytes`
+              sources:
+                - ocsf.traffic.bytes
+              target: ocsf.traffic.bytes
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `resp_bytes` to `ocsf.traffic.bytes_in`
+              sources:
+                - resp_bytes
+              target: ocsf.traffic.bytes_in
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `missed_bytes` to `ocsf.traffic.bytes_missed`
+              sources:
+                - missed_bytes
+              target: ocsf.traffic.bytes_missed
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `orig_bytes` to `ocsf.traffic.bytes_out`
+              sources:
+                - orig_bytes
+              target: ocsf.traffic.bytes_out
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `ocsf.traffic.packets` to `ocsf.traffic.packets`
+              sources:
+                - ocsf.traffic.packets
+              target: ocsf.traffic.packets
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `resp_pkts` to `ocsf.traffic.packets_in`
+              sources:
+                - resp_pkts
+              target: ocsf.traffic.packets_in
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `orig_pkts` to `ocsf.traffic.packets_out`
+              sources:
+                - orig_pkts
+              target: ocsf.traffic.packets_out
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+          schema:
+            schemaType: ocsf
+            version: 1.5.0
+            className: Network Activity
+            classUid: 4001
+            extensions: []
+            profiles: []
+    - type: pipeline
+      name: OCSF sub pipeline for class Network Activity [4001] - ssl
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:(ssl OR ssl_red)"
+      processors:
+        - type: string-builder-processor
+          name: Set JA3 hash algorithm name
+          enabled: true
+          template: MD5
+          target: ocsf.tls.ja3_hash.algorithm
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Set JA3 hash algorithm id
+          enabled: true
+          template: "1"
+          target: ocsf.tls.ja3_hash.algorithm_id
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Set JA3S hash algorithm name
+          enabled: true
+          template: MD5
+          target: ocsf.tls.ja3s_hash.algorithm
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Set JA3S hash algorithm id
+          enabled: true
+          template: "1"
+          target: ocsf.tls.ja3s_hash.algorithm_id
+          replaceMissing: false
+        - type: schema-processor
+          name: Apply OCSF schema for 4001
+          enabled: true
+          mappers:
+            - type: schema-category-mapper
+              name: ocsf.activity_id
+              categories:
+                - filter:
+                    query: "@established:true"
+                  name: Open
+                  id: 1
+                - filter:
+                    query: "@established:false"
+                  name: Fail
+                  id: 4
+                - filter:
+                    query: "*"
+                  name: Unknown
+                  id: 0
+              targets:
+                name: ocsf.activity_name
+                id: ocsf.activity_id
+            - type: schema-remapper
+              name: Map `server_name` to `ocsf.dst_endpoint.hostname`
+              sources:
+                - server_name
+              target: ocsf.dst_endpoint.hostname
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_h` to `ocsf.dst_endpoint.ip`
+              sources:
+                - id.resp_h
+              target: ocsf.dst_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_p` to `ocsf.dst_endpoint.port`
+              sources:
+                - id.resp_p
+              target: ocsf.dst_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `ts` to `ocsf.metadata.original_time`
+              sources:
+                - ts
+              target: ocsf.metadata.original_time
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.name` to `ocsf.metadata.product.name`
+              sources:
+                - ocsf.metadata.product.name
+              target: ocsf.metadata.product.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.vendor_name` to `ocsf.metadata.product.vendor_name`
+              sources:
+                - ocsf.metadata.product.vendor_name
+              target: ocsf.metadata.product.vendor_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.metadata.uid`
+              sources:
+                - uid
+              target: ocsf.metadata.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.severity_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Informational
+                  id: 1
+              targets:
+                name: ocsf.severity
+                id: ocsf.severity_id
+            - type: schema-remapper
+              name: Map `id.orig_h` to `ocsf.src_endpoint.ip`
+              sources:
+                - id.orig_h
+              target: ocsf.src_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.orig_p` to `ocsf.src_endpoint.port`
+              sources:
+                - id.orig_p
+              target: ocsf.src_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-category-mapper
+              name: ocsf.status_id
+              categories:
+                - filter:
+                    query: "@established:true"
+                  name: Success
+                  id: 1
+                - filter:
+                    query: "@established:false"
+                  name: Failure
+                  id: 2
+              targets:
+                name: ocsf.status
+                id: ocsf.status_id
+            - type: schema-remapper
+              name: Map `ocsf.time` to `ocsf.time`
+              sources:
+                - ocsf.time
+              target: ocsf.time
+              preserveSource: false
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `cipher` to `ocsf.tls.cipher`
+              sources:
+                - cipher
+              target: ocsf.tls.cipher
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.tls.ja3_hash.algorithm` to `ocsf.tls.ja3_hash.algorithm`
+              sources:
+                - ocsf.tls.ja3_hash.algorithm
+              target: ocsf.tls.ja3_hash.algorithm
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.tls.ja3_hash.algorithm_id` to `ocsf.tls.ja3_hash.algorithm_id`
+              sources:
+                - ocsf.tls.ja3_hash.algorithm_id
+              target: ocsf.tls.ja3_hash.algorithm_id
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `ja3` to `ocsf.tls.ja3_hash.value`
+              sources:
+                - ja3
+              target: ocsf.tls.ja3_hash.value
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.tls.ja3s_hash.algorithm` to `ocsf.tls.ja3s_hash.algorithm`
+              sources:
+                - ocsf.tls.ja3s_hash.algorithm
+              target: ocsf.tls.ja3s_hash.algorithm
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.tls.ja3s_hash.algorithm_id` to `ocsf.tls.ja3s_hash.algorithm_id`
+              sources:
+                - ocsf.tls.ja3s_hash.algorithm_id
+              target: ocsf.tls.ja3s_hash.algorithm_id
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `ja3s` to `ocsf.tls.ja3s_hash.value`
+              sources:
+                - ja3s
+              target: ocsf.tls.ja3s_hash.value
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `server_name` to `ocsf.tls.sni`
+              sources:
+                - server_name
+              target: ocsf.tls.sni
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `version` to `ocsf.tls.version`
+              sources:
+                - version
+              target: ocsf.tls.version
+              preserveSource: true
+              overrideOnConflict: true
+          schema:
+            schemaType: ocsf
+            version: 1.5.0
+            className: Network Activity
+            classUid: 4001
+            extensions: []
+            profiles: []
+    - type: pipeline
+      name: OCSF sub pipeline for class Network Activity [4001] - weird
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:weird_red"
+      processors:
+        - type: schema-processor
+          name: Apply OCSF schema for 4001
+          enabled: true
+          mappers:
+            - type: schema-category-mapper
+              name: ocsf.activity_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Traffic
+                  id: 6
+              targets:
+                name: ocsf.activity_name
+                id: ocsf.activity_id
+            - type: schema-category-mapper
+              name: ocsf.connection_info.direction_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Unknown
+                  id: 0
+              targets:
+                name: ocsf.connection_info.direction
+                id: ocsf.connection_info.direction_id
+            - type: schema-remapper
+              name: Map `source` to `ocsf.connection_info.protocol_name`
+              sources:
+                - source
+              target: ocsf.connection_info.protocol_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.connection_info.uid`
+              sources:
+                - uid
+              target: ocsf.connection_info.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_h` to `ocsf.dst_endpoint.ip`
+              sources:
+                - id.resp_h
+              target: ocsf.dst_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_p` to `ocsf.dst_endpoint.port`
+              sources:
+                - id.resp_p
+              target: ocsf.dst_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `name` to `ocsf.message`
+              sources:
+                - name
+              target: ocsf.message
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `name` to `ocsf.metadata.event_code`
+              sources:
+                - name
+              target: ocsf.metadata.event_code
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.name` to `ocsf.metadata.product.name`
+              sources:
+                - ocsf.metadata.product.name
+              target: ocsf.metadata.product.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.vendor_name` to `ocsf.metadata.product.vendor_name`
+              sources:
+                - ocsf.metadata.product.vendor_name
+              target: ocsf.metadata.product.vendor_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.metadata.uid`
+              sources:
+                - uid
+              target: ocsf.metadata.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.severity_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Informational
+                  id: 1
+              targets:
+                name: ocsf.severity
+                id: ocsf.severity_id
+            - type: schema-remapper
+              name: Map `id.orig_h` to `ocsf.src_endpoint.ip`
+              sources:
+                - id.orig_h
+              target: ocsf.src_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.orig_p` to `ocsf.src_endpoint.port`
+              sources:
+                - id.orig_p
+              target: ocsf.src_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `name` to `ocsf.status_detail`
+              sources:
+                - name
+              target: ocsf.status_detail
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.time` to `ocsf.time`
+              sources:
+                - ocsf.time
+              target: ocsf.time
+              preserveSource: false
+              overrideOnConflict: true
+              targetFormat: integer
+          schema:
+            schemaType: ocsf
+            version: 1.5.0
+            className: Network Activity
+            classUid: 4001
+            extensions: []
+            profiles: []
+    - type: pipeline
+      name: OCSF sub pipeline for class HTTP Activity [4002]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:(http OR http_red)"
+      processors:
+        - type: schema-processor
+          name: Apply OCSF schema for 4002
+          enabled: true
+          mappers:
+            - type: schema-category-mapper
+              name: ocsf.activity_id
+              categories:
+                - filter:
+                    query: "@http.method:CONNECT"
+                  name: Connect
+                  id: 1
+                - filter:
+                    query: "@http.method:DELETE"
+                  name: Delete
+                  id: 2
+                - filter:
+                    query: "@http.method:GET"
+                  name: Get
+                  id: 3
+                - filter:
+                    query: "@http.method:HEAD"
+                  name: Head
+                  id: 4
+                - filter:
+                    query: "@http.method:OPTIONS"
+                  name: Options
+                  id: 5
+                - filter:
+                    query: "@http.method:POST"
+                  name: Post
+                  id: 6
+                - filter:
+                    query: "@http.method:PUT"
+                  name: Put
+                  id: 7
+                - filter:
+                    query: "@http.method:TRACE"
+                  name: Trace
+                  id: 8
+                - filter:
+                    query: "*"
+                  name: Other
+                  id: 99
+              targets:
+                name: ocsf.activity_name
+                id: ocsf.activity_id
+              fallback:
+                values:
+                  ocsf.activity_name: Other
+                  ocsf.activity_id: "99"
+                sources:
+                  ocsf.activity_name:
+                    - http.method
+            - type: schema-category-mapper
+              name: ocsf.connection_info.direction_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Unknown
+                  id: 0
+              targets:
+                name: ocsf.connection_info.direction
+                id: ocsf.connection_info.direction_id
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.connection_info.uid`
+              sources:
+                - uid
+              target: ocsf.connection_info.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_h` to `ocsf.dst_endpoint.ip`
+              sources:
+                - id.resp_h
+              target: ocsf.dst_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_p` to `ocsf.dst_endpoint.port`
+              sources:
+                - id.resp_p
+              target: ocsf.dst_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `request_body_len` to `ocsf.http_request.body_length`
+              sources:
+                - request_body_len
+              target: ocsf.http_request.body_length
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `method` to `ocsf.http_request.http_method`
+              sources:
+                - method
+              target: ocsf.http_request.http_method
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.http_request.uid`
+              sources:
+                - uid
+              target: ocsf.http_request.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `host` to `ocsf.http_request.url.hostname`
+              sources:
+                - host
+              target: ocsf.http_request.url.hostname
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uri` to `ocsf.http_request.url.path`
+              sources:
+                - uri
+              target: ocsf.http_request.url.path
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_p` to `ocsf.http_request.url.port`
+              sources:
+                - id.resp_p
+              target: ocsf.http_request.url.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `http_url` to `ocsf.http_request.url.url_string`
+              sources:
+                - http_url
+              target: ocsf.http_request.url.url_string
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `user_agent` to `ocsf.http_request.user_agent`
+              sources:
+                - user_agent
+              target: ocsf.http_request.user_agent
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `version` to `ocsf.http_request.version`
+              sources:
+                - version
+              target: ocsf.http_request.version
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `response_body_len` to `ocsf.http_response.body_length`
+              sources:
+                - response_body_len
+              target: ocsf.http_response.body_length
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `status_code` to `ocsf.http_response.code`
+              sources:
+                - status_code
+              target: ocsf.http_response.code
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `status_msg` to `ocsf.http_response.message`
+              sources:
+                - status_msg
+              target: ocsf.http_response.message
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.name` to `ocsf.metadata.product.name`
+              sources:
+                - ocsf.metadata.product.name
+              target: ocsf.metadata.product.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.vendor_name` to `ocsf.metadata.product.vendor_name`
+              sources:
+                - ocsf.metadata.product.vendor_name
+              target: ocsf.metadata.product.vendor_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.metadata.uid`
+              sources:
+                - uid
+              target: ocsf.metadata.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.severity_id
+              categories:
+                - filter:
+                    query: "@http.status_code:[500 TO 599]"
+                  name: High
+                  id: 4
+                - filter:
+                    query: "@http.status_code:[400 TO 499]"
+                  name: Medium
+                  id: 3
+                - filter:
+                    query: "@http.status_code:[300 TO 399]"
+                  name: Low
+                  id: 2
+                - filter:
+                    query: "*"
+                  name: Informational
+                  id: 1
+              targets:
+                name: ocsf.severity
+                id: ocsf.severity_id
+            - type: schema-remapper
+              name: Map `id.orig_h` to `ocsf.src_endpoint.ip`
+              sources:
+                - id.orig_h
+              target: ocsf.src_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.orig_p` to `ocsf.src_endpoint.port`
+              sources:
+                - id.orig_p
+              target: ocsf.src_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `status_msg` to `ocsf.status_detail`
+              sources:
+                - status_msg
+              target: ocsf.status_detail
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.status_id
+              categories:
+                - filter:
+                    query: "@http.status_code:[200 TO 299]"
+                  name: Success
+                  id: 1
+                - filter:
+                    query: "@http.status_code:[400 TO 599]"
+                  name: Failure
+                  id: 2
+                - filter:
+                    query: "*"
+                  name: Other
+                  id: 99
+              targets:
+                name: ocsf.status
+                id: ocsf.status_id
+              fallback:
+                values:
+                  ocsf.status: Other
+                  ocsf.status_id: "99"
+                sources:
+                  ocsf.status:
+                    - status_msg
+            - type: schema-remapper
+              name: Map `ocsf.time` to `ocsf.time`
+              sources:
+                - ocsf.time
+              target: ocsf.time
+              preserveSource: false
+              overrideOnConflict: true
+              targetFormat: integer
+          schema:
+            schemaType: ocsf
+            version: 1.5.0
+            className: HTTP Activity
+            classUid: 4002
+            extensions: []
+            profiles: []
+    - type: pipeline
+      name: OCSF sub pipeline for class DNS Activity [4003]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:(dns OR dns_red)"
+      processors:
+        - type: array-map-processor
+          name: Map `answers` to `ocsf.answers`
+          enabled: true
+          source: answers
+          target: ocsf.answers
+          preserveSource: true
+          processors:
+            - type: attribute-remapper
+              name: Map `$sourceElem` to `$targetElem.rdata`
+              sources:
+                - $sourceElem
+              target: $targetElem.rdata
+              preserveSource: true
+              overrideOnConflict: false
+        - type: schema-processor
+          name: Apply OCSF schema for 4003
+          enabled: true
+          mappers:
+            - type: schema-category-mapper
+              name: ocsf.activity_id
+              categories:
+                - filter:
+                    query: "@rcode_name:*"
+                  name: Response
+                  id: 2
+                - filter:
+                    query: "-@rcode_name:*"
+                  name: Query
+                  id: 1
+              targets:
+                name: ocsf.activity_name
+                id: ocsf.activity_id
+            - type: schema-category-mapper
+              name: ocsf.connection_info.direction_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Unknown
+                  id: 0
+              targets:
+                name: ocsf.connection_info.direction
+                id: ocsf.connection_info.direction_id
+            - type: schema-remapper
+              name: Map `proto` to `ocsf.connection_info.protocol_name`
+              sources:
+                - proto
+              target: ocsf.connection_info.protocol_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.connection_info.uid`
+              sources:
+                - uid
+              target: ocsf.connection_info.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_h` to `ocsf.dst_endpoint.ip`
+              sources:
+                - id.resp_h
+              target: ocsf.dst_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `id.resp_p` to `ocsf.dst_endpoint.port`
+              sources:
+                - id.resp_p
+              target: ocsf.dst_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `query`, `rcode_name` to `ocsf.message`
+              sources:
+                - query
+                - rcode_name
+              target: ocsf.message
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.name` to `ocsf.metadata.product.name`
+              sources:
+                - ocsf.metadata.product.name
+              target: ocsf.metadata.product.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.vendor_name` to `ocsf.metadata.product.vendor_name`
+              sources:
+                - ocsf.metadata.product.vendor_name
+              target: ocsf.metadata.product.vendor_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.metadata.uid`
+              sources:
+                - uid
+              target: ocsf.metadata.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `qclass_name` to `ocsf.query.class`
+              sources:
+                - qclass_name
+              target: ocsf.query.class
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `domain`, `query` to `ocsf.query.hostname`
+              sources:
+                - domain
+                - query
+              target: ocsf.query.hostname
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `qtype_name` to `ocsf.query.type`
+              sources:
+                - qtype_name
+              target: ocsf.query.type
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.answers` to `ocsf.answers`
+              sources:
+                - ocsf.answers
+              target: ocsf.answers
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.rcode_id
+              categories:
+                - filter:
+                    query: "@rcode:0"
+                  name: NoError
+                  id: 0
+                - filter:
+                    query: "@rcode:1"
+                  name: FormError
+                  id: 1
+                - filter:
+                    query: "@rcode:2"
+                  name: ServError
+                  id: 2
+                - filter:
+                    query: "@rcode:3"
+                  name: NXDomain
+                  id: 3
+                - filter:
+                    query: "@rcode:4"
+                  name: NotImp
+                  id: 4
+                - filter:
+                    query: "@rcode:5"
+                  name: Refused
+                  id: 5
+                - filter:
+                    query: "@rcode:6"
+                  name: YXDomain
+                  id: 6
+                - filter:
+                    query: "@rcode:7"
+                  name: YXRRSet
+                  id: 7
+                - filter:
+                    query: "@rcode:8"
+                  name: NXRRSet
+                  id: 8
+                - filter:
+                    query: "@rcode:9"
+                  name: NotAuth
+                  id: 9
+                - filter:
+                    query: "@rcode:10"
+                  name: NotZone
+                  id: 10
+                - filter:
+                    query: "@rcode:11"
+                  name: DSOTYPENI
+                  id: 11
+                - filter:
+                    query: "@rcode:16"
+                  name: BADSIG_VERS
+                  id: 16
+                - filter:
+                    query: "@rcode:17"
+                  name: BADKEY
+                  id: 17
+                - filter:
+                    query: "@rcode:18"
+                  name: BADTIME
+                  id: 18
+                - filter:
+                    query: "@rcode:19"
+                  name: BADMODE
+                  id: 19
+                - filter:
+                    query: "@rcode:20"
+                  name: BADNAME
+                  id: 20
+                - filter:
+                    query: "@rcode:21"
+                  name: BADALG
+                  id: 21
+                - filter:
+                    query: "@rcode:22"
+                  name: BADTRUNC
+                  id: 22
+                - filter:
+                    query: "@rcode:23"
+                  name: BADCOOKIE
+                  id: 23
+              targets:
+                name: ocsf.rcode
+                id: ocsf.rcode_id
+            - type: schema-category-mapper
+              name: ocsf.severity_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Informational
+                  id: 1
+              targets:
+                name: ocsf.severity
+                id: ocsf.severity_id
+            - type: schema-remapper
+              name: Map `id.orig_h` to `ocsf.src_endpoint.ip`
+              sources:
+                - id.orig_h
+              target: ocsf.src_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.src_endpoint.ip` to `ocsf.src_endpoint.uid`
+              sources:
+                - ocsf.src_endpoint.ip
+              target: ocsf.src_endpoint.uid
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: string
+            - type: schema-remapper
+              name: Map `id.orig_p` to `ocsf.src_endpoint.port`
+              sources:
+                - id.orig_p
+              target: ocsf.src_endpoint.port
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-remapper
+              name: Map `rcode_name` to `ocsf.status_detail`
+              sources:
+                - rcode_name
+              target: ocsf.status_detail
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.status_id
+              categories:
+                - filter:
+                    query: "(@rcode:0 OR @dns.flags.rcode:NOERROR)"
+                  name: Success
+                  id: 1
+                - filter:
+                    query: "(@rcode:3 OR @dns.flags.rcode:NXDOMAIN OR @rejected:true)"
+                  name: Failure
+                  id: 2
+                - filter:
+                    query: "*"
+                  name: Unknown
+                  id: 0
+              targets:
+                name: ocsf.status
+                id: ocsf.status_id
+            - type: schema-remapper
+              name: Map `ocsf.time` to `ocsf.time`
+              sources:
+                - ocsf.time
+              target: ocsf.time
+              preserveSource: false
+              overrideOnConflict: true
+              targetFormat: integer
+          schema:
+            schemaType: ocsf
+            version: 1.5.0
+            className: DNS Activity
+            classUid: 4003
+            extensions: []
+            profiles: []
+    - type: pipeline
+      name: OCSF sub pipeline for class File Hosting Activity [6006]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@_path:(files OR files_red)"
+      processors:
+        - type: string-builder-processor
+          name: Stringify tx_hosts into ocsf.src_endpoint
+          enabled: true
+          template: "%{tx_hosts}"
+          target: ocsf.src_endpoint
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Stringify rx_hosts into ocsf.dst_endpoint
+          enabled: true
+          template: "%{rx_hosts}"
+          target: ocsf.dst_endpoint
+          replaceMissing: false
+        - type: grok-parser
+          name: Extract first IP from tx_hosts
+          enabled: true
+          source: ocsf.src_endpoint
+          samples:
+            - "10.104.10.60"
+            - "10.104.10.60,10.104.10.61"
+          grok:
+            supportRules: ""
+            matchRules: 'g %{ip:ocsf.src_endpoint.ip}(,%{data})?'
+        - type: grok-parser
+          name: Extract first IP from rx_hosts
+          enabled: true
+          source: ocsf.dst_endpoint
+          samples:
+            - "10.104.10.65"
+            - "10.104.10.65,10.104.10.66"
+          grok:
+            supportRules: ""
+            matchRules: 'g %{ip:ocsf.dst_endpoint.ip}(,%{data})?'
+        - type: string-builder-processor
+          name: Add MD5 algorithm name
+          enabled: true
+          template: MD5
+          target: ocsf.file.hash_md5.algorithm
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add MD5 algorithm id
+          enabled: true
+          template: "1"
+          target: ocsf.file.hash_md5.algorithm_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `md5` to `ocsf.file.hash_md5.value`
+          enabled: true
+          sources:
+            - md5
+          sourceType: attribute
+          target: ocsf.file.hash_md5.value
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add SHA1 algorithm name
+          enabled: true
+          template: SHA-1
+          target: ocsf.file.hash_sha1.algorithm
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add SHA1 algorithm id
+          enabled: true
+          template: "2"
+          target: ocsf.file.hash_sha1.algorithm_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `sha1` to `ocsf.file.hash_sha1.value`
+          enabled: true
+          sources:
+            - sha1
+          sourceType: attribute
+          target: ocsf.file.hash_sha1.value
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add SHA256 algorithm name
+          enabled: true
+          template: SHA-256
+          target: ocsf.file.hash_sha256.algorithm
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add SHA256 algorithm id
+          enabled: true
+          template: "3"
+          target: ocsf.file.hash_sha256.algorithm_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `sha256` to `ocsf.file.hash_sha256.value`
+          enabled: true
+          sources:
+            - sha256
+          sourceType: attribute
+          target: ocsf.file.hash_sha256.value
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.file.hash_md5.algorithm_id` to `ocsf.file.hash_md5.algorithm_id`
+          enabled: true
+          sources:
+            - ocsf.file.hash_md5.algorithm_id
+          sourceType: attribute
+          target: ocsf.file.hash_md5.algorithm_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+          targetFormat: integer
+        - type: attribute-remapper
+          name: Map `ocsf.file.hash_sha1.algorithm_id` to `ocsf.file.hash_sha1.algorithm_id`
+          enabled: true
+          sources:
+            - ocsf.file.hash_sha1.algorithm_id
+          sourceType: attribute
+          target: ocsf.file.hash_sha1.algorithm_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+          targetFormat: integer
+        - type: attribute-remapper
+          name: Map `ocsf.file.hash_sha256.algorithm_id` to `ocsf.file.hash_sha256.algorithm_id`
+          enabled: true
+          sources:
+            - ocsf.file.hash_sha256.algorithm_id
+          sourceType: attribute
+          target: ocsf.file.hash_sha256.algorithm_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+          targetFormat: integer
+        - type: array-processor
+          name: Append ocsf.file.hash_md5 to ocsf.file.hashes
+          enabled: true
+          operation:
+            source: ocsf.file.hash_md5
+            target: ocsf.file.hashes
+            preserveSource: false
+            type: append
+        - type: array-processor
+          name: Append ocsf.file.hash_sha1 to ocsf.file.hashes
+          enabled: true
+          operation:
+            source: ocsf.file.hash_sha1
+            target: ocsf.file.hashes
+            preserveSource: false
+            type: append
+        - type: array-processor
+          name: Append ocsf.file.hash_sha256 to ocsf.file.hashes
+          enabled: true
+          operation:
+            source: ocsf.file.hash_sha256
+            target: ocsf.file.hashes
+            preserveSource: false
+            type: append
+        - type: schema-processor
+          name: Apply OCSF schema for 6006
+          enabled: true
+          mappers:
+            - type: schema-category-mapper
+              name: ocsf.activity_id
+              categories:
+                - filter:
+                    query: "@is_orig:true"
+                  name: Upload
+                  id: 1
+                - filter:
+                    query: "@is_orig:false"
+                  name: Download
+                  id: 2
+                - filter:
+                    query: "*"
+                  name: Unknown
+                  id: 0
+              targets:
+                name: ocsf.activity_name
+                id: ocsf.activity_id
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.actor.session.uid`
+              sources:
+                - uid
+              target: ocsf.actor.session.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.dst_endpoint.ip` to `ocsf.dst_endpoint.ip`
+              sources:
+                - ocsf.dst_endpoint.ip
+              target: ocsf.dst_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.file.hashes` to `ocsf.file.hashes`
+              sources:
+                - ocsf.file.hashes
+              target: ocsf.file.hashes
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `mime_type` to `ocsf.file.mime_type`
+              sources:
+                - mime_type
+              target: ocsf.file.mime_type
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `filename`, `fuid` to `ocsf.file.name`
+              sources:
+                - filename
+                - fuid
+              target: ocsf.file.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `seen_bytes`, `total_bytes` to `ocsf.file.size`
+              sources:
+                - seen_bytes
+                - total_bytes
+              target: ocsf.file.size
+              preserveSource: true
+              overrideOnConflict: true
+              targetFormat: integer
+            - type: schema-category-mapper
+              name: ocsf.file.type_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Regular File
+                  id: 1
+              targets:
+                name: ocsf.file.type_id
+                id: ocsf.file.type_id
+            - type: schema-remapper
+              name: Map `fuid` to `ocsf.file.uid`
+              sources:
+                - fuid
+              target: ocsf.file.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.name` to `ocsf.metadata.product.name`
+              sources:
+                - ocsf.metadata.product.name
+              target: ocsf.metadata.product.name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `ocsf.metadata.product.vendor_name` to `ocsf.metadata.product.vendor_name`
+              sources:
+                - ocsf.metadata.product.vendor_name
+              target: ocsf.metadata.product.vendor_name
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-remapper
+              name: Map `uid` to `ocsf.metadata.uid`
+              sources:
+                - uid
+              target: ocsf.metadata.uid
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.severity_id
+              categories:
+                - filter:
+                    query: "*"
+                  name: Informational
+                  id: 1
+              targets:
+                name: ocsf.severity
+                id: ocsf.severity_id
+            - type: schema-remapper
+              name: Map `ocsf.src_endpoint.ip` to `ocsf.src_endpoint.ip`
+              sources:
+                - ocsf.src_endpoint.ip
+              target: ocsf.src_endpoint.ip
+              preserveSource: true
+              overrideOnConflict: true
+            - type: schema-category-mapper
+              name: ocsf.status_id
+              categories:
+                - filter:
+                    query: "@timedout:false"
+                  name: Success
+                  id: 1
+                - filter:
+                    query: "@timedout:true"
+                  name: Failure
+                  id: 2
+                - filter:
+                    query: "@timedout:*"
+                  name: Other
+                  id: 99
+              targets:
+                name: ocsf.status
+                id: ocsf.status_id
+              fallback:
+                values:
+                  ocsf.status: Other
+                  ocsf.status_id: 99
+                sources:
+                  ocsf.status:
+                    - timedout
+            - type: schema-remapper
+              name: Map `ocsf.time` to `ocsf.time`
+              sources:
+                - ocsf.time
+              target: ocsf.time
+              preserveSource: false
+              overrideOnConflict: true
+          schema:
+            schemaType: ocsf
+            version: 1.5.0
+            className: File Hosting Activity
+            classUid: 6006
+            extensions: []
+            profiles: []

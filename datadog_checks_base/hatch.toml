@@ -1,22 +1,15 @@
 [env.collectors.datadog-checks]
 check-types = false
-mypy-args = [
-  "--py2",
-  "--check-untyped-defs",
-  "--follow-imports",
-  "silent",
-  "datadog_checks/base/checks/base.py",
-  "datadog_checks/base/checks/win/winpdh_base.py",
-  "datadog_checks/base/checks/win/wmi/__init__.py",
-]
+
 
 [[envs.default.matrix]]
-python = ["2.7", "3.11"]
+python = ["3.13"]
 
 [envs.default]
 features = ["db", "deps", "http", "json", "kube"]
 dependencies = [
   "datadog_checks_tests_helper @ {root:uri}/../datadog_checks_tests_helper",
+  "hypothesis",
 ]
 e2e-env = false
 

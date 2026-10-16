@@ -54,14 +54,19 @@ nav:
     - HTTP: base/http.md
     - TLS/SSL: base/tls.md
     - Databases: base/databases.md
-    - OpenMetrics: base/openmetrics.md
+    - OpenMetrics:
+      - Overview: base/openmetrics.md
+      - Metrics Files: base/openmetrics-metrics-files.md
+    - Log Crawlers: base/logs-crawlers.md
     - Metadata: base/metadata.md
+    - Persistent Cache: base/persistent-cache.md
     - API: base/api.md
   - Dev Package:
     - What's in the box?: ddev/about.md
     - Test framework: ddev/test.md
     - Plugins: ddev/plugins.md
     - Configuration: ddev/configuration.md
+    - Multi-repo/Worktrees: ddev/multirepo.md
     - CLI: ddev/cli.md
   - Guidelines:
     - Pull requests: guidelines/pr.md
@@ -73,7 +78,6 @@ nav:
       - meta/ci/testing.md
       - meta/ci/validation.md
       - meta/ci/labels.md
-    - CD: meta/cd.md
     - Docs: meta/docs.md
     - Config specs: meta/config-specs.md
     - Config models: meta/config-models.md
@@ -89,14 +93,13 @@ nav:
       - tutorials/snmp/profile-format.md
       - tutorials/snmp/sim-format.md
       - tutorials/snmp/tools.md
-    - Memory profiling: tutorials/memory-profiling.md
+    - Logs:
+      - tutorials/logs/http-crawler.md
   - Architecture:
     - IBM i: architecture/ibm_i.md
     - SNMP: architecture/snmp.md
     - vSphere: architecture/vsphere.md
     - Windows Event Log: architecture/win32_event_log.md
-  - Process:
-    - Integration release: process/integration-release.md
   - FAQ:
     - FAQ: faq/faq.md
     - Acknowledgements: faq/acknowledgements.md
@@ -119,6 +122,7 @@ plugins:
             show_if_no_docstring: true
             show_root_heading: true
             show_source: true
+            docstring_style: google
   - pdf-export:
       enabled_if_env: ENABLE_PDF_SITE_EXPORT
 

@@ -20,7 +20,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_checkpoint(dd_agent_check):
@@ -32,8 +32,12 @@ def test_e2e_profile_checkpoint(dd_agent_check):
     common_tags = [
         'snmp_profile:checkpoint',
         'snmp_host:checkpoint.device.name',
+        'device_hostname:checkpoint.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
         'device_vendor:checkpoint',
     ] + []
 
@@ -177,6 +181,7 @@ def test_e2e_profile_checkpoint(dd_agent_check):
         'version': 'R80.10',
         'tags': common_tags,
         'device_type': 'firewall',
+        'integration': 'snmp',
     }
     assert_device_metadata(aggregator, device)
 

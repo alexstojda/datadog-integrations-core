@@ -15,7 +15,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_cyberpower_pdu(dd_agent_check):
@@ -27,8 +27,12 @@ def test_e2e_profile_cyberpower_pdu(dd_agent_check):
     common_tags = [
         'snmp_profile:cyberpower-pdu',
         'snmp_host:cyberpower-pdu.device.name',
+        'device_hostname:cyberpower-pdu.device.name',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
     ] + [
         'e_pdu_ident_model_number:their oxen forward kept driving',
         'e_pdu_ident_name:zombies oxen their oxen Jaded driving driving kept acted',
@@ -230,6 +234,7 @@ def test_e2e_profile_cyberpower_pdu(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.3808.1.1.9999',
         'vendor': 'cyberpower',
         'device_type': 'pdu',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

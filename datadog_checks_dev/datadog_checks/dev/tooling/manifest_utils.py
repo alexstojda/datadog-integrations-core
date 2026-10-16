@@ -3,7 +3,8 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 import os
 
-from ..fs import file_exists, path_join
+from datadog_checks.dev.fs import file_exists, path_join
+
 from .commands.console import abort
 from .constants import get_root
 from .datastructures import JSONDict
@@ -106,7 +107,7 @@ class ManifestV1:
         return self._manifest_json.get_path("/assets/metrics_metadata")
 
     def get_service_checks_path(self):
-        return self._manifest_json["assets"]["service_checks"]
+        return self._manifest_json.get("assets", {}).get("service_checks")
 
     def get_config_spec(self):
         path = self._manifest_json.get('assets', {}).get('configuration', {}).get('spec', '')
@@ -138,7 +139,8 @@ class ManifestV2:
         return self._manifest_json.get(path)
 
     def get_display_name(self):
-        return self._manifest_json.get_path("/assets/integration/source_type_name")
+        display_name = self._manifest_json.get_path("/assets/integration/source_type_name")
+        return display_name
 
     def get_app_id(self):
         return self._manifest_json['app_id']

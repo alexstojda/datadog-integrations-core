@@ -24,7 +24,7 @@ from .utils import (
     get_device_ip_from_config,
 )
 
-pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.snmp_integration_only]
+pytestmark = [pytest.mark.e2e, common.py3_plus_only, common.core_suite_only]
 
 
 def test_e2e_profile_meraki_cloud_controller(dd_agent_check):
@@ -36,8 +36,12 @@ def test_e2e_profile_meraki_cloud_controller(dd_agent_check):
     common_tags = [
         'snmp_profile:meraki-cloud-controller',
         'snmp_host:dashboard.meraki.com',
+        'device_hostname:dashboard.meraki.com',
         'device_namespace:default',
         'snmp_device:' + ip_address,
+        'device_ip:' + ip_address,
+        'device_id:default:' + ip_address,
+        'agent_host:' + common.get_agent_hostname(),
         'device_vendor:meraki',
     ] + []
 
@@ -82,7 +86,7 @@ def test_e2e_profile_meraki_cloud_controller(dd_agent_check):
             'mac_address:02:02:00:66:f5:7f',
             'network:L_NETWORK',
             'product:MR16-HW',
-            'status:online',
+            'device_status:online',
             'device_name:Gymnasium',
         ],
     ]
@@ -111,6 +115,7 @@ def test_e2e_profile_meraki_cloud_controller(dd_agent_check):
         'sys_object_id': '1.3.6.1.4.1.29671.1',
         'vendor': 'meraki',
         'device_type': 'sd-wan',
+        'integration': 'snmp',
     }
     device['tags'] = common_tags
     assert_device_metadata(aggregator, device)

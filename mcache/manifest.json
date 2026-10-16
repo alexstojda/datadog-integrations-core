@@ -2,6 +2,7 @@
   "manifest_version": "2.0.0",
   "app_uuid": "711c00b1-c62c-4a50-867b-be1929950b2c",
   "app_id": "memcached",
+  "owner": "agent-integrations",
   "display_on_public_website": true,
   "tile": {
     "overview": "README.md#Overview",
@@ -16,7 +17,23 @@
       "Category::Log Collection",
       "Category::Tracing",
       "Supported OS::Linux",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Supported OS::Windows",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/speed-up-web-applications-memcached"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/instrument-memcached-performance-metrics-dogstatsd"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitoring-elasticache-performance-metrics-with-redis-or-memcached"
+      }
     ]
   },
   "author": {
@@ -54,9 +71,6 @@
     },
     "saved_views": {
       "memcached_processes": "assets/saved_views/memcached_processes.json"
-    },
-    "logs": {
-      "source": "memcached"
     }
   }
 }

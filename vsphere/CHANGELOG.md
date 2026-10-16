@@ -2,7 +2,184 @@
 
 <!-- towncrier release notes start -->
 
-## 7.4.0 / 2024-02-16
+## 10.0.1 / 2026-10-08
+
+***Fixed***:
+
+* Do not stop vSAN collection for an entire vCenter when a single cluster fails, and log the real error instead of the retry failure that masked it. ([#25435](https://github.com/DataDog/integrations-core/pull/25435))
+
+## 10.0.0 / 2026-10-01
+
+***Changed***:
+
+* `vsphere.vm.summary.config.numCpu` is now collected on every check run instead of only when `collect_property_metrics` is enabled. It is submitted once per `min_collection_interval` rather than once per `refresh_infrastructure_cache_interval`. It can no longer be excluded with `metric_filters`. ([#25162](https://github.com/DataDog/integrations-core/pull/25162))
+
+***Added***:
+
+* Collect the CPU core count of each monitored ESXi host as `vsphere.host.summary.hardware.numCpuCores`. ([#25162](https://github.com/DataDog/integrations-core/pull/25162))
+
+## 9.5.0 / 2026-08-05 / Agent 7.83.0
+
+***Security***:
+
+* Expand the set of configuration fields protected behind integration security settings. ([#24646](https://github.com/DataDog/integrations-core/pull/24646))
+
+***Fixed***:
+
+* Use SHA-256 instead of MD5 for vSphere alarm events. ([#24765](https://github.com/DataDog/integrations-core/pull/24765))
+
+## 9.4.1 / 2026-04-15 / Agent 7.79.0
+
+***Fixed***:
+
+* Improve descriptions ([#23047](https://github.com/DataDog/integrations-core/pull/23047))
+
+## 9.4.0 / 2026-03-18 / Agent 7.78.0
+
+***Added***:
+
+* Add `ssl_ciphers` support for the SOAP connection to allow configuring TLS cipher suites when connecting to vCenter. ([#22723](https://github.com/DataDog/integrations-core/pull/22723))
+
+## 9.3.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+***Fixed***:
+
+* Update configuration file. ([#22580](https://github.com/DataDog/integrations-core/pull/22580))
+
+## 9.2.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Add infra_mode tag to vsphere metrics ([#21730](https://github.com/DataDog/integrations-core/pull/21730))
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 9.1.1 / 2025-10-31 / Agent 7.73.0
+
+***Fixed***:
+
+* Add allowed values list on kerberos_auth field ([#20879](https://github.com/DataDog/integrations-core/pull/20879))
+
+## 9.1.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 9.0.1 / 2025-08-07 / Agent 7.70.0
+
+***Fixed***:
+
+* Improve descriptions and examples in example configuration file ([#20878](https://github.com/DataDog/integrations-core/pull/20878))
+
+## 9.0.0 / 2025-07-10 / Agent 7.69.0
+
+***Changed***:
+
+* Bump datadog_checks_base to 37.16.0 ([#20711](https://github.com/DataDog/integrations-core/pull/20711))
+
+***Fixed***:
+
+* Allow HTTPS requests to use `tls_ciphers` parameter ([#20179](https://github.com/DataDog/integrations-core/pull/20179))
+* Remove relative imports for non parent modules ([#20646](https://github.com/DataDog/integrations-core/pull/20646))
+
+## 8.3.0 / 2025-04-17 / Agent 7.66.0
+
+***Added***:
+
+* Add failover support with Agent High Availability feature ([#19987](https://github.com/DataDog/integrations-core/pull/19987))
+
+***Fixed***:
+
+* Don't submit property metrics with unknown hostname. ([#19944](https://github.com/DataDog/integrations-core/pull/19944))
+
+## 8.2.1 / 2025-03-19 / Agent 7.65.0
+
+***Fixed***:
+
+* Submit non-VM or ESXI events with an empty hostname. ([#19393](https://github.com/DataDog/integrations-core/pull/19393))
+
+## 8.2.0 / 2025-01-16 / Agent 7.63.0
+
+***Added***:
+
+* Add `tls_ciphers` param to integration ([#19334](https://github.com/DataDog/integrations-core/pull/19334))
+
+## 8.1.0 / 2024-11-20 / Agent 7.61.0
+
+***Added***:
+
+* Added support for vSAN metric/event collection in the vSphere integration ([#18117](https://github.com/DataDog/integrations-core/pull/18117))
+
+## 8.0.1 / 2024-10-31 / Agent 7.60.0
+
+***Fixed***:
+
+* Add debug log line for host tags. ([#18774](https://github.com/DataDog/integrations-core/pull/18774))
+
+## 8.0.0 / 2024-09-25 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+* Added the hostname_transform config option ([#18652](https://github.com/DataDog/integrations-core/pull/18652))
+
+***Fixed***:
+
+* Fixed excluded host tags for property metrics ([#18601](https://github.com/DataDog/integrations-core/pull/18601))
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 7.7.0 / 2024-10-01 / 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 7.6.0 / 2024-07-05 / Agent 7.56.0
+
+***Added***:
+
+* Adding an include_events config option to vSphere ([#17855](https://github.com/DataDog/integrations-core/pull/17855))
+* Added more events/resource to be filtered in vSphere with event_resource_filters ([#17917](https://github.com/DataDog/integrations-core/pull/17917))
+* Update dependencies ([#17953](https://github.com/DataDog/integrations-core/pull/17953))
+
+## 7.5.3 / 2024-05-31 / Agent 7.55.0
+
+***Fixed***:
+
+* Update the description for the `tls_ca_cert` config option to use `openssl rehash` instead of `c_rehash` ([#16981](https://github.com/DataDog/integrations-core/pull/16981))
+
+## 7.5.2 / 2024-04-26 / Agent 7.54.0
+
+***Fixed***:
+
+* Only collect property metrics for resources that support it and lower level for log line ([#17446](https://github.com/DataDog/integrations-core/pull/17446))
+
+## 7.5.1 / 2024-04-17
+
+***Fixed***:
+
+* Add additional tags on events for non-host resources. ([#17403](https://github.com/DataDog/integrations-core/pull/17403))
+
+## 7.5.0 / 2024-03-22 / Agent 7.53.0
+
+***Added***:
+
+* Collect a new vSphere metric: cpu.usage.vcpus.avg ([#17087](https://github.com/DataDog/integrations-core/pull/17087))
+
+***Fixed***:
+
+* Add `ssl_cafile` config. ([#16903](https://github.com/DataDog/integrations-core/pull/16903))
+
+## 7.4.0 / 2024-02-16 / Agent 7.52.0
 
 ***Added***:
 
@@ -34,6 +211,7 @@
 ***Added***:
 
 * Decouple resource groups and collection type ([#15670](https://github.com/DataDog/integrations-core/pull/15670))
+    * _Note:_ When updating to this version, note that VMs are now considered historical entities. If you are using an instance to only collect historical entities, review your configuration to ensure you are handling VMs.
 
 ***Fixed***:
 

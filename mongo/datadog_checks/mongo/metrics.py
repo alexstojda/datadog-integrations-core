@@ -10,6 +10,7 @@ RATE = AgentCheck.rate
 Core metrics collected by default.
 """
 BASE_METRICS = {
+    # server_status collector
     "asserts.msg": RATE,
     "asserts.regular": RATE,
     "asserts.rollovers": RATE,
@@ -71,6 +72,13 @@ BASE_METRICS = {
     "metrics.operation.idhack": RATE,
     "metrics.operation.scanAndOrder": RATE,
     "metrics.operation.writeConflicts": RATE,
+    "metrics.query.sort.spillToDisk": RATE,
+    "metrics.query.sort.totalBytesSorted": RATE,
+    "metrics.query.sort.totalKeysSorted": RATE,
+    "metrics.query.planCache.classic.hits": RATE,
+    "metrics.query.planCache.classic.misses": RATE,
+    "metrics.query.planCache.sbe.hits": RATE,
+    "metrics.query.planCache.sbe.misses": RATE,
     "metrics.queryExecutor.scanned": RATE,
     "metrics.queryExecutor.scannedObjects": RATE,
     "metrics.record.moves": RATE,
@@ -103,6 +111,9 @@ BASE_METRICS = {
     "opLatencies.reads.latency": GAUGE,
     "opLatencies.writes.latency": GAUGE,
     "opLatencies.commands.latency": GAUGE,
+    "opLatencies.reads.latency_avg": (GAUGE, "opLatencies.reads.latency.avg"),
+    "opLatencies.writes.latency_avg": (GAUGE, "opLatencies.writes.latency.avg"),
+    "opLatencies.commands.latency_avg": (GAUGE, "opLatencies.commands.latency.avg"),
     "opcounters.command": RATE,
     "opcounters.delete": RATE,
     "opcounters.getmore": RATE,
@@ -115,14 +126,40 @@ BASE_METRICS = {
     "opcountersRepl.insert": RATE,
     "opcountersRepl.query": RATE,
     "opcountersRepl.update": RATE,
+    # MongoDB 9.0
+    "metrics.operation.writeConflictRetryLimitHit": RATE,
+    "metrics.operation.writeConflictRetryWaiters": GAUGE,
+    "metrics.query.configuredMaxMemoryUsageBytesPerOperation": GAUGE,
+    "metrics.query.operationsFailedDueToMemoryLimit": RATE,
+    "metrics.query.peakMemoryUsageOperation": GAUGE,
+    "metrics.repl.network.bytesSent": RATE,
+    "metrics.changeStreams.cursor.open.total": GAUGE,
+    "metrics.changeStreams.cursor.open.pinned": GAUGE,
+    "metrics.changeStreams.cursor.totalOpened": RATE,
+    "metrics.changeStreams.cursor.batchesReturned": RATE,
+    "metrics.changeStreams.cursor.bytesRead": RATE,
+    "metrics.changeStreams.cursor.bytesReturned": RATE,
+    "metrics.changeStreams.cursor.docsExamined": RATE,
+    "metrics.changeStreams.cursor.docsReturned": RATE,
+    "metrics.changeStreams.cursor.lifespan.average": GAUGE,
+    "metrics.changeStreams.cursor.lifespan.totalCount": (RATE, "metrics.changeStreams.cursor.lifespan.closed"),
+    "metrics.changeStreams.error.nonRetriable.changeStreamHistoryLost": RATE,
+    "metrics.changeStreams.error.nonRetriable.changeStreamFatalError": RATE,
+    "metrics.changeStreams.error.nonRetriable.bsonObjectTooLarge": RATE,
+    "metrics.changeStreams.error.nonRetriable.other": RATE,
+    "metrics.changeStreams.error.retriable.interruptedDueToReplStateChange": RATE,
+    "metrics.changeStreams.error.retriable.other": RATE,
+    # replication_info collector
     "oplog.logSizeMB": GAUGE,
     "oplog.usedSizeMB": GAUGE,
     "oplog.timeDiff": GAUGE,
+    # replica collector
     "replSet.health": GAUGE,
     "replSet.replicationLag": GAUGE,
     "replSet.state": GAUGE,
     "replSet.votes": GAUGE,
     "replSet.voteFraction": GAUGE,
+    # db_stats collector
     "stats.avgObjSize": GAUGE,
     "stats.collections": GAUGE,
     "stats.dataSize": GAUGE,
@@ -133,8 +170,21 @@ BASE_METRICS = {
     "stats.numExtents": GAUGE,
     "stats.objects": GAUGE,
     "stats.storageSize": GAUGE,
+    "stats.totalSize": GAUGE,
+    "stats.freeStorageSize": GAUGE,
+    "stats.indexFreeStorageSize": GAUGE,
+    "stats.totalFreeStorageSize": GAUGE,
+    "stats.fsUsedSize": GAUGE,
+    "stats.fsTotalSize": GAUGE,
+    "stats.views": GAUGE,
+    # session_stats collector
     "sessions.count": GAUGE,
     "uptime": GAUGE,
+    # host_info collector
+    "system.memSizeMB": (GAUGE, "system.mem.total"),  # total amount of system memory
+    "system.memLimitMB": (GAUGE, "system.mem.limit"),  # memory usage limit
+    "system.numCores": (GAUGE, "system.cpu.cores"),  # number of CPU cores
+    'system.cpu_percent': (GAUGE, "system.cpu.percent"),  # total mongo process CPU usage precent
 }
 
 """
@@ -166,7 +216,8 @@ Required version > 3.0.0.
 https://docs.mongodb.org/manual/reference/command/serverStatus/#serverStatus.metrics.commands
 """
 COMMANDS_METRICS = {
-    # Required version >
+    # Required version > 3.0.0
+    # server_status collector
     "metrics.commands.count.failed": RATE,
     "metrics.commands.count.total": GAUGE,
     "metrics.commands.createIndexes.failed": RATE,
@@ -190,6 +241,7 @@ Required version > 3.0.0.
 https://docs.mongodb.org/manual/reference/command/serverStatus/#server-status-locks
 """
 LOCKS_METRICS = {
+    # server_status collector
     "locks.Collection.acquireCount.R": RATE,
     "locks.Collection.acquireCount.r": RATE,
     "locks.Collection.acquireCount.W": RATE,
@@ -242,6 +294,7 @@ LOCKS_METRICS = {
 TCMalloc memory allocator report.
 """
 TCMALLOC_METRICS = {
+    # server_status collector
     "tcmalloc.generic.current_allocated_bytes": GAUGE,
     "tcmalloc.generic.heap_size": GAUGE,
     "tcmalloc.tcmalloc.aggressive_memory_decommit": GAUGE,
@@ -259,7 +312,10 @@ TCMALLOC_METRICS = {
 WiredTiger storage engine.
 """
 WIREDTIGER_METRICS = {
+    # server_status collector
     "wiredTiger.cache.bytes currently in the cache": (GAUGE, "wiredTiger.cache.bytes_currently_in_cache"),
+    "wiredTiger.cache.bytes read into cache": GAUGE,
+    "wiredTiger.cache.bytes written from cache": GAUGE,
     "wiredTiger.cache.failed eviction of pages that exceeded the in-memory maximum": (
         RATE,
         "wiredTiger.cache.failed_eviction_of_pages_exceeding_the_in-memory_maximum",
@@ -270,12 +326,22 @@ WIREDTIGER_METRICS = {
     "wiredTiger.cache.modified pages evicted": GAUGE,
     "wiredTiger.cache.pages read into cache": GAUGE,
     "wiredTiger.cache.pages written from cache": GAUGE,
+    "wiredTiger.cache.pages requested from the cache": (GAUGE, "wiredTiger.cache.pages_requested_from_cache"),
     "wiredTiger.cache.pages currently held in the cache": (GAUGE, "wiredTiger.cache.pages_currently_held_in_cache"),
     "wiredTiger.cache.pages evicted because they exceeded the in-memory maximum": (
         RATE,
         "wiredTiger.cache.pages_evicted_exceeding_the_in-memory_maximum",
     ),
     "wiredTiger.cache.pages evicted by application threads": RATE,
+    "wiredTiger.cache.application thread time evicting (usecs)": RATE,
+    "wiredTiger.cache.page evict attempts by application threads": RATE,
+    "wiredTiger.cache.page evict failures by application threads": RATE,
+    "wiredTiger.cache.modified page evict attempts by application threads": RATE,
+    "wiredTiger.cache.modified page evict failures by application threads": RATE,
+    "wiredTiger.cache.evict page attempts by eviction server": RATE,
+    "wiredTiger.cache.evict page failures by eviction server": RATE,
+    "wiredTiger.cache.evict page attempts by eviction worker threads": RATE,
+    "wiredTiger.cache.evict page failures by eviction worker threads": RATE,
     "wiredTiger.cache.tracked dirty bytes in the cache": (GAUGE, "wiredTiger.cache.tracked_dirty_bytes_in_cache"),
     "wiredTiger.cache.unmodified pages evicted": GAUGE,
     "wiredTiger.concurrentTransactions.read.available": GAUGE,
@@ -292,6 +358,7 @@ Usage statistics for each collection.
 https://docs.mongodb.org/v3.0/reference/command/top/
 """
 TOP_METRICS = {
+    # top collector
     "commands.count": RATE,
     "commands.time": GAUGE,
     "getmore.count": RATE,
@@ -313,6 +380,8 @@ TOP_METRICS = {
 }
 
 COLLECTION_METRICS = {
+    # collection storage stats
+    # coll_stats collector
     'collection.size': GAUGE,
     'collection.avgObjSize': GAUGE,
     'collection.count': GAUGE,
@@ -321,6 +390,36 @@ COLLECTION_METRICS = {
     'collection.maxSize': GAUGE,
     'collection.storageSize': GAUGE,
     'collection.nindexes': GAUGE,
+    'collection.totalIndexSize': GAUGE,
+    # collection latency stats
+    'collection.reads.latency': GAUGE,
+    'collection.reads.latency_avg': (GAUGE, 'collection.reads.latency.avg'),
+    'collection.reads.ops': RATE,
+    'collection.writes.ops': RATE,
+    'collection.writes.latency': GAUGE,
+    'collection.writes.latency_avg': (GAUGE, 'collection.writes.latency.avg'),
+    'collection.commands.latency': GAUGE,
+    'collection.commands.ops': RATE,
+    'collection.commands.latency_avg': (GAUGE, 'collection.commands.latency.avg'),
+    'collection.transactions.latency': GAUGE,
+    'collection.transactions.ops': RATE,
+    'collection.transactions.latency_avg': (GAUGE, 'collection.transactions.latency.avg'),
+    # collection query exec stats
+    'collection.collectionScans.total': RATE,
+    'collection.collectionScans.nonTailable': RATE,
+}
+
+SHARDED_DATA_DISTRIBUTION_METRICS = {
+    # sharded_data_distribution collector
+    'numOrphanedDocs': (GAUGE, 'sharded_data_distribution.num_orphaned_docs'),
+    'numOwnedDocuments': (GAUGE, 'sharded_data_distribution.num_owned_documents'),
+    'ownedSizeBytes': (GAUGE, 'sharded_data_distribution.owned_size_bytes'),
+    'orphanedSizeBytes': (GAUGE, 'sharded_data_distribution.orphaned_size_bytes'),
+}
+
+INDEX_METRICS = {
+    # index stats collector
+    'indexes.accesses.ops': RATE,
 }
 
 """
@@ -354,4 +453,5 @@ AVAILABLE_METRICS = {
     'top': TOP_METRICS,
     'collection': COLLECTION_METRICS,
     'jumbo_chunks': {},
+    'sharded_data_distribution': SHARDED_DATA_DISTRIBUTION_METRICS,
 }

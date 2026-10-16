@@ -2,7 +2,121 @@
 
 <!-- towncrier release notes start -->
 
-## 3.4.0 / 2024-02-16
+## 7.0.0 / 2026-09-02 / Agent 7.84.0
+
+***Changed***:
+
+* Align the emitted metrics with Cilium 1.17-1.20:
+  - Add agent metrics for node health connectivity, hive jobs, identity cache timers and garbage collection, ClusterMesh remote endpoints, IPsec, service implementation delay, BPF ratelimit, MTU and fragment drops, endpoint restoration, NAT, and workqueue work duration.
+  - Add operator metrics for doublewrite identities, unmanaged pods, ClusterMesh, MCS-API, the CID controller, the Kubernetes workqueue, and IPAM.
+  - Remove the value-less ``cilium.version`` gauge. The Cilium version is now reported only as Agent version metadata (``version.major``, ``version.minor``, ``version.patch``, and ``version.raw``).
+  - Document the OpenMetrics V1 (``.total``) and OpenMetrics V2 (``.count``) names separately for counters previously listed under a single entry, and mark the ``cilium.operator.lbipam.*`` names emitted only with Cilium 1.15-1.16 as deprecated. ([#22765](https://github.com/DataDog/integrations-core/pull/22765))
+
+## 6.4.1 / 2026-04-15 / Agent 7.79.0
+
+***Fixed***:
+
+* Improve descriptions ([#23047](https://github.com/DataDog/integrations-core/pull/23047))
+
+## 6.4.0 / 2026-04-01 / Agent 7.78.0
+
+***Added***:
+
+* Add support for security validation in models ([#23109](https://github.com/DataDog/integrations-core/pull/23109))
+
+## 6.3.0 / 2026-02-19 / Agent 7.77.0
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+
+## 6.2.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Bump minimum version of datadog-checks-base to 37.24.0 ([#21945](https://github.com/DataDog/integrations-core/pull/21945))
+
+## 6.1.1 / 2025-10-31 / Agent 7.73.0
+
+***Fixed***:
+
+* Add allowed values list on kerberos_auth field ([#20879](https://github.com/DataDog/integrations-core/pull/20879))
+* Fix schema issue on `ignore_metrics_by_labels` field ([#21583](https://github.com/DataDog/integrations-core/pull/21583))
+
+## 6.1.0 / 2025-10-02 / Agent 7.72.0
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+
+## 6.0.1 / 2025-08-07 / Agent 7.70.0
+
+***Fixed***:
+
+* Improve descriptions and examples in example configuration file ([#20878](https://github.com/DataDog/integrations-core/pull/20878))
+
+## 6.0.0 / 2025-07-10 / Agent 7.69.0
+
+***Changed***:
+
+* Bump datadog_checks_base to 37.16.0 ([#20711](https://github.com/DataDog/integrations-core/pull/20711))
+
+## 5.2.0 / 2025-02-20 / Agent 7.64.0
+
+***Added***:
+
+* Added Cilium 1.16 metrics ([#19520](https://github.com/DataDog/integrations-core/pull/19520))
+
+## 5.1.0 / 2025-01-16 / Agent 7.63.0
+
+***Added***:
+
+* Add `tls_ciphers` param to integration ([#19334](https://github.com/DataDog/integrations-core/pull/19334))
+
+## 5.0.0 / 2024-10-04 / Agent 7.59.0
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 4.0.0 / 2024-10-01 / Agent 7.58.0
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+
+## 3.6.0 / 2024-09-05
+
+***Added***:
+
+* Add new metrics with v1.15+ ([#18406](https://github.com/DataDog/integrations-core/pull/18406))
+
+## 3.5.1 / 2024-07-05 / Agent 7.55.0
+
+***Fixed***:
+
+* Update config model names ([#17802](https://github.com/DataDog/integrations-core/pull/17802))
+
+## 3.5.0 / 2024-05-31
+
+***Added***:
+
+* Add support for Cilumn v1.14 metrics ([#17447](https://github.com/DataDog/integrations-core/pull/17447))
+
+***Fixed***:
+
+* Update the description for the `tls_ca_cert` config option to use `openssl rehash` instead of `c_rehash` ([#16981](https://github.com/DataDog/integrations-core/pull/16981))
+
+## 3.4.0 / 2024-02-16 / Agent 7.52.0
 
 ***Added***:
 

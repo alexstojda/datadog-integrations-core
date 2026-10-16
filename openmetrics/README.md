@@ -8,6 +8,8 @@ Extract custom metrics from any OpenMetrics or Prometheus endpoints.
 
 The integration is compatible with both the [Prometheus exposition format][12] as well as with the [OpenMetrics specification][13].
 
+**Minimum Agent version:** 6.6.0
+
 ## Setup
 
 Follow the instructions below to install and configure this check for an Agent running on a host. For containerized environments, see the [Autodiscovery Integration Templates][1] for guidance on applying these instructions.
@@ -20,7 +22,7 @@ The OpenMetrics check is packaged with the [Datadog Agent v6.6.0 or later][2].
 
 ### Configuration
 
-Edit the `openmetrics.d/conf.yaml` file at the root of your [Agent's configuration directory][3]. See the [sample openmetrics.d/conf.yaml][4] for all available configuration options. This is the latest OpenMetrics check example as of Datadog Agent version 7.32.0. If you previously implemented this integration, see the [legacy example][5].
+Edit the `conf.d/openmetrics.d/conf.yaml` file at the root of your [Agent's configuration directory][3]. See the [sample openmetrics.d/conf.yaml][4] for all available configuration options. This is the latest OpenMetrics check example as of Datadog Agent version 7.32.0. If you previously implemented this integration, see the [legacy example][5].
 
 For each instance, the following parameters are required:
 
@@ -68,8 +70,20 @@ By default, the integration skips metrics that come without a type on a Promethe
 
 ```yaml
   metrics:
-    - "metric_without_type":
+    - "<NAME_OF_METRIC_WITHOUT_TYPE>":
         "type": "gauge"
+```
+
+If you are collecting metrics through annotations, refer to the following example:
+
+```json
+  "metrics": [
+  {
+    "<NAME_OF_METRIC_WITHOUT_TYPE>": {
+      "type": "gauge"
+    }
+  }
+  ]
 ```
 
 Remember that metric names can be specified as regular expressions, making it possible to specify the type for a set of metrics without listing all of them individually.

@@ -27,7 +27,7 @@ pytestmark = pytest.mark.unit
     ],
 )
 def test_open_session(instance, side_effect, expected_session, tag):
-    with mock.patch('six.moves.xmlrpc_client.Server', side_effect=side_effect):
+    with mock.patch('datadog_checks.citrix_hypervisor.check.ServerProxy', side_effect=side_effect):
         check = CitrixHypervisorCheck('citrix_hypervisor', {}, [instance])
         session = check.open_session()
 
@@ -35,10 +35,24 @@ def test_open_session(instance, side_effect, expected_session, tag):
         assert tag == check._additional_tags
 
 
+def test_open_session_fails_on_self_signed_cert_by_default(tls_xenserver):
+    # Regression test: the XML-RPC login used to ignore `tls_verify`, always using Python's
+    # default verifying SSL context regardless of instance config.
+    check = CitrixHypervisorCheck('citrix_hypervisor', {}, [{'url': tls_xenserver}])
+
+    assert check.open_session() == {}
+
+
+def test_open_session_succeeds_with_tls_verify_false(tls_xenserver):
+    check = CitrixHypervisorCheck('citrix_hypervisor', {}, [{'url': tls_xenserver, 'tls_verify': False}])
+
+    assert check.open_session() == SESSION_MASTER
+
+
 @pytest.mark.usefixtures('mock_responses')
 @pytest.mark.parametrize('server_type', [pytest.param('master'), pytest.param('slave')])
 def test_check(aggregator, dd_run_check, instance, server_type):
-    with mock.patch('six.moves.xmlrpc_client.Server', return_value=mocked_xenserver(server_type)):
+    with mock.patch('datadog_checks.citrix_hypervisor.check.ServerProxy', return_value=mocked_xenserver(server_type)):
         check = CitrixHypervisorCheck('citrix_hypervisor', {}, [instance])
         dd_run_check(check)
 
@@ -52,7 +66,7 @@ def test_check(aggregator, dd_run_check, instance, server_type):
 @pytest.mark.parametrize(
     'url, expected_status',
     [
-        pytest.param('mocked', AgentCheck.OK),
+        pytest.param('valid_json', AgentCheck.OK),
         pytest.param('wrong', AgentCheck.CRITICAL),
     ],
 )

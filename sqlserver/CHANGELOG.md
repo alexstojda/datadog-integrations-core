@@ -2,6 +2,609 @@
 
 <!-- towncrier release notes start -->
 
+## 23.6.0 / 2026-10-01
+
+***Security***:
+
+* Encode database names in SQL Server ODBC and ADO connection strings so names with special characters are not parsed as separate connection attributes. ([#25270](https://github.com/DataDog/integrations-core/pull/25270))
+
+***Fixed***:
+
+* Isolate execution plan lookup failures so query metrics collection can continue. ([#25091](https://github.com/DataDog/integrations-core/pull/25091))
+* Fix SQL Server Agent history collection scaling. ([#25214](https://github.com/DataDog/integrations-core/pull/25214))
+* Log plan obfuscation failures with repr so an embedded null cannot crash the job. ([#25344](https://github.com/DataDog/integrations-core/pull/25344))
+
+## 23.5.0 / 2026-09-02 / Agent 7.84.0
+
+***Deprecated***:
+
+* Deprecate ``include_instance_metrics`` in favor of ``database_metrics.instance_metrics.enabled``. ([#24953](https://github.com/DataDog/integrations-core/pull/24953))
+
+***Added***:
+
+* Add Data Observability async job module to execute RC-delivered monitoring queries per database. ([#24085](https://github.com/DataDog/integrations-core/pull/24085))
+* Add ``index_usage_table_names`` and ``table_size_table_names`` to bound the tables scanned by index usage and table size metrics. ([#24951](https://github.com/DataDog/integrations-core/pull/24951))
+
+***Fixed***:
+
+* Collect the database name on Azure SQL Database when ``query_metrics.disable_secondary_tags`` is enabled. Previously the setting dropped ``database_name`` entirely, which stopped query metrics from resolving the ``azure_sql_server_database`` resource and silently removed the Azure enrichment tags (``cloud_provider``, ``region``, ``resource_group``, ``subscription_id``, ``tenant_name`` and others) in addition to the documented ``db`` tag. ([#24823](https://github.com/DataDog/integrations-core/pull/24823))
+* Speed up performance counter metric collection on instances with many autodiscovered databases. ([#24876](https://github.com/DataDog/integrations-core/pull/24876))
+* Fix DBM<>APM correlation comments being dropped from Query Samples and Query Metrics for non-stored-procedure statements. ([#24899](https://github.com/DataDog/integrations-core/pull/24899))
+* Fix a connection leak in ``stored_procedure`` metric collection when the procedure call raises an exception. ([#24904](https://github.com/DataDog/integrations-core/pull/24904))
+* Further speed up performance counter metric collection on instances with many autodiscovered databases, and skip fraction metrics whose base counter is missing for an instance instead of ending the collection early. ([#24908](https://github.com/DataDog/integrations-core/pull/24908))
+* Collapse per-database service checks and database file queries into batched requests. ([#24950](https://github.com/DataDog/integrations-core/pull/24950))
+* Restrict instance-level file stats, database stats, and database backup metrics to the databases selected by autodiscovery. ([#24952](https://github.com/DataDog/integrations-core/pull/24952))
+* Make ``database_metrics.instance_metrics.enabled`` gate instance metric collection instead of being ignored. ([#24953](https://github.com/DataDog/integrations-core/pull/24953))
+* Track operation time for database metric executors so each collector reports its own duration. ([#24954](https://github.com/DataDog/integrations-core/pull/24954))
+* Move the check onto the shared ``DatabaseCheck`` async job registry and cancellation lifecycle so async jobs stop and release their resources when the Agent unschedules the check. ([#24985](https://github.com/DataDog/integrations-core/pull/24985))
+* Fix Data Observability scheduling so queries with the same monitor ID execute independently. ([#24998](https://github.com/DataDog/integrations-core/pull/24998))
+* Cache the Agent version instead of resolving it for every payload. ([#25023](https://github.com/DataDog/integrations-core/pull/25023))
+
+## 23.4.0 / 2026-08-05 / Agent 7.83.0
+
+***Added***:
+
+* Add ``query_metrics.collect_plans`` option to disable SQL Server execution plan collection independently of query metrics. ([#23961](https://github.com/DataDog/integrations-core/pull/23961))
+* Update dependencies ([#24321](https://github.com/DataDog/integrations-core/pull/24321))
+
+***Fixed***:
+
+* Standardize how the integration declares its Database Monitoring platform identifier, and bump the minimum ``datadog-checks-base`` version to 37.42.0. ([#24649](https://github.com/DataDog/integrations-core/pull/24649))
+
+## 23.3.0 / 2026-07-08 / Agent 7.82.0
+
+***Added***:
+
+* Bump the minimum supported version of `datadog-checks-base` to 37.41.0. ([#24267](https://github.com/DataDog/integrations-core/pull/24267))
+
+***Fixed***:
+
+* Escape SQL Server passwords when building connection strings. ([#24138](https://github.com/DataDog/integrations-core/pull/24138))
+* Parameterize SQL Server Agent job history collection to avoid plan cache churn. ([#24203](https://github.com/DataDog/integrations-core/pull/24203))
+* Parameterize the SQL Server Agent job history row limit. ([#24206](https://github.com/DataDog/integrations-core/pull/24206))
+* Remove duplicated `agent_hostname` logic now provided by the `DatabaseCheck` base class. ([#24271](https://github.com/DataDog/integrations-core/pull/24271))
+* Remove duplicated tags logic now provided by the `DatabaseCheck` base class. ([#24274](https://github.com/DataDog/integrations-core/pull/24274))
+* Remove duplicated `database_identifier` logic now provided by the `DatabaseCheck` base class. ([#24279](https://github.com/DataDog/integrations-core/pull/24279))
+
+## 23.2.0 / 2026-06-09 / Agent 7.81.0
+
+***Added***:
+
+* Add explicit diagnostics for SQL Server setup validation. ([#23621](https://github.com/DataDog/integrations-core/pull/23621))
+
+***Fixed***:
+
+* Bump `datadog-checks-base` to `>=37.39.1`. ([#23950](https://github.com/DataDog/integrations-core/pull/23950))
+
+## 23.1.1 / 2026-06-09 / Agent 7.80.1
+
+***Fixed***:
+
+* Restore Agent hostname instrumentation for SQL Server named instance host configurations. ([#23862](https://github.com/DataDog/integrations-core/pull/23862))
+
+## 23.1.0 / 2026-05-14 / Agent 7.80.0
+
+***Added***:
+
+* Add SQL Server 2025 to list of supported versions. ([#23395](https://github.com/DataDog/integrations-core/pull/23395))
+
+***Fixed***:
+
+* Updates the FCI metric collection so that Datadog can still report FCI metrics without needing a cluster name. ([#23264](https://github.com/DataDog/integrations-core/pull/23264))
+* Parameterize database query in SQL Server schema collection. ([#23381](https://github.com/DataDog/integrations-core/pull/23381))
+* Harden SQL Server XML plan parsing. ([#23382](https://github.com/DataDog/integrations-core/pull/23382))
+* Escape single quotes in SQL string literal interpolation for robustness against unusual database and object names. ([#23426](https://github.com/DataDog/integrations-core/pull/23426))
+* Fix Azure SQL Database and Azure SQL Managed Instance schema collection by using database compatibility level for schema query selection. ([#23533](https://github.com/DataDog/integrations-core/pull/23533))
+* Reuse the auxiliary SQL Server schema collection connection for legacy table detail queries. ([#23544](https://github.com/DataDog/integrations-core/pull/23544))
+* Report Always On secondary lag metrics on Azure SQL Managed Instance when ProductMajorVersion reports 12. ([#23558](https://github.com/DataDog/integrations-core/pull/23558))
+
+## 23.0.2 / 2026-06-01 / Agent 7.79.2
+
+***Fixed***:
+
+* Restore agent hostname instrumentation for SQL Server named instance host configurations. ([#23862](https://github.com/DataDog/integrations-core/pull/23862)) *Note: not included in 23.1.0*
+
+## 23.0.1 / 2026-04-28 / Agent 7.79.0
+
+***Fixed***:
+
+* Bump lxml to 6.1.0 to address CVE-2026-41066. ([#23418](https://github.com/DataDog/integrations-core/pull/23418))
+
+## 23.0.0 / 2026-04-15
+
+***Changed***:
+
+* Switch `sqlserver.ao.replica_sync_state` from `sys.dm_hadr_database_replica_states` to `sys.dm_hadr_availability_replica_states` to report per-replica synchronization health instead of per-database synchronization state. The `synchronization_state_desc` tag name is preserved for backward compatibility, but its values now reflect the replica-level health rollup (e.g. `HEALTHY`, `PARTIALLY_HEALTHY`, `NOT_HEALTHY`). The previous implementation was broken for availability groups containing multiple databases, as rows would collide on the same tag set and only the last value was reported. To get per-database synchronization state, use `sqlserver.ao.replica_status` which includes a `synchronization_state` tag with full database-level granularity. ([#23310](https://github.com/DataDog/integrations-core/pull/23310))
+
+***Added***:
+
+* Update dependencies ([#22996](https://github.com/DataDog/integrations-core/pull/22996))
+
+***Fixed***:
+
+* Fix ``database_autodiscovery_interval`` config option being silently ignored. The check was reading ``autodiscovery_interval`` instead of the documented ``database_autodiscovery_interval`` key, so customers setting this option were always getting the default 3600s interval. ([#22912](https://github.com/DataDog/integrations-core/pull/22912))
+* Fix stale database metrics cache when autodiscovered databases change. Previously, database-level metric query executors (e.g. ``sys.database_files``) were never rebuilt after autodiscovery detected database changes, causing persistent errors for deleted databases and missing metrics for newly added databases until agent restart. ([#22913](https://github.com/DataDog/integrations-core/pull/22913))
+* Respect exclude_hostname config parameter for debug metrics. If this setting is not respected, we can still submit metrics with a hostname tag, which can have undesirable effects throughout the platform. For example, a host can appear in the Host list where it should not. ([#22938](https://github.com/DataDog/integrations-core/pull/22938))
+* Improve descriptions ([#23047](https://github.com/DataDog/integrations-core/pull/23047))
+* Bump `datadog-checks-base` to `>=37.34.1`. Notable changes:
+    - Fix schema collection silently dropping all collected metadata when the last discovered database has no tables. ([#22880](https://github.com/DataDog/integrations-core/pull/22880))
+    - Reduce allocations in `StatementMetrics` by deferring dict construction and updating the previous-statements cache in place. ([#23075](https://github.com/DataDog/integrations-core/pull/23075))
+    - Improve compile-time error messages for invalid syntax in DB query extras expressions. ([#23140](https://github.com/DataDog/integrations-core/pull/23140)) ([#23282](https://github.com/DataDog/integrations-core/pull/23282))
+
+## 22.14.0 / 2026-03-18 / Agent 7.78.0
+
+***Added***:
+
+* Update dependencies ([#22707](https://github.com/DataDog/integrations-core/pull/22707))
+
+***Fixed***:
+
+* Fix `procedure_name` tag missing from query metrics when the `CONNECT` permission hasn't been granted to the Datadog user. ([#22731](https://github.com/DataDog/integrations-core/pull/22731))
+* Fix `procedure_name` tag missing from activity metrics when the `CONNECT` permission hasn't been granted to the Datadog user. ([#22796](https://github.com/DataDog/integrations-core/pull/22796))
+
+## 22.13.1 / 2026-02-27 / Agent 7.77.0
+
+***Fixed***:
+
+* Cancel SQLServer Agent history job on check cancellation ([#22753](https://github.com/DataDog/integrations-core/pull/22753))
+
+## 22.13.0 / 2026-02-19
+
+***Added***:
+
+* Add `enable_legacy_tags_normalization` option to preserve hyphens in tag values when set to false. ([#22303](https://github.com/DataDog/integrations-core/pull/22303))
+* Require key_prefix for SQLServer connections to avoid unsafely sharing connections across threads ([#22557](https://github.com/DataDog/integrations-core/pull/22557))
+
+***Fixed***:
+
+* Clarifies the default ADO provider in conf.yaml.example ([#21364](https://github.com/DataDog/integrations-core/pull/21364))
+* Updates collect_raw_query_statements config description ([#22611](https://github.com/DataDog/integrations-core/pull/22611))
+* Fix AgentJobs, Deadlocks and XE collections to run async by default ([#22633](https://github.com/DataDog/integrations-core/pull/22633))
+
+## 22.12.5 / 2026-02-27 / Agent 7.76.2
+
+***Fixed***:
+
+* Fix AgentJobs, Deadlocks and XE collections to run async by default ([#22633](https://github.com/DataDog/integrations-core/pull/22633))
+* Cancel SQLServer agent history job on check cancel ([#22753](https://github.com/DataDog/integrations-core/pull/22753))
+
+## 22.12.4 / 2026-02-05 / Agent 7.76.0
+
+***Fixed***:
+
+* Fixed an issue where schema collection thread connections could get abruptly closed from the main check loop ([#22471](https://github.com/DataDog/integrations-core/pull/22471))
+
+## 22.12.3 / 2026-01-21
+
+***Fixed***:
+
+* Improve SQL Server USE stmt identifier escaping ([#22277](https://github.com/DataDog/integrations-core/pull/22277))
+* Fix STRING_AGG truncation error for tables with many columns by casting to NVARCHAR(MAX) ([#22338](https://github.com/DataDog/integrations-core/pull/22338))
+* Fix KeyError in statement metrics when available metric columns change between collection cycles. ([#22318](https://github.com/DataDog/integrations-core/pull/22318))
+  Optimize StatementMetrics cache to only store fields we need to compute statement metrics. ([#22358](https://github.com/DataDog/integrations-core/pull/22358)) ([#22376](https://github.com/DataDog/integrations-core/pull/22376))
+
+## 22.12.2 / 2026-01-09 / Agent 7.75.0
+
+***Fixed***:
+
+* Replace SQLServer checks for year with checks for major version. ([#22285](https://github.com/DataDog/integrations-core/pull/22285))
+* Fix default check in SQL Server major version ([#22291](https://github.com/DataDog/integrations-core/pull/22291))
+
+## 22.12.1 / 2025-12-22
+
+***Fixed***:
+
+* Fix table row count calculation for sqlserver.table.row_count. Previously, we joined with indexes which produced one row per table-index combination before grouping. This resulted in inflated row count values when grouping by table because the multiple index rows were summed together.
+
+  The fix is to conditionally sum the row count: only when the index_id is in (0, 1), which translates to heap and clustered index partitions. Both of these contain the true row count for the given partition, whereas other partition types (e.g. non-clustered indexes) should not be considered in the row count calculation. This leads to the expected value being calcualted. ([#22055](https://github.com/DataDog/integrations-core/pull/22055))
+
+## 22.12.0 / 2025-11-26 / Agent 7.74.0
+
+***Added***:
+
+* Migrate SQL Server to new schema collector, which provides improved performance in the Agent and allows the backend to handle larger schema collections ([#21734](https://github.com/DataDog/integrations-core/pull/21734))
+* Add DBM Agent health events to SQLServer, including basic initialization checks, unhandled errors, and missed collections ([#21868](https://github.com/DataDog/integrations-core/pull/21868))
+* Upgrade base version for Postgres, MySQL, and SQLServer ([#21906](https://github.com/DataDog/integrations-core/pull/21906))
+
+***Fixed***:
+
+* Support `only_custom_queries` configuration option in the SQL Server integration ([#21304](https://github.com/DataDog/integrations-core/pull/21304))
+
+## 22.11.0 / 2025-10-31 / Agent 7.73.0
+
+***Added***:
+
+* Add additional context to the database_identifier configuration description. ([#21575](https://github.com/DataDog/integrations-core/pull/21575))
+
+## 22.10.1 / 2025-10-03 / Agent 7.72.0
+
+***Fixed***:
+
+* Remove ddagenthostname from metrics for Postgres, MySQL, and SQLServer ([#21523](https://github.com/DataDog/integrations-core/pull/21523))
+
+## 22.10.0 / 2025-10-02
+
+***Added***:
+
+* Bump Python to 3.13 ([#21161](https://github.com/DataDog/integrations-core/pull/21161))
+* Add SQL Server database metric `user_access`. ([#21406](https://github.com/DataDog/integrations-core/pull/21406))
+* Normalize `sqlserver_servername` and `sqlserver_instancename` tag values to avoid duplicate tags. ([#21475](https://github.com/DataDog/integrations-core/pull/21475))
+* Bump datadog-checks-base to 37.21.0 ([#21477](https://github.com/DataDog/integrations-core/pull/21477))
+* Add `replace_bind_parameter` to sqlserver obfuscator option to support obfuscate bind parameters like `@P1`. ([#21481](https://github.com/DataDog/integrations-core/pull/21481))
+
+***Fixed***:
+
+* Compile and reuse connection error regex patterns ([#21319](https://github.com/DataDog/integrations-core/pull/21319))
+
+## 22.9.1 / 2025-10-03 / Agent 7.71.1
+
+***Fixed***:
+
+* Remove ddagenthostname from metrics for Postgres, MySQL, and SQLServer ([#21523](https://github.com/DataDog/integrations-core/pull/21523))
+
+## 22.9.0 / 2025-09-05 / Agent 7.71.0
+
+***Added***:
+
+* Update core tags with agent host name for DB integrations(postgres, mysql, sqlserver) ([#20991](https://github.com/DataDog/integrations-core/pull/20991))
+* Enable collect_settings by default for DBM enabled integrations ([#21172](https://github.com/DataDog/integrations-core/pull/21172))
+* Update dependencies ([#21217](https://github.com/DataDog/integrations-core/pull/21217))
+
+## 22.8.0 / 2025-08-07 / Agent 7.70.0
+
+***Added***:
+
+* Add new collect_* configuration options (collect_schemas, collect_deadlocks, collect_xe) to replace deprecated *_collection options while maintaining backward compatibility. ([#20599](https://github.com/DataDog/integrations-core/pull/20599))
+
+***Fixed***:
+
+* Add deprecated `collect_schemas`, `collect_xe` and `collect_deadlocks` option to `config.yaml.example`. These config options are deprecated at Agent 7.70.0 and will be removed in a future release. ([#20781](https://github.com/DataDog/integrations-core/pull/20781))
+* Lift `pyodbc` dependency exclusion for macOS on AArch64/ARM64 ([#20812](https://github.com/DataDog/integrations-core/pull/20812))
+* Improve descriptions and examples in example configuration file ([#20878](https://github.com/DataDog/integrations-core/pull/20878))
+
+## 22.7.1 / 2025-07-10 / Agent 7.69.0
+
+***Fixed***:
+
+* Fixes "Column 'sys.foreign_keys.object_id' is invalid in the select list ..." error with the `FOREIGN_KEY_QUERY_PRE_2017` query ([#20546](https://github.com/DataDog/integrations-core/pull/20546))
+* Emit `session_id` in XE events as an integer always, remove unnecessary `event_source` field ([#20559](https://github.com/DataDog/integrations-core/pull/20559))
+* Only submit plan events when we have a plan definition ([#20584](https://github.com/DataDog/integrations-core/pull/20584))
+* Remove relative imports for non parent modules ([#20646](https://github.com/DataDog/integrations-core/pull/20646))
+
+## 22.7.0 / 2025-06-12 / Agent 7.68.0
+
+***Added***:
+
+* Add $full_server_name support as template variable to sqlserver template config key ([#20342](https://github.com/DataDog/integrations-core/pull/20342))
+* Add size and row count collection for tables in SQLServer ([#20367](https://github.com/DataDog/integrations-core/pull/20367))
+* Update dependencies ([#20399](https://github.com/DataDog/integrations-core/pull/20399))
+* Add `sys.dm_exec_sessions.client_interface_name` to activity samples payload. ([#20463](https://github.com/DataDog/integrations-core/pull/20463))
+
+***Fixed***:
+
+* Update SQL server to TagManager and fix race conditions in tag values dependent on server queries ([#20424](https://github.com/DataDog/integrations-core/pull/20424))
+
+## 22.6.0 / 2025-05-19 / Agent 7.67.0
+
+***Added***:
+
+* Fill in missing fields for XE events ([#20293](https://github.com/DataDog/integrations-core/pull/20293))
+
+***Fixed***:
+
+* Add object_name to rpc_completed XE events, add activity ID and activity ID Xfer to error events ([#20302](https://github.com/DataDog/integrations-core/pull/20302))
+
+## 22.5.0 / 2025-05-15
+
+***Added***:
+
+* Add database and Azure name to SQL Server database identifier template variables ([#20301](https://github.com/DataDog/integrations-core/pull/20301))
+
+## 22.4.0 / 2025-05-15
+
+***Added***:
+
+* Enable HA agent support for DBM integrations ([#20124](https://github.com/DataDog/integrations-core/pull/20124))
+* Added SQLServer Extended Event Handlers ([#20229](https://github.com/DataDog/integrations-core/pull/20229))
+
+## 22.3.1 / 2025-04-25 / Agent 7.66.0
+
+***Fixed***:
+
+* Use DB_NAME for query metrics in an Azure SQL database since joining on sys.databases doesn't always work. The dbid from dm_exec_query_stats doesn't match the one in sys.databases. ([#20097](https://github.com/DataDog/integrations-core/pull/20097))
+
+## 22.3.0 / 2025-04-22
+
+***Added***:
+
+* Create exclude_hostname option for Postgres, MySQL, and SQLServer ([#20094](https://github.com/DataDog/integrations-core/pull/20094))
+
+## 22.2.0 / 2025-04-18
+
+***Added***:
+
+* Added a new configuration option `database_identifier.template`. Use this template to specify the unique identifier for a database instance, separate from the underlying host.
+  The `empty_default_hostname` configuration option is now respected and will omit the `host` tag from database instances when enabled. ([#19341](https://github.com/DataDog/integrations-core/pull/19341))
+
+## 22.1.0 / 2025-04-17
+
+***Added***:
+
+* Optimize SQL Server integration by removing redundant query comment parsing using `extract_sql_comments` and switching stored procedure name extraction to use `OBJECT_NAME(sproc_object_id, dbid)`; when `disable_secondary_tags` is enabled, fall back to parsing the procedure name from the raw query text. ([#19935](https://github.com/DataDog/integrations-core/pull/19935))
+* Update dependencies ([#19962](https://github.com/DataDog/integrations-core/pull/19962))
+
+***Fixed***:
+
+* Remove unnecessary `like` from SQL Server deadlock query ([#19921](https://github.com/DataDog/integrations-core/pull/19921))
+
+## 22.0.1 / 2025-03-28 / Agent 7.65.0
+
+***Fixed***:
+
+* Fix SQL Server integration when database is using case sensitive collation ([#19930](https://github.com/DataDog/integrations-core/pull/19930))
+* Fixed support for FreeTDS driver ([#19931](https://github.com/DataDog/integrations-core/pull/19931))
+
+## 22.0.0 / 2025-03-19
+
+***Changed***:
+
+* Optimize sqlserver index usage stats query ([#19807](https://github.com/DataDog/integrations-core/pull/19807))
+
+***Added***:
+
+* Update dependencies ([#19687](https://github.com/DataDog/integrations-core/pull/19687))
+* Collect SQL Server foreign key delete & update actions. ([#19796](https://github.com/DataDog/integrations-core/pull/19796))
+
+***Fixed***:
+
+* Bump base check dependency to use new assert method functionality. ([#19763](https://github.com/DataDog/integrations-core/pull/19763))
+* Fix a bug where `tempdb` is wrongly excluded from database files metrics due to all instances inherited from `SqlserverDatabaseMetricsBase` share the same reference of auto-discovered databases. ([#19803](https://github.com/DataDog/integrations-core/pull/19803))
+
+## 21.2.0 / 2025-02-20 / Agent 7.64.0
+
+***Added***:
+
+* Add support for collecting raw query statements and explain plans when `collect_raw_query_statement.enabled` is true. ([#19421](https://github.com/DataDog/integrations-core/pull/19421))
+* Add `raw_signature` to raw query plan event payload. ([#19495](https://github.com/DataDog/integrations-core/pull/19495))
+* Add deadlock support for Azure DB ([#19577](https://github.com/DataDog/integrations-core/pull/19577))
+* Add SQLServer ServerName and InstanceName to tags ([#19600](https://github.com/DataDog/integrations-core/pull/19600))
+
+## 21.1.0 / 2025-01-25 / Agent 7.63.0
+
+***Added***:
+
+* Update dependencies ([#19430](https://github.com/DataDog/integrations-core/pull/19430))
+
+***Fixed***:
+
+* Fix KeyError in SQL Server schema collection caused by case-insensitive database name mismatches. ([#19384](https://github.com/DataDog/integrations-core/pull/19384))
+* Bump datadog-checks-base version ([#19478](https://github.com/DataDog/integrations-core/pull/19478))
+
+## 21.0.0 / 2024-12-26 / Agent 7.62.0
+
+***Changed***:
+
+* Fall back to ``system_health/event_file`` when querying deadlocks if `datadog` XE session wasn't created. ([#19189](https://github.com/DataDog/integrations-core/pull/19189))
+
+***Added***:
+
+* Update configuration structure and allow configuration of all database metrics ([#19111](https://github.com/DataDog/integrations-core/pull/19111))
+* Send schema name as part of index usage metrics ([#19266](https://github.com/DataDog/integrations-core/pull/19266))
+* Add schema tag to db_fragmentation metrics for sqlserver ([#19277](https://github.com/DataDog/integrations-core/pull/19277))
+
+## 20.2.0 / 2024-11-28 / Agent 7.61.0
+
+***Added***:
+
+* Submit database_hostname with database instance and metrics for MySQL, Postgres, and SQLServer ([#18969](https://github.com/DataDog/integrations-core/pull/18969))
+* Add lookback_window config parameter to query_metrics.
+
+  The current lookback window defaults to 2 times the collection interval, and is not able to be overridden.
+  This means that infrequently-run queries are unlikely to have metrics captured for them. One common
+  use case that falls into this bucket is ETL queries which can run hourly or even daily. These have
+  a very small chance of having metrics captured for them. In that case, we will support setting a lookback
+  window that will include such queries. ([#18979](https://github.com/DataDog/integrations-core/pull/18979))
+* Add config option `azure.aggregate_sql_databases` to report multiple azure sql databases as one database host. This is an opted in feature and is disabled by default. ([#19032](https://github.com/DataDog/integrations-core/pull/19032))
+
+***Fixed***:
+
+* Fix missing appended SQL comments. ([#18958](https://github.com/DataDog/integrations-core/pull/18958))
+* Fix `azure_sql_server_database` resource tag to use Azure SQL Database `{fully_qualified_doman_name}/{database_name}`. ([#19014](https://github.com/DataDog/integrations-core/pull/19014))
+* Update SQLServer agent jobs metrics to be DBM only. ([#19033](https://github.com/DataDog/integrations-core/pull/19033))
+* Fix duplicate deadlock events ([#19139](https://github.com/DataDog/integrations-core/pull/19139))
+* Fix poor query signature correlation for deadlocks. ([#19142](https://github.com/DataDog/integrations-core/pull/19142))
+
+## 20.1.1 / 2024-11-25 / Agent 7.60.0
+
+***Fixed***:
+
+* Use alternative schema collection query for sqlserver 2016 and older due to STRING_AGG not being supported until SQLServer 2017 ([#19110](https://github.com/DataDog/integrations-core/pull/19110))
+
+## 20.1.0 / 2024-10-31
+
+***Added***:
+
+* Add `service` configured in integration init_config or instance config to the DBM events payload. The configured `service` will be converted to tag `service:<SERVICE>` and applied to query metrics, query samples and explain plans. ([#18846](https://github.com/DataDog/integrations-core/pull/18846))
+* Add extended events (XE) session monitoring ([#18875](https://github.com/DataDog/integrations-core/pull/18875))
+* Migrate following dynamic metrics to database_metrics for better maintainability and testability.
+  - SQLServer AlwaysOn metrics
+  - SQLServer FCI metrics
+  - SQLServer file stats metrics
+  - SQLServer primary log shipping metrics
+  - SQLServer secondary log shipping metrics
+  - SQLServer server state metrics
+  - SQLServer tempdb file space usage metrics
+  - SQLServer index usage metrics
+  - SQLServer database index fragmentation metrics
+  - SQLServer os tasks metrics
+  - SQLServer master files metrics
+  - SQLServer database files metrics
+  - SQLServer database stats metrics
+  - SQLServer database backup metrics
+  - SQLServer os schedulers metrics
+  - SQLServer database replication stats metrics
+  - SQLServer availability replicas metrics
+  - SQLServer availability groups metrics
+  Increase database backup metrics and index fragmentation metrics collection interval to 5 minutes. ([#18883](https://github.com/DataDog/integrations-core/pull/18883))
+
+***Fixed***:
+
+* Prevent hostname evaluating to None in sqlserver check ([#18237](https://github.com/DataDog/integrations-core/pull/18237))
+* Update sqlserver metric collection row_key to prevent overwriting metric information for two queries with the same query_plan_hash but part of two different stored procedures. ([#18882](https://github.com/DataDog/integrations-core/pull/18882))
+
+## 20.0.0 / 2024-10-10 / Agent 7.59.0
+
+***Changed***:
+
+* Use ``datadog`` XE session as the default for deadlock monitoring. Fall back to ``system_health`` if unavailable. ([#18781](https://github.com/DataDog/integrations-core/pull/18781))
+
+## 19.0.0 / 2024-10-04
+
+***Removed***:
+
+* Remove support for Python 2. ([#18580](https://github.com/DataDog/integrations-core/pull/18580))
+
+***Added***:
+
+* Added deadlock collection feature to the SQL Server integration. ([#18108](https://github.com/DataDog/integrations-core/pull/18108))
+* Bump the python version from 3.11 to 3.12 ([#18207](https://github.com/DataDog/integrations-core/pull/18207))
+* Add the `propagate_agent_tags` setting. When set to `true`, the tags from the agent host are added to the check's tag for all instances. ([#18557](https://github.com/DataDog/integrations-core/pull/18557))
+
+***Fixed***:
+
+* Bump the version of datadog-checks-base to 37.0.0 ([#18617](https://github.com/DataDog/integrations-core/pull/18617))
+
+## 18.0.1 / 2024-10-08 / Agent 7.58.0
+
+***Fixed***:
+
+* Updated SQL Server Agent job query for completed jobs, significantly reducing query times for large job history logs ([#18760](https://github.com/DataDog/integrations-core/pull/18760))
+
+## 18.0.0 / 2024-10-01
+
+***Changed***:
+
+* Bump minimum version of base check ([#18733](https://github.com/DataDog/integrations-core/pull/18733))
+
+***Added***:
+
+* Bump the python version from 3.11 to 3.12 ([#18212](https://github.com/DataDog/integrations-core/pull/18212))
+* Bump lxml version for py3.12 E2E tests ([#18637](https://github.com/DataDog/integrations-core/pull/18637))
+
+***Fixed***:
+
+* Fix ODBC config handling for Linux ([#18586](https://github.com/DataDog/integrations-core/pull/18586))
+
+## 17.5.3 / 2024-09-17
+
+***Fixed***:
+
+* Fix ODBC config handling for Linux ([#18586](https://github.com/DataDog/integrations-core/pull/18586))
+
+## 17.5.2 / 2024-08-28 / Agent 7.57.0
+
+***Fixed***:
+
+* Bump lxml to 4.9.4 ([#18244](https://github.com/DataDog/integrations-core/pull/18244))
+
+## 17.5.1 / 2024-08-13
+
+***Fixed***:
+
+* Directly collect the time offset for converting times in SQL Server Agent tables to epoch timestamp through a single, deterministic function. This method avoids calculating the offset as a difference between the server time and UTC time, which led to inaccurate offsets in some cases. ([#18292](https://github.com/DataDog/integrations-core/pull/18292))
+
+## 17.5.0 / 2024-08-09
+
+***Added***:
+
+* Added collection of SQL Server Agent jobs history and activity ([#17787](https://github.com/DataDog/integrations-core/pull/17787))
+
+***Fixed***:
+
+* Fix password obfuscation in OLE DB driver error message when one or more backslashes exist in the password. ([#18203](https://github.com/DataDog/integrations-core/pull/18203))
+
+## 17.4.1 / 2024-08-08 / Agent 7.56.0
+
+***Fixed***:
+
+* Revert "[dbm] fix flapping sqlserver_version" ([#18249](https://github.com/DataDog/integrations-core/pull/18249))
+
+## 17.4.0 / 2024-07-05
+
+***Added***:
+
+* Adding schema collection to sqlserver
+  Schema data includes information about the tables, their columns, indexes, foreign keys, and partitions. ([#17258](https://github.com/DataDog/integrations-core/pull/17258))
+* Set sqlserver integration default odbc driver to agent embedded msodbcsql18 on Linux platform ([#17729](https://github.com/DataDog/integrations-core/pull/17729))
+* Update embedded odbc driver config odbcinist.ini to use msodbcsql 18.3.3.1 ([#17765](https://github.com/DataDog/integrations-core/pull/17765))
+* Update dependencies ([#17817](https://github.com/DataDog/integrations-core/pull/17817))
+
+***Fixed***:
+
+* Filter query metrics by database_name if check is configured to a single non-master db ([#17717](https://github.com/DataDog/integrations-core/pull/17717))
+* [sqlserver] fix missing sqlserver_version ([#17750](https://github.com/DataDog/integrations-core/pull/17750))
+* Hyphen in database name support ([#17775](https://github.com/DataDog/integrations-core/pull/17775))
+* Upgrade `azure-identity` dependency ([#17862](https://github.com/DataDog/integrations-core/pull/17862))
+* Move sqlserver schema foreign key information to the dependent table. ([#17933](https://github.com/DataDog/integrations-core/pull/17933))
+
+## 17.3.0 / 2024-05-31 / Agent 7.55.0
+
+***Added***:
+
+* Update dependencies ([#17424](https://github.com/DataDog/integrations-core/pull/17424))
+
+***Fixed***:
+
+* Fix Always-On metrics query for replica_failover_mode and replica_failover_readiness. Previously the query returned a cartesian product of rows which could result in incorrect metrics in some cases. ([#17503](https://github.com/DataDog/integrations-core/pull/17503))
+* Emit database_instance metadata before collecting metrics
+  Decreased database instance collection interval from 1800 seconds to 300 seconds to improve reliability ([#17675](https://github.com/DataDog/integrations-core/pull/17675))
+
+## 17.2.0 / 2024-04-26 / Agent 7.54.0
+
+***Added***:
+
+* Add `sqlserver.database.replica.transaction_delay` metric to report database level replica transaction delays ([#17345](https://github.com/DataDog/integrations-core/pull/17345))
+* Add a new config option include_db_fragmentation_metrics_tempdb to skip index fragmentation metrics for tempdb. By default, index fragmentation metrics are NOT be collected for tempdb. ([#17361](https://github.com/DataDog/integrations-core/pull/17361))
+* Migrate `SQLServer index usage metrics`,  `SQLServer database index fragmentation metrics` and `SQLServer database backup metrics` to `database_metrics`.
+  Increase `SQLServer database index fragmentation metrics` and `SQLServer database backup metrics` default collection interval to 5 mins. ([#17374](https://github.com/DataDog/integrations-core/pull/17374))
+
+***Fixed***:
+
+* Break circular dependency between sqlserver check and connection ([#17275](https://github.com/DataDog/integrations-core/pull/17275))
+* Fix missing file stats metrics `sqlserver.files.write_io_stall_queued` and `sqlserver.files.read_io_stall_queued` for sqlserver newer than 2012 and not Azure SQL Database/Azure SQL Managed Instance ([#17299](https://github.com/DataDog/integrations-core/pull/17299))
+* Remove db exist check if ignore_missing_database is set to false. In this case throw SQLConnectionError instead of ConfigurationError when database does not exist. ([#17300](https://github.com/DataDog/integrations-core/pull/17300))
+* Fix zero value bug for `sqlserver.replica.transaction_delay` metric due to integration wrongly pulling transaction delay performance counter from `SQLServer:Database Mirroring` instead of the the correct object_name `SQLServer:Database Replica` ([#17345](https://github.com/DataDog/integrations-core/pull/17345))
+* Fixed a bug where specifying `null` for `custom_metrics` would cause the SQL Server integration to crash ([#17430](https://github.com/DataDog/integrations-core/pull/17430))
+* Prevent agent from unsupported USE commands on Azure SQL DBs ([#17448](https://github.com/DataDog/integrations-core/pull/17448))
+
+## 17.1.0 / 2024-03-22 / Agent 7.53.0
+
+***Added***:
+
+* Update custom_queries configuration to support optional collection_interval ([#16957](https://github.com/DataDog/integrations-core/pull/16957))
+* Tag SQL Server agent queries with service:datadog-agent ([#17162](https://github.com/DataDog/integrations-core/pull/17162))
+
+***Fixed***:
+
+* Skip index usage collection for tempdb, fixes a blocking query ([#16977](https://github.com/DataDog/integrations-core/pull/16977))
+* Fix an issue where logging of obfuscation errors would still hide the statement when it's part of a stored procedure. If the stored procedure obfuscation fails, the `procedure_signature` tag will be set to `__procedure_obfuscation_error__`. ([#17020](https://github.com/DataDog/integrations-core/pull/17020))
+* Skip `sqlserver.latches.latch_wait_time metric` on SQL Server version 2012 and 2014. ([#17063](https://github.com/DataDog/integrations-core/pull/17063))
+* Update the configuration to include the `metric_prefix` option ([#17065](https://github.com/DataDog/integrations-core/pull/17065))
+* Improve service check of autodiscovered databases for the SQL Server integration. The fix prevents agent from creating a connection per database.
+  The fix is not applied for Azure hosted databases due to the restriction in switching to dabases within the connection. ([#17139](https://github.com/DataDog/integrations-core/pull/17139))
+* Update performance counter base name query to lookup by lowercase counter name ([#17207](https://github.com/DataDog/integrations-core/pull/17207))
+* Refactor SQLServer instance connector and adoprovider initialization from configuration.
+  The connector/adoprovider config takes precedence in the following order:
+  - instance config
+  - init config
+  - the default connection/adoprovider ([#17245](https://github.com/DataDog/integrations-core/pull/17245))
+
+## 17.0.1 / 2024-02-23 / Agent 7.52.0
+
+***Fixed***:
+
+* Deal with absence of sys.database_files SpaceUsed attribute on Azure SQL Servers ([#16910](https://github.com/DataDog/integrations-core/pull/16910))
+
 ## 17.0.0 / 2024-02-16
 
 ***Removed***:
@@ -17,7 +620,7 @@
 
 ***Added***:
 
-* [DBMON-3271] DBM integrations now defaulted to use new go-sqllexer pkg to obfuscate sql statements ([#16681](https://github.com/DataDog/integrations-core/pull/16681))
+* DBM integrations now defaulted to use new go-sqllexer pkg to obfuscate sql statements ([#16681](https://github.com/DataDog/integrations-core/pull/16681))
 * Bump dependencies ([#16858](https://github.com/DataDog/integrations-core/pull/16858))
 
 ***Fixed***:
@@ -25,11 +628,17 @@
 * Improve performance of index_usage_stats query, set default collection interval to 5 minutes and allow interval to be customized. ([#16645](https://github.com/DataDog/integrations-core/pull/16645))
 * Require base check that has fix for null characters in query strings ([#16750](https://github.com/DataDog/integrations-core/pull/16750))
 
+## 16.0.2 / 2024-02-23 / Agent 7.51.1
+
+***Fixed***:
+
+* Deal with absence of sys.database_files SpaceUsed attribute on Azure SQL Servers ([#16910](https://github.com/DataDog/integrations-core/pull/16910))
+
 ## 16.0.1 / 2024-02-07 / Agent 7.51.0
 
 ***Fixed***:
 
-* [DBMON-3495] Replace embedded null characters with empty string in query text ([#16742](https://github.com/DataDog/integrations-core/pull/16742))
+* Replace embedded null characters with empty string in query text ([#16742](https://github.com/DataDog/integrations-core/pull/16742))
 
 ## 16.0.0 / 2024-01-05
 
@@ -49,19 +658,19 @@
 * Collect sqlserver.database.files.space_used, and sqlserver.database.is_read_only/is_in_standby metrics. ([#16419](https://github.com/DataDog/integrations-core/pull/16419))
 * add new obfuscator options to customize SQL obfuscation and normaliza… ([#16429](https://github.com/DataDog/integrations-core/pull/16429))
 * Add ODBC driver support for the SQL Server agent ([#16431](https://github.com/DataDog/integrations-core/pull/16431))
-* [DBMON-3197] add config option to set character limit of stored procedure text ([#16462](https://github.com/DataDog/integrations-core/pull/16462))
+* Add config option to set character limit of stored procedure text ([#16462](https://github.com/DataDog/integrations-core/pull/16462))
 * Adds whether a SPID is a user or system process to DBM activity events. ([#16465](https://github.com/DataDog/integrations-core/pull/16465))
 
 ***Fixed***:
 
-* [DBMON-3197] ensure accurate collection of query activity with statement when stored procedure is failed to obfuscate ([#16455](https://github.com/DataDog/integrations-core/pull/16455))
-* [DBMON-3220] skip reporting SqlFractionMetric when base_name is None ([#16469](https://github.com/DataDog/integrations-core/pull/16469))
+* Ensure accurate collection of query activity with statement when stored procedure is failed to obfuscate ([#16455](https://github.com/DataDog/integrations-core/pull/16455))
+* Skip reporting SqlFractionMetric when base_name is None ([#16469](https://github.com/DataDog/integrations-core/pull/16469))
 
 ## 15.2.1 / 2023-12-28 / Agent 7.50.2
 
 ***Fixed***:
 
-* Revert "[DBMON-2989] report sql obfuscation error count (#15990)" ([#16439](https://github.com/DataDog/integrations-core/pull/16439))
+* Revert "report sql obfuscation error count (#15990)" ([#16439](https://github.com/DataDog/integrations-core/pull/16439))
 * fix unexpected exception when reporting sqlserver statements obfuscate xml plan error ([#16461](https://github.com/DataDog/integrations-core/pull/16461))
 
 ## 15.2.0 / 2023-11-10 / Agent 7.50.0
@@ -69,9 +678,9 @@
 ***Added***:
 
 * Add support for log shipping monitoring on primary and secondary instances through the `include_primary_log_shipping_metrics` and `include_secondary_log_shipping_metrics` configuration options. ([#16101](https://github.com/DataDog/integrations-core/pull/16101))
-* * Add obfuscation_mode config option to allow enabling obfuscation with go-sqllexer ([#16125](https://github.com/DataDog/integrations-core/pull/16125)) ([#16125](https://github.com/DataDog/integrations-core/pull/16125))
-* [DBMON-3054] Move check config to SQLServerConfig class ([#16130](https://github.com/DataDog/integrations-core/pull/16130))
-* DBMON-3054] Add unit tests to assert every configurable metrics collection ([#16136](https://github.com/DataDog/integrations-core/pull/16136))
+* Add obfuscation_mode config option to allow enabling obfuscation with go-sqllexer ([#16125](https://github.com/DataDog/integrations-core/pull/16125)) ([#16125](https://github.com/DataDog/integrations-core/pull/16125))
+* Move check config to SQLServerConfig class ([#16130](https://github.com/DataDog/integrations-core/pull/16130))
+* Add unit tests to assert every configurable metrics collection ([#16136](https://github.com/DataDog/integrations-core/pull/16136))
 * Updated dependencies. ([#16154](https://github.com/DataDog/integrations-core/pull/16154))
 
 ***Fixed***:

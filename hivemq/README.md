@@ -5,6 +5,8 @@
 [HiveMQ][1] is a MQTT based messaging platform designed for the fast, efficient and reliable movement
 of data to and from connected IoT devices. It is a MQTT 3.1, 3.1.1, and 5.0 compliant broker.
 
+**Minimum Agent version:** 7.20.1
+
 ## Setup
 
 ### Installation
@@ -27,7 +29,7 @@ To configure this check for an Agent running on a host:
    Agent's configuration directory to start collecting your HiveMQ performance data.
    See the [sample hivemq.d/conf.yaml][3] for all available configuration options.
 
-   This check has a limit of 350 metrics per instance. The number of returned metrics is indicated in the info page.
+   This check has a limit of 350 metrics per instance. The number of returned metrics is indicated in [the status page][9].
    You can specify the metrics you are interested in by editing the configuration below.
    To learn how to customize the metrics to collect see the [JMX Checks documentation][4] for more detailed instructions.
    If you need to monitor more metrics, contact [Datadog support][5].
@@ -126,7 +128,7 @@ Additional helpful documentation, links, and articles:
 - [Use HiveMQ and OpenTelemetry to monitor IoT applications in Datadog][12]
 
 [1]: https://www.hivemq.com/hivemq/
-[2]: https://app.datadoghq.com/account/settings/agent/latest
+[2]: /account/settings/agent/latest
 [3]: https://github.com/DataDog/integrations-core/blob/master/hivemq/datadog_checks/hivemq/data/conf.yaml.example
 [4]: https://docs.datadoghq.com/integrations/java
 [5]: https://docs.datadoghq.com/help

@@ -6,9 +6,11 @@
 
 The SQL Server integration tracks the performance of your SQL Server instances. It collects metrics for number of user connections, rate of SQL compilations, and more.
 
-Enable [Database Monitoring](https://docs.datadoghq.com/database_monitoring/) (DBM) for enhanced insight into query performance and database health. In addition to the standard integration, Datadog DBM provides query-level metrics, live and historical query snapshots, wait event analysis, database load, query explain plans, and blocking query insights.
+Enable [Database Monitoring](https://docs.datadoghq.com/database_monitoring/setup_sql_server/) (DBM) for enhanced insight into query performance and database health. In addition to the standard integration, Datadog DBM provides query-level metrics, live and historical query snapshots, wait event analysis, database load, query explain plans, and blocking query insights.
 
-All editions of SQL Server 2012 and above are supported.
+SQL Server 2012, 2014, 2016, 2017, 2019, 2022, and 2025 are supported.
+
+**Minimum Agent version:** 6.0.0
 
 ## Setup
 
@@ -34,6 +36,7 @@ Proceed with the following steps in this guide only if you are installing the st
 
     ```SQL
         CREATE LOGIN datadog WITH PASSWORD = '<PASSWORD>';
+        USE master;
         CREATE USER datadog FOR LOGIN datadog;
         GRANT SELECT on sys.dm_os_performance_counters to datadog;
         GRANT VIEW SERVER STATE to datadog;
@@ -69,13 +72,15 @@ To configure this check for an Agent running on a host:
      - host: "<SQL_HOST>,<SQL_PORT>"
        username: datadog
        password: "<YOUR_PASSWORD>"
-       connector: odbc # alternative is 'adodbapi'
-       driver: SQL Server
+       connector: adodbapi 
+       adoprovider: MSOLEDBSQL19  # Replace with MSOLEDBSQL for versions 18 and previous
    ```
 
     If you use port autodiscovery, use `0` for `SQL_PORT`. See the [example check configuration][6] for a comprehensive description of all options, including how to use custom queries to create your own metrics.
+    
+    Use [supported drivers][25] based on your SQL Server setup.
 
-    **Note**: The (default) provider `SQLOLEDB` is being deprecated. To use the newer `MSOLEDBSQL` provider, set the `adoprovider` variable to `MSOLEDBSQL19` in your `sqlserver.d/conf.yaml` file after having downloaded the new provider from [Microsoft][7]. If you're using `MSOLEDBSQL` version 18 or lower, set the `adoprovider` variable to `MSOLEDBSQL` instead. It is also possible to use the Windows Authentication and not specify the username/password with:
+    **Note**: It is also possible to use the Windows Authentication and not specify the username/password with:
 
       ```yaml
       connection_string: "Trusted_Connection=yes"
@@ -86,11 +91,9 @@ To configure this check for an Agent running on a host:
 
 ##### Linux
 
-Extra configuration steps are required to get the SQL Server integration running on a Linux host:
+The Agent on Linux ships Microsoft ODBC Driver 18 and FreeTDS and registers them in `embedded/etc/odbcinst.ini` inside the Agent install directory. A package install uses `/opt/datadog-agent`. After a Fleet Automation upgrade the install directory is `/opt/datadog-packages/datadog-agent/stable`. The check reads that file, and falls back to the Agent's default registration when it is absent.
 
-1. Install an ODBC SQL Server driver, for example the [Microsoft ODBC driver][9] or the [FreeTDS driver][10].
-2. Copy the `odbc.ini` and `odbcinst.ini` files into the `/opt/datadog-agent/embedded/etc` folder.
-3. Configure the `conf.yaml` file to use the `odbc` connector and specify the proper driver as indicated in the `odbcinst.ini` file.
+To use a different driver, such as a host install of the [Microsoft ODBC driver][9] or [FreeTDS][10], edit `odbcinst.ini` in that directory or set `ODBCSYSINI` to a directory that contains your own `odbcinst.ini`. Then set the `conf.yaml` `driver` value to the driver name from that file.
 
 ##### Log collection
 
@@ -186,7 +189,7 @@ Loading Errors
         unable to import module 'sqlserver': No module named 'sqlserver'
 ```
 
-A fix for this is currently being developed, and in the meantime Agent versions 7.47 and below will continue to function properly.
+This is fixed in version 15.2.0 of the check and in Agent versions 7.49.1 and above.
 
 ## Further Reading
 
@@ -196,9 +199,10 @@ A fix for this is currently being developed, and in the meantime Agent versions 
 - [Monitor SQL Server performance with Datadog][21]
 - [Custom SQL Server metrics for detailed monitoring][22]
 - [Strategize your Azure migration for SQL workloads with Datadog][23]
+- [Optimize SQL Server performance with Datadog Database Monitoring][24]
 
 [1]: https://raw.githubusercontent.com/DataDog/integrations-core/master/sqlserver/images/sqlserver_dashboard_02_2024.png
-[2]: https://app.datadoghq.com/account/settings/agent/latest
+[2]: /account/settings/agent/latest
 [3]: https://docs.microsoft.com/en-us/sql/t-sql/statements/grant-server-permissions-transact-sql?view=sql-server-ver15
 [4]: https://docs.microsoft.com/en-us/sql/tools/configuration-manager/tcp-ip-properties-ip-addresses-tab
 [5]: https://docs.datadoghq.com/agent/guide/agent-configuration-files/#agent-configuration-directory
@@ -220,3 +224,5 @@ A fix for this is currently being developed, and in the meantime Agent versions 
 [21]: https://www.datadoghq.com/blog/sql-server-performance
 [22]: https://www.datadoghq.com/blog/sql-server-metrics
 [23]: https://www.datadoghq.com/blog/migrate-sql-workloads-to-azure-with-datadog/
+[24]: https://www.datadoghq.com/blog/optimize-sql-server-performance-with-datadog/
+[25]: https://docs.datadoghq.com/database_monitoring/setup_sql_server/selfhosted/#supported-drivers

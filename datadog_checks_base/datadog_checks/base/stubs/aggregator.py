@@ -7,11 +7,11 @@ import json
 import os
 import re
 from collections import OrderedDict, defaultdict
+from typing import Any
 
-from six import iteritems
+from datadog_checks.base.constants import ServiceCheck
+from datadog_checks.base.utils.common import ensure_unicode, to_native_string
 
-from ..constants import ServiceCheck
-from ..utils.common import ensure_unicode, to_native_string
 from .common import HistogramBucketStub, MetricStub, ServiceCheckStub
 from .similar import build_similar_elements_msg
 
@@ -79,7 +79,7 @@ class AggregatorStub(object):
             ('historate', 6),
         )
     )
-    METRIC_ENUM_MAP_REV = {v: k for k, v in iteritems(METRIC_ENUM_MAP)}
+    METRIC_ENUM_MAP_REV = {v: k for k, v in METRIC_ENUM_MAP.items()}
     GAUGE, RATE, COUNT, MONOTONIC_COUNT, COUNTER, HISTOGRAM, HISTORATE = list(METRIC_ENUM_MAP.values())
     AGGREGATE_TYPES = {COUNT, COUNTER}
     IGNORED_METRICS = {'datadog.agent.profile.memory.check_run_alloc'}
@@ -143,9 +143,44 @@ class AggregatorStub(object):
         tags,
         flush_first_value=False,
     ):
+        self._record_histogram_bucket(
+            name, value, lower_bound, upper_bound, monotonic, hostname, tags, flush_first_value, False
+        )
+
+    def submit_histogram_bucket_multi(
+        self,
+        check: Any,
+        check_id: str,
+        name: str,
+        value: int,
+        lower_bound: float,
+        upper_bound: float,
+        monotonic: bool,
+        hostname: str,
+        tags: list[str],
+        flush_first_value: bool = False,
+    ) -> None:
+        self._record_histogram_bucket(
+            name, value, lower_bound, upper_bound, monotonic, hostname, tags, flush_first_value, True
+        )
+
+    def _record_histogram_bucket(
+        self,
+        name: str,
+        value: int,
+        lower_bound: float,
+        upper_bound: float,
+        monotonic: bool,
+        hostname: str,
+        tags: list[str],
+        flush_first_value: bool,
+        multiple_buckets: bool,
+    ) -> None:
         check_tag_names(name, tags)
         self._histogram_buckets[name].append(
-            HistogramBucketStub(name, value, lower_bound, upper_bound, monotonic, hostname, tags, flush_first_value)
+            HistogramBucketStub(
+                name, value, lower_bound, upper_bound, monotonic, hostname, tags, flush_first_value, multiple_buckets
+            )
         )
 
     def metrics(self, name):
@@ -208,9 +243,14 @@ class AggregatorStub(object):
                 ensure_unicode(stub.hostname),
                 normalize_tags(stub.tags),
                 stub.flush_first_value,
+                stub.multiple_buckets,
             )
             for stub in self._histogram_buckets.get(to_native_string(name), [])
         ]
+
+    def assert_metric_has_tags(self, metric_name, tags, count=None, at_least=1):
+        for tag in tags:
+            self.assert_metric_has_tag(metric_name, tag, count, at_least)
 
     def assert_metric_has_tag(self, metric_name, tag, count=None, at_least=1):
         """
@@ -252,7 +292,7 @@ class AggregatorStub(object):
                 continue
             if tags and set(tags) != set(e['tags']):
                 continue
-            for name, value in iteritems(kwargs):
+            for name, value in kwargs.items():
                 if e[name] != value:
                     break
             else:
@@ -276,12 +316,19 @@ class AggregatorStub(object):
         count=None,
         at_least=1,
         flush_first_value=None,
+        multiple_buckets=None,
     ):
         expected_tags = normalize_tags(tags, sort=True)
 
         candidates = []
         for bucket in self.histogram_bucket(name):
             if value is not None and value != bucket.value:
+                continue
+
+            if lower_bound is not None and lower_bound != bucket.lower_bound:
+                continue
+
+            if upper_bound is not None and upper_bound != bucket.upper_bound:
                 continue
 
             if expected_tags and expected_tags != sorted(bucket.tags):
@@ -296,10 +343,13 @@ class AggregatorStub(object):
             if flush_first_value is not None and flush_first_value != bucket.flush_first_value:
                 continue
 
+            if multiple_buckets is not None and multiple_buckets != bucket.multiple_buckets:
+                continue
+
             candidates.append(bucket)
 
         expected_bucket = HistogramBucketStub(
-            name, value, lower_bound, upper_bound, monotonic, hostname, tags, flush_first_value
+            name, value, lower_bound, upper_bound, monotonic, hostname, tags, flush_first_value, multiple_buckets
         )
 
         if count is not None:
@@ -339,6 +389,8 @@ class AggregatorStub(object):
             if expected_tags and expected_tags != sorted(metric.tags):
                 continue
 
+            # to assert hostname is None, pass in hostname as '':
+            # https://github.com/DataDog/integrations-core/blob/7.65.x/datadog_checks_base/datadog_checks/base/checks/base.py#L760
             if hostname is not None and hostname != metric.hostname:
                 continue
 
@@ -383,7 +435,7 @@ class AggregatorStub(object):
             if hostname is not None and hostname != sc.hostname:
                 continue
 
-            if message is not None and message != sc.message:
+            if message is not None and re.search(message, sc.message) is None:
                 continue
 
             candidates.append(sc)
@@ -421,10 +473,19 @@ class AggregatorStub(object):
         assert condition, msg
 
     def assert_metrics_using_metadata(
-        self, metadata_metrics, check_metric_type=True, check_submission_type=False, exclude=None
+        self,
+        metadata_metrics,
+        check_metric_type=True,
+        check_submission_type=False,
+        exclude=None,
+        check_symmetric_inclusion=False,
     ):
         """
-        Assert metrics using metadata.csv
+        Assert metrics using metadata.csv. The assertion fails if there are metrics emitted that are
+        not in metadata.csv. Metrics passed in the `exclude` parameter are ignored.
+
+        Pass `check_symmetric_inclusion=True` to assert that both set of metrics, those submitted and
+        those in metadata.csv, are the same.
 
         Checking type: By default we are asserting the in-app metric type (`check_submission_type=False`),
         asserting this type make sense for e2e (metrics collected from agent).
@@ -440,7 +501,8 @@ class AggregatorStub(object):
 
         exclude = exclude or []
         errors = set()
-        for metric_name, metric_stubs in iteritems(self._metrics):
+        submitted_metrics = set()
+        for metric_name, metric_stubs in self._metrics.items():
             if metric_name in exclude:
                 continue
             for metric_stub in metric_stubs:
@@ -451,6 +513,8 @@ class AggregatorStub(object):
                 # Note: all Openmetrics histogram and summary metrics are actually separately submitted
                 if check_submission_type and actual_metric_type in ['histogram', 'historate']:
                     metric_stub_name += '.count'
+
+                submitted_metrics.add(metric_stub_name)
 
                 # Checking the metric is in `metadata.csv`
                 if metric_stub_name not in metadata_metrics:
@@ -474,7 +538,47 @@ class AggregatorStub(object):
                             )
                         )
 
+        if check_symmetric_inclusion:
+            missing_metrics = metadata_metrics.keys() - submitted_metrics
+            errors.update(f"Expect `{m}` from metadata.csv but not submitted." for m in missing_metrics)
+
         assert not errors, "Metadata assertion errors using metadata.csv:" + "\n\t- ".join([''] + sorted(errors))
+
+    def assert_service_checks(self, service_checks):
+        """
+        Assert service checks using service_checks.json
+
+        Usage:
+
+            from datadog_checks.dev.utils import get_service_checks
+            aggregator.assert_service_checks(get_service_checks())
+
+        """
+
+        errors = set()
+
+        for service_check_name, service_check_stubs in self._service_checks.items():
+            for service_check_stub in service_check_stubs:
+                # Checking the metric is in `service_checks.json`
+                if service_check_name not in [sc['check'] for sc in service_checks]:
+                    errors.add("Expect `{}` to be in service_check.json.".format(service_check_name))
+                    continue
+
+                status_string = {value: key for key, value in ServiceCheck._asdict().items()}[
+                    service_check_stub.status
+                ].lower()
+                service_check = [c for c in service_checks if c['check'] == service_check_name][0]
+
+                if status_string not in service_check['statuses']:
+                    errors.add(
+                        "Expect `{}` value to be in service_check.json for service check {}.".format(
+                            status_string, service_check_stub.name
+                        )
+                    )
+
+        assert not errors, "Service checks assertion errors using service_checks.json:" + "\n\t- ".join(
+            [''] + sorted(errors)
+        )
 
     def assert_no_duplicate_all(self):
         """
@@ -528,7 +632,7 @@ class AggregatorStub(object):
             all_contexts[context].append(metric)
 
         dup_contexts = defaultdict(list)
-        for context, metrics in iteritems(all_contexts):
+        for context, metrics in all_contexts.items():
             if len(metrics) > 1:
                 dup_contexts[context] = metrics
 

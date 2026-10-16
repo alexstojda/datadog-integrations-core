@@ -5,8 +5,6 @@
 
 from collections import defaultdict
 
-from six import iteritems
-
 from datadog_checks.base import AgentCheck
 from datadog_checks.base.utils.subprocess_output import get_subprocess_output
 
@@ -39,6 +37,7 @@ class MoreUnixCheck(AgentCheck):
         self.get_inode_info()
         self.get_stat_info()
         self.get_entropy_info()
+        self.get_fips_info()
         self.get_process_states()
         if self.instance.get('include_interrupt_metrics', False):
             self.get_interrupts_info()
@@ -50,10 +49,11 @@ class MoreUnixCheck(AgentCheck):
             "inode_info": "sys/fs/inode-nr",
             "stat_info": "stat",
             "entropy_info": "sys/kernel/random/entropy_avail",
+            "fips_info": "sys/crypto/fips_enabled",
             "interrupts_info": "interrupts",
         }
 
-        for key, path in iteritems(self.proc_path_map):
+        for key, path in self.proc_path_map.items():
             self.proc_path_map[key] = "{procfs}/{path}".format(procfs=proc_location, path=path)
 
     def get_inode_info(self):
@@ -80,6 +80,24 @@ class MoreUnixCheck(AgentCheck):
         with open(self.proc_path_map['entropy_info'], 'r') as entropy_info:
             entropy = entropy_info.readline()
             self.gauge('system.entropy.available', float(entropy), tags=self.tags)
+
+    def get_fips_info(self) -> None:
+        fips_path = self.proc_path_map['fips_info']
+        try:
+            with open(fips_path, 'r') as fips_info:
+                fips_enabled = int(fips_info.readline().strip())
+        except FileNotFoundError:
+            self.log.debug(
+                "%s does not exist, the kernel was built without CONFIG_CRYPTO_FIPS "
+                "and cannot be in FIPS mode: reporting 0",
+                fips_path,
+            )
+            fips_enabled = 0
+        except (OSError, ValueError) as e:
+            self.log.warning("Could not determine kernel FIPS mode from %s: %s", fips_path, e)
+            return
+
+        self.gauge('system.crypto.fips_enabled', float(fips_enabled), tags=self.tags)
 
     def get_process_states(self):
         state_counts = defaultdict(int)
